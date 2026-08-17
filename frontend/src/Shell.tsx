@@ -1,12 +1,17 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "./auth";
 import { NiyamstackLogo } from "./brand/NiyamstackLogo";
-import { flattenNav, isNavGroup, navForRole, portalTitle } from "./portals";
+import { flattenNav, isNavGroup, navForRole, portalTitle, type NavGroup } from "./portals";
 
 function linkClass(isActive: boolean, nested = false) {
-  return `${nested ? "block rounded-lg px-3 py-1.5 text-[13px]" : "block rounded-lg px-3 py-2 text-sm"} ${
+  return `${nested ? "block rounded-lg px-3 py-1.5 pl-6 text-[13px]" : "block rounded-lg px-3 py-2 text-sm"} ${
     isActive ? "bg-white/15 text-white" : "text-slate-300 hover:bg-white/5"
   }`;
+}
+
+function groupContainsPath(group: NavGroup, path: string) {
+  return group.items.some((item) => path === item.to || (item.to !== "/" && path.startsWith(item.to + "/")));
 }
 
 export function Shell() {
@@ -16,6 +21,17 @@ export function Shell() {
   const nav = navForRole(user?.role);
   const portal = portalTitle(user?.role);
   const mobileItems = flattenNav(nav);
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+
+  useEffect(() => {
+    const items = navForRole(user?.role);
+    const match = items.find((entry) => isNavGroup(entry) && groupContainsPath(entry, location.pathname));
+    setOpenGroup(match && isNavGroup(match) ? match.label : null);
+  }, [location.pathname, user?.role]);
+
+  function toggleGroup(label: string) {
+    setOpenGroup((current) => (current === label ? null : label));
+  }
 
   return (
     <div className="min-h-svh bg-mist">
@@ -31,7 +47,7 @@ export function Shell() {
           <p className="mt-5 text-xl font-bold">{portal.name}</p>
           <p className="mt-1 text-xs text-slate-300">{portal.blurb}</p>
         </div>
-        <nav className="flex-1 space-y-3 overflow-y-auto px-3 pb-6">
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-6">
           {nav.map((entry) => {
             if (!isNavGroup(entry)) {
               return (
@@ -45,22 +61,35 @@ export function Shell() {
                 </NavLink>
               );
             }
+            const open = openGroup === entry.label;
+            const active = groupContainsPath(entry, location.pathname);
             return (
               <div key={entry.label}>
-                <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{entry.label}</p>
-                <div className="space-y-0.5">
-                  {entry.items.map((item) => (
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      className={({ isActive }) =>
-                        linkClass(isActive || (item.to !== "/" && location.pathname.startsWith(item.to)))
-                      }
-                    >
-                      {item.label}
-                    </NavLink>
-                  ))}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(entry.label)}
+                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm ${
+                    active || open ? "text-white" : "text-slate-300 hover:bg-white/5"
+                  } ${open ? "bg-white/10" : ""}`}
+                >
+                  <span>{entry.label}</span>
+                  <span className={`text-[10px] text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}>▸</span>
+                </button>
+                {open && (
+                  <div className="mt-0.5 space-y-0.5">
+                    {entry.items.map((item) => (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        className={({ isActive }) =>
+                          linkClass(isActive || (item.to !== "/" && location.pathname.startsWith(item.to)), true)
+                        }
+                      >
+                        {item.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
