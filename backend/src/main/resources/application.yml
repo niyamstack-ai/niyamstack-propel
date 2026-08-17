@@ -1,0 +1,73 @@
+server:
+  port: ${PROPEL_PORT:8080}
+
+spring:
+  application:
+    name: niyamstack-propel
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:}
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+  datasource:
+    url: jdbc:postgresql://${PROPEL_DB_HOST:localhost}:${PROPEL_DB_PORT:5432}/${PROPEL_DB_NAME:propel}
+    username: ${PROPEL_DB_USER:propel}
+    password: ${PROPEL_DB_PASSWORD:propel}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+app:
+  cors:
+    origins: ${PROPEL_CORS:http://localhost:*,http://127.0.0.1:*}
+  jwt:
+    secret: ${PROPEL_JWT_SECRET:niyamstack-propel-dev-secret-change-in-production-256bit-key!!}
+    expiration-ms: ${PROPEL_JWT_EXPIRATION_MS:86400000}
+  seed:
+    enabled: false
+  otp:
+    dev-code: "123456"
+    reveal: ${PROPEL_OTP_REVEAL:false}
+  storage:
+    local-dir: ${PROPEL_STORAGE_DIR:./data/files}
+  integrations:
+    payments:
+      provider: ${PROPEL_PAYMENTS_PROVIDER:demo}
+      razorpay-key-id: ${RAZORPAY_KEY_ID:}
+      razorpay-key-secret: ${RAZORPAY_KEY_SECRET:}
+      cashfree-client-id: ${CASHFREE_CLIENT_ID:}
+      cashfree-client-secret: ${CASHFREE_CLIENT_SECRET:}
+    whatsapp:
+      provider: ${PROPEL_WHATSAPP_PROVIDER:demo}
+      token: ${WHATSAPP_TOKEN:}
+      phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:}
+    meetings:
+      provider: ${PROPEL_MEETINGS_PROVIDER:demo}
+      zoom-client-id: ${ZOOM_CLIENT_ID:}
+      zoom-client-secret: ${ZOOM_CLIENT_SECRET:}
+    mail:
+      provider: ${PROPEL_MAIL_PROVIDER:demo}
+    storage:
+      provider: ${PROPEL_STORAGE_PROVIDER:local}
+      minio-endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+      minio-access-key: ${MINIO_ACCESS_KEY:propel}
+      minio-secret-key: ${MINIO_SECRET_KEY:propelpropel}
+      bucket: ${PROPEL_STORAGE_BUCKET:propel}

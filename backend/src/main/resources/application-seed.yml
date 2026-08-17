@@ -1,0 +1,5 @@
+# Overlay on PostgreSQL: seed Aarohan demo tenant.
+# mvn spring-boot:run -Dspring-boot.run.profiles=seed
+app:
+  seed:
+    enabled: true

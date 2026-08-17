@@ -1,0 +1,8 @@
+# Production profile. Requires PROPEL_JWT_SECRET (32+ chars, not the repo default).
+app:
+  seed:
+    enabled: false
+  jwt:
+    secret: ${PROPEL_JWT_SECRET}
+  cors:
+    origins: ${PROPEL_CORS}

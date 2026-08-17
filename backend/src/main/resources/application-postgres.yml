@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${PROPEL_DB_HOST:localhost}:${PROPEL_DB_PORT:5432}/${PROPEL_DB_NAME:propel}
+    username: ${PROPEL_DB_USER:propel}
+    password: ${PROPEL_DB_PASSWORD:propel}
+  flyway:
+    enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+app:
+  seed:
+    enabled: false

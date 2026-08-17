@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --color-navy: #071a33;
+  --color-navy-mid: #0c2a4d;
+  --color-ink: #0f172a;
+  --color-mist: #f4f7fb;
+  --color-line: #d7e2ef;
+  --color-brand: #0078f0;
+}
+
+html, body, #root { min-height: 100%; }
+body { margin: 0; font-family: var(--font-sans); color: var(--color-ink); background: #f4f7fb; }

@@ -1,0 +1,25 @@
+# Build
+target/
+dist/
+node_modules/
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+backend/data/
+data/files/
+.tools/
+
+# Env / secrets
+.env
+.env.local
+application-local.yml
+*.pem
+
+# Logs
+*.log
+logs/
+
+# OS
+desktop.ini
