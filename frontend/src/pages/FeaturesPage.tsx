@@ -16,7 +16,7 @@ export function FeaturesPage() {
       <div>
         <h1 className="text-2xl font-bold text-navy">License map</h1>
         <p className="text-sm text-slate-500">
-          Commercial catalog of 95 capabilities. This is the price book, not the operating screens. Use Institute, Students, LMS, Fees, and
+          Commercial catalog of 95 capabilities. This is the price book, not the operating screens. Use Institute, People, Courses, Fees, and
           Placement to run the institute.
         </p>
       </div>

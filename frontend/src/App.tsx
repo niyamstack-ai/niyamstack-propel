@@ -14,7 +14,6 @@ import { PlatformEmployeesPage } from "./pages/platform/PlatformEmployeesPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { CrmPage } from "./pages/CrmPage";
 import { StudentsPage } from "./pages/StudentsPage";
-import { LmsPage } from "./pages/LmsPage";
 import { FeesPage } from "./pages/FeesPage";
 import { PlacementPage } from "./pages/PlacementPage";
 import { ReadinessPage } from "./pages/ReadinessPage";
@@ -22,6 +21,18 @@ import { AlumniPage } from "./pages/AlumniPage";
 import { CommsPage } from "./pages/CommsPage";
 import { InstitutePage } from "./pages/InstitutePage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
+import { WebsitePage } from "./pages/WebsitePage";
+import { CourseWorkspacePage } from "./pages/CourseWorkspacePage";
+import { CoursesCommercePage } from "./pages/CoursesCommercePage";
+import { ContentHubPage } from "./pages/ContentHubPage";
+import { YourAppPage } from "./pages/YourAppPage";
+import { LandingPagesPage } from "./pages/LandingPagesPage";
+import { OneToOnePage } from "./pages/OneToOnePage";
+import { ChatsPage } from "./pages/ChatsPage";
+import { CampaignsPage } from "./pages/CampaignsPage";
+import { PeoplePage } from "./pages/PeoplePage";
+import { SelfServicePage } from "./pages/SelfServicePage";
+import { IntegrationsPage } from "./pages/IntegrationsPage";
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
@@ -75,9 +86,22 @@ export default function App() {
       >
         <Route element={<RoleGate />}>
           <Route index element={<DashboardPage />} />
+          <Route path="website" element={<WebsitePage />} />
+          <Route path="courses" element={<CoursesCommercePage />} />
+          <Route path="courses/:courseId" element={<CourseWorkspacePage />} />
+          <Route path="content-hub" element={<ContentHubPage />} />
+          <Route path="your-app" element={<YourAppPage />} />
+          <Route path="landing-pages" element={<LandingPagesPage />} />
+          <Route path="one-to-one" element={<OneToOnePage />} />
+          <Route path="chats" element={<ChatsPage />} />
+          <Route path="campaigns" element={<CampaignsPage />} />
+          <Route path="people" element={<PeoplePage />} />
+          <Route path="people/:tab" element={<PeoplePage />} />
+          <Route path="self-service" element={<SelfServicePage />} />
+          <Route path="integrations" element={<IntegrationsPage />} />
           <Route path="crm" element={<CrmPage />} />
           <Route path="students" element={<StudentsPage />} />
-          <Route path="lms" element={<LmsPage />} />
+          <Route path="lms" element={<Navigate to="/courses" replace />} />
           <Route path="fees" element={<FeesPage />} />
           <Route path="placement" element={<PlacementPage />} />
           <Route path="readiness" element={<ReadinessPage />} />

@@ -5,7 +5,7 @@ import { hasCap, usePlatformAuth } from "../../platformAuth";
 const nav = [
   { to: "/platform", label: "Dashboard", end: true, cap: "VIEW_DASHBOARD" },
   { to: "/platform/institutes", label: "Institutes", end: false, cap: "VIEW_INSTITUTES" },
-  { to: "/platform/employees", label: "Employee management", end: false, cap: "MANAGE_EMPLOYEES" },
+  { to: "/platform/employees", label: "Niyamstack staff", end: false, cap: "MANAGE_EMPLOYEES" },
   { to: "/platform/settings", label: "Settings", end: false, cap: "*" },
 ];
 

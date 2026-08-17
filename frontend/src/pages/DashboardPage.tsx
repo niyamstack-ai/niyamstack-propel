@@ -46,7 +46,7 @@ function StudentHome() {
         <p className="text-sm text-slate-500">Your classes, fees, and job drives — nothing else.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
-        <HomeLink to="/lms" title="Open LMS" text={`${asg.data?.length ?? 0} assignments`} />
+        <HomeLink to="/courses" title="My courses" text={`${asg.data?.length ?? 0} assignments`} />
         <HomeLink to="/fees" title="Pay fees" text={`${due.length} due invoices`} />
         <HomeLink to="/placement" title="Apply to jobs" text={`${drives.data?.length ?? 0} open drives`} />
       </div>
@@ -93,7 +93,7 @@ function FacultyHome() {
       <h1 className="text-2xl font-bold text-navy">Faculty portal</h1>
       <p className="text-sm text-slate-500">Teach your batches. Accounts and admissions stay with other roles.</p>
       <div className="grid gap-3 sm:grid-cols-3">
-        <HomeLink to="/lms" title="LMS" text="Content, attendance, grading" />
+        <HomeLink to="/courses" title="Courses" text="Content, attendance, grading inside each course" />
         <HomeLink to="/students" title="My students" text="Batch roster" />
         <HomeLink to="/comms" title="Notices" text="Announce to a batch" />
       </div>
@@ -146,13 +146,24 @@ function PlacementHome({ recruiter }: { recruiter: boolean }) {
 }
 
 function OwnerHome() {
-  const dash = useApi<Dash>("/api/actions/dashboard");
+  const dash = useApi<Dash & {
+    coursesPublished?: number;
+    landingPages?: number;
+    campaigns?: number;
+    testsCreated?: number;
+    couponsLive?: number;
+    bannersLive?: number;
+    websiteSessions?: number;
+    buyNowClicks?: number;
+    transactions?: number;
+    revenue?: number;
+  }>("/api/actions/dashboard");
   if (dash.error) return <p className="text-red-600">{dash.error}</p>;
   if (!dash.data) return <p>Loading…</p>;
   const data = dash.data;
   const kpis = [
     ["Inquiries", data.inquiries, "/crm"],
-    ["Students", data.students, "/students"],
+    ["Students", data.students, "/people/students"],
     ["Fee due", `₹${data.due}`, "/fees"],
     ["Collected", `₹${data.collected}`, "/fees"],
     ["Applications", data.applications, "/placement"],
@@ -161,11 +172,60 @@ function OwnerHome() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-navy">Institute home</h1>
-        <p className="text-sm text-slate-500">Admissions, students, LMS, fees, placement — for the owner and ops team.</p>
+        <h1 className="text-2xl font-bold text-navy">Welcome to your Dashboard</h1>
+        <p className="text-sm text-slate-500">Grow with website, courses, and campaigns — run admissions, fees, and placement.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <HomeLink to="/website" title="Your Website" text="Manage pages, SEO, domain" />
+        <HomeLink to="/your-app" title="Your App" text="Share app, banners, push" />
+      </div>
+      <div>
+        <h2 className="mb-3 text-lg font-semibold text-navy">Our Offerings</h2>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <HomeLink to="/courses" title="Course" text={`${data.coursesPublished ?? 0} course published — create and sell courses`} />
+          <HomeLink to="/landing-pages" title="Landing Page" text={`${data.landingPages ?? 0} pages — boost conversions`} />
+          <HomeLink to="/content-hub" title="Test Portal" text={`${data.testsCreated ?? 0} tests created`} />
+          <HomeLink to="/campaigns" title="Campaign" text={`${data.campaigns ?? 0} campaigns — boost engagement`} />
+        </div>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
+        <Card title="Analytics · last period">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <MiniStat label="Website sessions" value={data.websiteSessions ?? 0} />
+            <MiniStat label="Buy Now Clicks" value={data.buyNowClicks ?? 0} />
+            <MiniStat label="Transactions" value={data.transactions ?? 0} />
+            <MiniStat label="Revenue" value={`₹${data.revenue ?? data.collected}`} />
+          </div>
+          <Link to="/analytics" className="mt-3 inline-block text-sm text-brand hover:underline">
+            View Details
+          </Link>
+        </Card>
+        <div className="space-y-3">
+          <Card title="Upcoming Classes">
+            <Link to="/courses">
+              <PrimaryButton>+ Create Class</PrimaryButton>
+            </Link>
+          </Card>
+          <Card title="Additional Offerings">
+            <ul className="space-y-2 text-sm">
+              <li className="flex justify-between">
+                <Link to="/your-app" className="hover:underline">
+                  Banners
+                </Link>
+                <span>{data.bannersLive ?? 0} Live</span>
+              </li>
+              <li className="flex justify-between">
+                <Link to="/courses" className="hover:underline">
+                  Coupons
+                </Link>
+                <span>{data.couponsLive ?? 0} Live</span>
+              </li>
+            </ul>
+          </Card>
+        </div>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Link to="/students">
+        <Link to="/people/students">
           <PrimaryButton>Enroll student</PrimaryButton>
         </Link>
         <Link to="/crm">
@@ -174,8 +234,8 @@ function OwnerHome() {
         <Link to="/fees">
           <PrimaryButton>Collect fees</PrimaryButton>
         </Link>
-        <Link to="/lms">
-          <PrimaryButton>Open LMS</PrimaryButton>
+        <Link to="/courses">
+          <PrimaryButton>Open courses</PrimaryButton>
         </Link>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -186,6 +246,15 @@ function OwnerHome() {
           </Link>
         ))}
       </div>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div>
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="text-lg font-bold text-navy">{value}</p>
     </div>
   );
 }

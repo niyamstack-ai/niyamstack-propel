@@ -1,18 +1,123 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { createRecord } from "../ops";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, useApi } from "../ui";
 
+type Dash = {
+  inquiries: number;
+  converted: number;
+  students: number;
+  due: number;
+  collected: number;
+  collectionPct: number;
+  applications: number;
+  offers: number;
+  coursesPublished?: number;
+  coursesTotal?: number;
+  landingPages?: number;
+  campaigns?: number;
+  testsCreated?: number;
+  couponsLive?: number;
+  bannersLive?: number;
+  websiteSessions?: number;
+  buyNowClicks?: number;
+  transactions?: number;
+  revenue?: number;
+};
+
 export function AnalyticsPage() {
-  const dash = useApi<Record<string, unknown>>("/api/actions/dashboard");
+  const dash = useApi<Dash>("/api/actions/dashboard");
   const tickets = useApi<{ subject: string; status: string; category: string }[]>("/api/tickets");
   const staff = useApi<{ fullName: string; role: string; email: string }[]>("/api/staff");
+  const payments = useApi<{ gatewayRef: string; amount: number; method: string }[]>("/api/payments");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [range, setRange] = useState("7");
+
+  const d = dash.data;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-navy">Analytics & admin</h1>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-navy">Analytics</h1>
+          <p className="text-sm text-slate-500">Analyze your sales and traffic to know your brand’s growth.</p>
+        </div>
+        <select className="rounded-lg border border-line px-3 py-2 text-sm" value={range} onChange={(e) => setRange(e.target.value)}>
+          <option value="7">Last 7 Days</option>
+          <option value="30">Last 30 Days</option>
+          <option value="90">Last 90 Days</option>
+        </select>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Website sessions" value={d?.websiteSessions ?? 0} />
+        <Metric label="Buy Now Clicks" value={d?.buyNowClicks ?? 0} />
+        <Metric label="Transactions" value={d?.transactions ?? 0} />
+        <Metric label="Revenue" value={`₹${d?.revenue ?? d?.collected ?? 0}`} />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card title="Lifetime Revenue">
+          <p className="text-3xl font-bold text-navy">₹{d?.collected ?? 0}</p>
+          <p className="mt-1 text-sm text-slate-500">Collected fees to date</p>
+        </Card>
+        <Card title="Quick Actions">
+          <ul className="space-y-2 text-sm">
+            <li>
+              <Link className="text-brand hover:underline" to="/fees">
+                View Transactions
+              </Link>
+            </li>
+            <li>
+              <Link className="text-brand hover:underline" to="/courses">
+                Backend Addition
+              </Link>
+            </li>
+            <li>
+              <button
+                className="text-brand hover:underline"
+                type="button"
+                onClick={() => {
+                  const blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `propel-analytics-${range}d.json`;
+                  a.click();
+                }}
+              >
+                Generate / Download Report
+              </button>
+            </li>
+          </ul>
+        </Card>
+        <Card title="Growth inventory">
+          <ul className="space-y-1 text-sm">
+            <li>
+              Courses published: {d?.coursesPublished ?? 0}/{d?.coursesTotal ?? 0}
+            </li>
+            <li>Landing pages: {d?.landingPages ?? 0}</li>
+            <li>Campaigns: {d?.campaigns ?? 0}</li>
+            <li>Tests: {d?.testsCreated ?? 0}</li>
+            <li>Live coupons: {d?.couponsLive ?? 0}</li>
+            <li>Live banners: {d?.bannersLive ?? 0}</li>
+          </ul>
+        </Card>
+      </div>
+
+      <Card title="Recent transactions">
+        <ul className="text-sm">
+          {(payments.data ?? []).slice(0, 10).map((p) => (
+            <li key={p.gatewayRef}>
+              {p.gatewayRef} · {p.method} · ₹{p.amount}
+            </li>
+          ))}
+          {(payments.data?.length ?? 0) === 0 && <li className="text-slate-500">No transactions yet.</li>}
+        </ul>
+      </Card>
+
       <Card title="Raise support ticket">
         <FormGrid>
           <Field label="Subject" value={subject} onChange={setSubject} />
@@ -44,6 +149,7 @@ export function AnalyticsPage() {
         </FormGrid>
         <ErrorText error={error} />
       </Card>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Support tickets">
           <ul className="text-sm">
@@ -64,9 +170,15 @@ export function AnalyticsPage() {
           </ul>
         </Card>
       </div>
-      <Card title="KPI snapshot">
-        <pre className="overflow-auto rounded-lg bg-mist p-3 text-xs">{JSON.stringify(dash.data, null, 2)}</pre>
-      </Card>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-2xl border border-line bg-white p-4">
+      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 text-2xl font-bold text-navy">{value}</p>
     </div>
   );
 }

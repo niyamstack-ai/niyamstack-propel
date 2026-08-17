@@ -90,9 +90,9 @@ export function PlatformEmployeesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-navy">Employee management</h1>
+        <h1 className="text-2xl font-bold text-navy">Niyamstack staff</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Pick one or more roles for each person. Role names and their rights are defined in{" "}
+          Company employees of Niyamstack (control plane). Institute teachers and customer staff are managed inside each institute under People → Staff. Role names and rights are defined in{" "}
           <Link className="font-medium text-brand" to="/platform/settings">
             Settings
           </Link>

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createRecord } from "../ops";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, useApi } from "../ui";
 
-export function AlumniPage() {
+export function AlumniPage({ embedded }: { embedded?: boolean } = {}) {
   const alumni = useApi<{ fullName: string; company: string; role: string }[]>("/api/alumni");
   const jobs = useApi<{ title: string; company: string }[]>("/api/alumni-jobs");
   const industry = useApi<{ name: string; mou: boolean }[]>("/api/industry");
@@ -26,7 +26,7 @@ export function AlumniPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-navy">Alumni & industry</h1>
+      {!embedded && <h1 className="text-2xl font-bold text-navy">Alumni & industry</h1>}
       <ErrorText error={error} />
       <Card title="Add alumnus">
         <FormGrid>

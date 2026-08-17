@@ -4,10 +4,10 @@ import { createRecord } from "../ops";
 import { useAuth } from "../auth";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
 
-type Content = { id: string; title: string; contentType: string; scormStandard?: string; published?: boolean };
-type Assignment = { id: string; title: string; instructions: string };
+type Content = { id: string; title: string; contentType: string; scormStandard?: string; published?: boolean; courseId?: string };
+type Assignment = { id: string; title: string; instructions: string; courseId?: string };
 type Submission = { id: string; grade?: string; status?: string; content?: string };
-type Assessment = { id: string; title: string; kind: string; proctoring: boolean; published: boolean };
+type Assessment = { id: string; title: string; kind: string; proctoring: boolean; published: boolean; courseId?: string };
 type Attempt = { id: string; score?: number; status: string };
 type Pkg = { id: string; standard: string; status: string; versionLabel?: string };
 type Named = { id: string; name: string };
@@ -19,7 +19,12 @@ export function LmsPage() {
   return <StaffLms />;
 }
 
-function StudentLms() {
+function inCourse<T extends { courseId?: string }>(rows: T[] | null | undefined, courseId?: string) {
+  if (!courseId) return rows ?? [];
+  return (rows ?? []).filter((row) => !row.courseId || row.courseId === courseId);
+}
+
+export function StudentLms({ courseId, embedded }: { courseId?: string; embedded?: boolean } = {}) {
   const content = useApi<Content[]>("/api/content");
   const live = useApi<{ title: string; provider: string; meetingUrl: string }[]>("/api/live-sessions");
   const recs = useApi<{ title: string; videoUrl: string }[]>("/api/recordings");
@@ -41,19 +46,25 @@ function StudentLms() {
     }
   }
 
+  const materials = inCourse(content.data, courseId);
+  const quizzes = inCourse(exams.data, courseId);
+  const homework = inCourse(asg.data, courseId);
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-navy">My LMS</h1>
-        <p className="text-sm text-slate-500">Your timetable, content, assignments, and exams.</p>
-      </div>
+      {!embedded && (
+        <div>
+          <h1 className="text-2xl font-bold text-navy">My LMS</h1>
+          <p className="text-sm text-slate-500">Your timetable, content, assignments, and exams.</p>
+        </div>
+      )}
       <ErrorText error={error} />
       <Card title="Timetable">
         <Table columns={["Subject", "Day", "Start"]} rows={(slots.data ?? []).map((s) => [s.subject, String(s.dayOfWeek), s.startTime])} />
       </Card>
-      <Card title="Learning content">
+      <Card title="PDFs, videos & notes">
         <ul className="text-sm">
-          {(content.data ?? []).map((c) => (
+          {materials.map((c) => (
             <li key={c.id}>{c.title} · {c.contentType}</li>
           ))}
         </ul>
@@ -79,7 +90,7 @@ function StudentLms() {
       </Card>
       <Card title="Assignments">
         <ul className="space-y-2 text-sm">
-          {(asg.data ?? []).map((a) => (
+          {homework.map((a) => (
             <li key={a.id} className="flex flex-wrap items-center justify-between gap-2">
               <span>{a.title}</span>
               <PrimaryButton
@@ -98,9 +109,9 @@ function StudentLms() {
           ))}
         </ul>
       </Card>
-      <Card title="Exams">
+      <Card title="Quizzes & exams">
         <ul className="space-y-2 text-sm">
-          {(exams.data ?? []).map((e) => (
+          {quizzes.map((e) => (
             <li key={e.id} className="flex flex-wrap items-center justify-between gap-2">
               <span>{e.title}</span>
               <PrimaryButton
@@ -158,7 +169,7 @@ function StudentLms() {
   );
 }
 
-function StaffLms() {
+export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?: boolean } = {}) {
   const { user } = useAuth();
   const content = useApi<Content[]>("/api/content");
   const live = useApi<{ title: string; provider: string; meetingUrl: string }[]>("/api/live-sessions");
@@ -198,16 +209,25 @@ function StaffLms() {
     }
   }
 
+  const materials = inCourse(content.data, courseId);
+  const quizzes = inCourse(exams.data, courseId);
+  const homework = inCourse(asg.data, courseId);
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-navy">LMS</h1>
-        <p className="text-sm text-slate-500">Publish content, mark attendance, assign work, run exams, and track doubts.</p>
-      </div>
+      {!embedded && (
+        <div>
+          <h1 className="text-2xl font-bold text-navy">LMS</h1>
+          <p className="text-sm text-slate-500">Publish content, mark attendance, assign work, run exams, and track doubts.</p>
+        </div>
+      )}
+      {embedded && (
+        <p className="text-sm text-slate-500">Quizzes, recorded videos, PDFs, live class, and assignments for this course.</p>
+      )}
       <ErrorText error={error} />
       {faculty && (
         <>
-          <Card title="Publish learning content">
+          <Card title="Add PDF, video or notes">
             <FormGrid>
               <Field label="Title" value={title} onChange={setTitle} />
               <Select
@@ -228,7 +248,15 @@ function StaffLms() {
                 disabled={!title}
                 onClick={() =>
                   run(async () => {
-                    await createRecord("/api/content", { title, contentType: ctype, url, batchId: batchId || null, published: true, visibility: "BATCH" });
+                    await createRecord("/api/content", {
+                      title,
+                      contentType: ctype,
+                      url,
+                      batchId: batchId || null,
+                      courseId: courseId || null,
+                      published: true,
+                      visibility: courseId ? "COURSE" : "BATCH",
+                    });
                     setTitle("");
                     setUrl("");
                     content.reload();
@@ -336,10 +364,10 @@ function StaffLms() {
           rows={(slots.data ?? []).map((s) => [s.subject, String(s.dayOfWeek), s.startTime])}
         />
       </Card>
-      <Card title="Learning content library">
+      <Card title="Learning content in this course">
         <Table
           columns={["Title", "Type", "Standard", "Published"]}
-          rows={(content.data ?? []).map((c) => [c.title, c.contentType, c.scormStandard || "—", c.published === false ? "No" : "Yes"])}
+          rows={materials.map((c) => [c.title, c.contentType, c.scormStandard || "—", c.published === false ? "No" : "Yes"])}
         />
       </Card>
       <Card title="LMS standards packages (SCORM / xAPI / LTI)">
@@ -370,7 +398,7 @@ function StaffLms() {
         </Card>
         <Card title="Assignments">
           <ul className="space-y-2 text-sm">
-            {(asg.data ?? []).map((a) => (
+            {(homework).map((a) => (
               <li key={a.id}>
                 <span className="font-medium">{a.title}</span> — {a.instructions}
                 {student && (
@@ -422,7 +450,7 @@ function StaffLms() {
         </Card>
         <Card title="Exam engine">
           <ul className="space-y-2 text-sm">
-            {(exams.data ?? []).map((e) => (
+            {(quizzes).map((e) => (
               <li key={e.id}>
                 {e.title} · {e.kind}
                 {student && (

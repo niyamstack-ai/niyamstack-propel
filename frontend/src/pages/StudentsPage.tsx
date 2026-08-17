@@ -51,7 +51,7 @@ function MyStudentRecord() {
   );
 }
 
-function StaffStudents({ canEnroll }: { canEnroll: boolean }) {
+export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; embedded?: boolean }) {
   const students = useApi<Student[]>("/api/students");
   const courses = useApi<Named[]>("/api/courses");
   const batches = useApi<Named[]>("/api/batches");
@@ -130,10 +130,12 @@ function StaffStudents({ canEnroll }: { canEnroll: boolean }) {
 
   return (
     <div className="space-y-6">
+      {!embedded && (
       <div>
         <h1 className="text-2xl font-bold text-navy">Students</h1>
         <p className="text-sm text-slate-500">Enroll students, keep the master record, link guardians, and track at-risk learners.</p>
       </div>
+      )}
       {canEnroll && (
       <Card title="Enroll a student">
         <FormGrid>

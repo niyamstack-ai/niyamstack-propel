@@ -299,6 +299,17 @@ public class ActionsController {
         out.put("ats", ats);
         out.put("role", Auth.current().role());
         out.put("integrations", integrations.status());
+        out.put("coursesPublished", store.list(Course.class, org).stream().filter(Course::isPublished).count());
+        out.put("coursesTotal", store.list(Course.class, org).size());
+        out.put("landingPages", store.list(LandingPage.class, org).size());
+        out.put("campaigns", store.list(Campaign.class, org).size());
+        out.put("testsCreated", store.list(Assessment.class, org).size());
+        out.put("couponsLive", store.list(Coupon.class, org).stream().filter(Coupon::isLive).count());
+        out.put("bannersLive", store.list(AppBanner.class, org).stream().filter(AppBanner::isLive).count());
+        out.put("websiteSessions", 0);
+        out.put("buyNowClicks", 0);
+        out.put("transactions", store.list(Payment.class, org).size());
+        out.put("revenue", paid);
         return out;
     }
 

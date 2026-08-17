@@ -57,6 +57,10 @@ public class ResourceController {
         existing.setLogoUrl(body.getLogoUrl());
         existing.setBrandPrimary(body.getBrandPrimary());
         existing.setBrandSecondary(body.getBrandSecondary());
+        existing.setWebsiteUrl(body.getWebsiteUrl());
+        existing.setAppShareUrl(body.getAppShareUrl());
+        existing.setCustomDomain(body.getCustomDomain());
+        existing.setWebsitePublished(body.isWebsitePublished());
         existing.setSettingsJson(body.getSettingsJson());
         return store.save(existing);
     }
@@ -243,6 +247,58 @@ public class ResourceController {
     @GetMapping("/tickets") public List<SupportTicket> tickets() { return list(SupportTicket.class); }
     @PostMapping("/tickets") public SupportTicket createTicket(@RequestBody SupportTicket body) { return create(body, "ADMIN"); }
     @PutMapping("/tickets/{id}") public SupportTicket updateTicket(@PathVariable UUID id, @RequestBody SupportTicket body) { return update(SupportTicket.class, id, body, "ADMIN"); }
+
+    @GetMapping("/website-pages") public List<WebsitePage> websitePages() { return list(WebsitePage.class); }
+    @PostMapping("/website-pages") public WebsitePage createWebsitePage(@RequestBody WebsitePage body) { return create(body, "GROWTH"); }
+    @PutMapping("/website-pages/{id}") public WebsitePage updateWebsitePage(@PathVariable UUID id, @RequestBody WebsitePage body) { return update(WebsitePage.class, id, body, "GROWTH"); }
+    @DeleteMapping("/website-pages/{id}") public void deleteWebsitePage(@PathVariable UUID id) { delete(WebsitePage.class, id, "GROWTH"); }
+
+    @GetMapping("/coupons") public List<Coupon> coupons() { return list(Coupon.class); }
+    @PostMapping("/coupons") public Coupon createCoupon(@RequestBody Coupon body) { return create(body, "GROWTH"); }
+    @PutMapping("/coupons/{id}") public Coupon updateCoupon(@PathVariable UUID id, @RequestBody Coupon body) { return update(Coupon.class, id, body, "GROWTH"); }
+    @DeleteMapping("/coupons/{id}") public void deleteCoupon(@PathVariable UUID id) { delete(Coupon.class, id, "GROWTH"); }
+
+    @GetMapping("/landing-pages") public List<LandingPage> landingPages() { return list(LandingPage.class); }
+    @PostMapping("/landing-pages") public LandingPage createLandingPage(@RequestBody LandingPage body) { return create(body, "GROWTH"); }
+    @PutMapping("/landing-pages/{id}") public LandingPage updateLandingPage(@PathVariable UUID id, @RequestBody LandingPage body) { return update(LandingPage.class, id, body, "GROWTH"); }
+    @DeleteMapping("/landing-pages/{id}") public void deleteLandingPage(@PathVariable UUID id) { delete(LandingPage.class, id, "GROWTH"); }
+
+    @GetMapping("/campaigns") public List<Campaign> campaigns() { return list(Campaign.class); }
+    @PostMapping("/campaigns") public Campaign createCampaign(@RequestBody Campaign body) { return create(body, "GROWTH"); }
+    @PutMapping("/campaigns/{id}") public Campaign updateCampaign(@PathVariable UUID id, @RequestBody Campaign body) { return update(Campaign.class, id, body, "GROWTH"); }
+    @DeleteMapping("/campaigns/{id}") public void deleteCampaign(@PathVariable UUID id) { delete(Campaign.class, id, "GROWTH"); }
+
+    @GetMapping("/app-banners") public List<AppBanner> appBanners() { return list(AppBanner.class); }
+    @PostMapping("/app-banners") public AppBanner createAppBanner(@RequestBody AppBanner body) { return create(body, "GROWTH"); }
+    @PutMapping("/app-banners/{id}") public AppBanner updateAppBanner(@PathVariable UUID id, @RequestBody AppBanner body) { return update(AppBanner.class, id, body, "GROWTH"); }
+    @DeleteMapping("/app-banners/{id}") public void deleteAppBanner(@PathVariable UUID id) { delete(AppBanner.class, id, "GROWTH"); }
+
+    @GetMapping("/app-pushes") public List<AppPush> appPushes() { return list(AppPush.class); }
+    @PostMapping("/app-pushes") public AppPush createAppPush(@RequestBody AppPush body) { return create(body, "GROWTH"); }
+    @PutMapping("/app-pushes/{id}") public AppPush updateAppPush(@PathVariable UUID id, @RequestBody AppPush body) { return update(AppPush.class, id, body, "GROWTH"); }
+
+    @GetMapping("/free-materials") public List<FreeMaterial> freeMaterials() { return list(FreeMaterial.class); }
+    @PostMapping("/free-materials") public FreeMaterial createFreeMaterial(@RequestBody FreeMaterial body) { return create(body, "GROWTH"); }
+    @PutMapping("/free-materials/{id}") public FreeMaterial updateFreeMaterial(@PathVariable UUID id, @RequestBody FreeMaterial body) { return update(FreeMaterial.class, id, body, "GROWTH"); }
+    @DeleteMapping("/free-materials/{id}") public void deleteFreeMaterial(@PathVariable UUID id) { delete(FreeMaterial.class, id, "GROWTH"); }
+
+    @GetMapping("/chat-threads") public List<ChatThread> chatThreads() { return list(ChatThread.class); }
+    @PostMapping("/chat-threads") public ChatThread createChatThread(@RequestBody ChatThread body) { return create(body, "COMMS"); }
+    @PutMapping("/chat-threads/{id}") public ChatThread updateChatThread(@PathVariable UUID id, @RequestBody ChatThread body) { return update(ChatThread.class, id, body, "COMMS"); }
+
+    @GetMapping("/chat-messages") public List<ChatMessage> chatMessages() { return list(ChatMessage.class); }
+    @PostMapping("/chat-messages") public ChatMessage createChatMessage(@RequestBody ChatMessage body) { return create(body, "COMMS"); }
+
+    @GetMapping("/one-to-one-sessions") public List<OneToOneSession> oneToOneSessions() { return list(OneToOneSession.class); }
+    @PostMapping("/one-to-one-sessions") public OneToOneSession createOneToOne(@RequestBody OneToOneSession body) { return create(body, "GROWTH"); }
+    @PutMapping("/one-to-one-sessions/{id}") public OneToOneSession updateOneToOne(@PathVariable UUID id, @RequestBody OneToOneSession body) { return update(OneToOneSession.class, id, body, "GROWTH"); }
+
+    @GetMapping("/backend-additions") public List<BackendAddition> backendAdditions() { return list(BackendAddition.class); }
+    @PostMapping("/backend-additions") public BackendAddition createBackendAddition(@RequestBody BackendAddition body) { return create(body, "GROWTH"); }
+
+    @GetMapping("/integration-connections") public List<IntegrationConnection> integrationConnections() { return list(IntegrationConnection.class); }
+    @PostMapping("/integration-connections") public IntegrationConnection createIntegrationConnection(@RequestBody IntegrationConnection body) { return create(body, "GROWTH"); }
+    @PutMapping("/integration-connections/{id}") public IntegrationConnection updateIntegrationConnection(@PathVariable UUID id, @RequestBody IntegrationConnection body) { return update(IntegrationConnection.class, id, body, "GROWTH"); }
 
     @GetMapping("/staff")
     public List<Map<String, Object>> staff() {

@@ -1,4 +1,14 @@
 export type NavItem = { to: string; label: string };
+export type NavGroup = { label: string; items: NavItem[] };
+export type NavEntry = NavItem | NavGroup;
+
+export function isNavGroup(entry: NavEntry): entry is NavGroup {
+  return "items" in entry;
+}
+
+export function flattenNav(entries: NavEntry[]): NavItem[] {
+  return entries.flatMap((entry) => (isNavGroup(entry) ? entry.items : [entry]));
+}
 
 export function portalTitle(role?: string) {
   switch (role) {
@@ -17,20 +27,21 @@ export function portalTitle(role?: string) {
     case "ACCOUNTANT":
       return { name: "Accounts portal", blurb: "Fees, receipts, refunds" };
     default:
-      return { name: "Institute OS", blurb: "Run the institute" };
+      return { name: "Institute OS", blurb: "Grow and run the institute" };
   }
 }
 
-export function navForRole(role?: string): NavItem[] {
+export function navForRole(role?: string): NavEntry[] {
   switch (role) {
     case "STUDENT":
       return [
         { to: "/", label: "My home" },
-        { to: "/lms", label: "My LMS" },
+        { to: "/courses", label: "My courses" },
         { to: "/fees", label: "My fees" },
         { to: "/placement", label: "Jobs" },
         { to: "/readiness", label: "Readiness" },
         { to: "/comms", label: "Notices" },
+        { to: "/chats", label: "Chats" },
       ];
     case "PARENT":
       return [
@@ -42,9 +53,10 @@ export function navForRole(role?: string): NavItem[] {
     case "FACULTY":
       return [
         { to: "/", label: "Home" },
-        { to: "/lms", label: "LMS" },
+        { to: "/courses", label: "Courses" },
         { to: "/students", label: "My students" },
         { to: "/comms", label: "Notices" },
+        { to: "/chats", label: "Chats" },
       ];
     case "PLACEMENT_HEAD":
       return [
@@ -63,8 +75,10 @@ export function navForRole(role?: string): NavItem[] {
       return [
         { to: "/", label: "Home" },
         { to: "/crm", label: "Leads" },
+        { to: "/landing-pages", label: "Landing pages" },
         { to: "/students", label: "Students" },
         { to: "/comms", label: "Notices" },
+        { to: "/campaigns", label: "Campaigns" },
       ];
     case "ACCOUNTANT":
       return [
@@ -74,20 +88,92 @@ export function navForRole(role?: string): NavItem[] {
       ];
     default:
       return [
-        { to: "/", label: "Home" },
-        { to: "/institute", label: "Institute" },
+        { to: "/", label: "Dashboard" },
+        {
+          label: "Grow",
+          items: [
+            { to: "/website", label: "Website" },
+            { to: "/your-app", label: "Your App" },
+            { to: "/landing-pages", label: "Landing Pages" },
+            { to: "/campaigns", label: "Campaigns" },
+          ],
+        },
+        {
+          label: "Courses",
+          items: [
+            { to: "/courses", label: "Catalog" },
+            { to: "/content-hub", label: "Tests & free content" },
+          ],
+        },
+        {
+          label: "People",
+          items: [
+            { to: "/people/students", label: "Students" },
+            { to: "/people/staff", label: "Staff" },
+            { to: "/people/alumni", label: "Alumni" },
+          ],
+        },
         { to: "/crm", label: "Admissions" },
-        { to: "/students", label: "Students" },
-        { to: "/lms", label: "LMS" },
-        { to: "/fees", label: "Fees" },
-        { to: "/placement", label: "Placement" },
-        { to: "/comms", label: "Communication" },
-        { to: "/analytics", label: "Analytics" },
+        {
+          label: "Money",
+          items: [
+            { to: "/fees", label: "Fees" },
+            { to: "/analytics", label: "Analytics" },
+          ],
+        },
+        {
+          label: "Careers",
+          items: [
+            { to: "/placement", label: "Placement" },
+            { to: "/readiness", label: "Readiness" },
+          ],
+        },
+        {
+          label: "Communicate",
+          items: [
+            { to: "/comms", label: "Notices" },
+            { to: "/chats", label: "Chats" },
+            { to: "/one-to-one", label: "1:1 Sessions" },
+          ],
+        },
+        {
+          label: "Settings",
+          items: [
+            { to: "/institute", label: "Institute" },
+            { to: "/integrations", label: "Integrations" },
+          ],
+        },
       ];
   }
 }
 
 export function canOpen(role: string | undefined, path: string) {
   if (path === "/") return true;
-  return navForRole(role).some((item) => item.to === path);
+  const nav = flattenNav(navForRole(role));
+  if (nav.some((item) => path === item.to || (item.to !== "/" && path.startsWith(item.to + "/")))) return true;
+  if (!role || role === "OWNER") {
+    const prefixes = [
+      "/website",
+      "/courses",
+      "/content-hub",
+      "/your-app",
+      "/landing-pages",
+      "/one-to-one",
+      "/chats",
+      "/campaigns",
+      "/people",
+      "/self-service",
+      "/integrations",
+      "/coupons",
+      "/backend-addition",
+      "/lms",
+      "/students",
+      "/alumni",
+    ];
+    return prefixes.some((p) => path === p || path.startsWith(p + "/"));
+  }
+  if (role === "STUDENT" || role === "FACULTY") {
+    return path === "/lms" || path.startsWith("/courses/");
+  }
+  return false;
 }

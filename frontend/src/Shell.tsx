@@ -1,13 +1,21 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "./auth";
 import { NiyamstackLogo } from "./brand/NiyamstackLogo";
-import { navForRole, portalTitle } from "./portals";
+import { flattenNav, isNavGroup, navForRole, portalTitle } from "./portals";
+
+function linkClass(isActive: boolean, nested = false) {
+  return `${nested ? "block rounded-lg px-3 py-1.5 text-[13px]" : "block rounded-lg px-3 py-2 text-sm"} ${
+    isActive ? "bg-white/15 text-white" : "text-slate-300 hover:bg-white/5"
+  }`;
+}
 
 export function Shell() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const nav = navForRole(user?.role);
   const portal = portalTitle(user?.role);
+  const mobileItems = flattenNav(nav);
 
   return (
     <div className="min-h-svh bg-mist">
@@ -23,19 +31,39 @@ export function Shell() {
           <p className="mt-5 text-xl font-bold">{portal.name}</p>
           <p className="mt-1 text-xs text-slate-300">{portal.blurb}</p>
         </div>
-        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-6">
-          {nav.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/"}
-              className={({ isActive }) =>
-                `block rounded-lg px-3 py-2 text-sm ${isActive ? "bg-white/15 text-white" : "text-slate-300 hover:bg-white/5"}`
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
+        <nav className="flex-1 space-y-3 overflow-y-auto px-3 pb-6">
+          {nav.map((entry) => {
+            if (!isNavGroup(entry)) {
+              return (
+                <NavLink
+                  key={entry.to}
+                  to={entry.to}
+                  end={entry.to === "/"}
+                  className={({ isActive }) => linkClass(isActive)}
+                >
+                  {entry.label}
+                </NavLink>
+              );
+            }
+            return (
+              <div key={entry.label}>
+                <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{entry.label}</p>
+                <div className="space-y-0.5">
+                  {entry.items.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      className={({ isActive }) =>
+                        linkClass(isActive || (item.to !== "/" && location.pathname.startsWith(item.to)))
+                      }
+                    >
+                      {item.label}
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </nav>
       </aside>
       <div className="lg:pl-60">
@@ -63,7 +91,7 @@ export function Shell() {
             </button>
           </div>
           <nav className="flex flex-wrap gap-1 border-t border-line px-3 py-2 lg:hidden">
-            {nav.map((item) => (
+            {mobileItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}

@@ -30,6 +30,10 @@ public final class Model {
         private String logoUrl;
         private String brandPrimary;
         private String brandSecondary;
+        private String websiteUrl;
+        private String appShareUrl;
+        private String customDomain;
+        private boolean websitePublished;
         private String settingsJson;
         private String paymentStatus;
         private String billingCycle;
@@ -94,6 +98,24 @@ public final class Model {
     public static class Course extends TenantEntity {
         private String code;
         private String name;
+        @Column(columnDefinition = "TEXT")
+        private String description;
+        private String thumbnailUrl;
+        private String category;
+        private String subCategory;
+        private String courseType = "PAID";
+        private String validityType = "SINGLE";
+        private Integer validityValue;
+        private String validityUnit = "MONTH";
+        @Column(precision = 12, scale = 2)
+        private BigDecimal discount = BigDecimal.ZERO;
+        private boolean published = true;
+        private boolean featured = false;
+        private boolean allowOffline;
+        private boolean allowTrial;
+        private boolean allowPreview;
+        private boolean allowLive = true;
+        private Integer likesCount = 0;
         private Integer durationMonths;
         private BigDecimal fees;
         private String eligibility;
@@ -216,6 +238,14 @@ public final class Model {
         private String phone;
         private String status;
         private LocalDate enrollmentDate;
+        @Column(columnDefinition = "TEXT")
+        private String about;
+        private String rollNumber;
+        private LocalDate dateOfJoining;
+        private LocalDate dateOfBirth;
+        private String instituteName;
+        private String permanentAddress;
+        private String photoUrl;
     }
 
     @Entity(name = "StudentDocument") @Table(name = "student_documents") @Getter @Setter
@@ -652,6 +682,142 @@ public final class Model {
         private String name;
         @Column(length = 1000)
         private String capabilitiesCsv;
+    }
+
+    @Entity(name = "WebsitePage") @Table(name = "website_pages") @Getter @Setter
+    public static class WebsitePage extends TenantEntity {
+        private String title;
+        private String slug;
+        private String pageType = "CUSTOM";
+        @Column(columnDefinition = "TEXT")
+        private String body;
+        private String metaTitle;
+        private String metaDescription;
+        private String previewImageUrl;
+        private boolean hidden;
+        private Integer sortOrder = 0;
+    }
+
+    @Entity(name = "Coupon") @Table(name = "coupons") @Getter @Setter
+    public static class Coupon extends TenantEntity {
+        private String code;
+        private String name;
+        private String discountType = "PERCENT";
+        @Column(precision = 12, scale = 2)
+        private BigDecimal discountValue;
+        private UUID courseId;
+        private Integer maxRedemptions;
+        private Integer redeemedCount = 0;
+        private Instant startsAt;
+        private Instant endsAt;
+        private boolean live = true;
+    }
+
+    @Entity(name = "LandingPage") @Table(name = "landing_pages") @Getter @Setter
+    public static class LandingPage extends TenantEntity {
+        private String name;
+        private String pageKind;
+        private String slug;
+        private String headline;
+        @Column(columnDefinition = "TEXT")
+        private String body;
+        private String ctaLabel;
+        private UUID courseId;
+        private boolean published;
+        private Integer viewsCount = 0;
+        private Integer leadsCount = 0;
+    }
+
+    @Entity(name = "Campaign") @Table(name = "campaigns") @Getter @Setter
+    public static class Campaign extends TenantEntity {
+        private String name;
+        private String campaignType;
+        private String triggerEvent;
+        private String channel = "PUSH";
+        private String audience = "ALL_USERS";
+        private String title;
+        @Column(columnDefinition = "TEXT")
+        private String body;
+        private String status = "DRAFT";
+        private Instant scheduledAt;
+        private Integer sentCount = 0;
+    }
+
+    @Entity(name = "AppBanner") @Table(name = "app_banners") @Getter @Setter
+    public static class AppBanner extends TenantEntity {
+        private String title;
+        private String imageUrl;
+        private String linkUrl;
+        private boolean live;
+        private Integer sortOrder = 0;
+    }
+
+    @Entity(name = "AppPush") @Table(name = "app_pushes") @Getter @Setter
+    public static class AppPush extends TenantEntity {
+        private String title;
+        @Column(columnDefinition = "TEXT")
+        private String body;
+        private String audience = "ALL_USERS";
+        private String status = "DRAFT";
+        private Instant scheduledAt;
+        private Instant sentAt;
+    }
+
+    @Entity(name = "FreeMaterial") @Table(name = "free_materials") @Getter @Setter
+    public static class FreeMaterial extends TenantEntity {
+        private String title;
+        private String materialType;
+        private String url;
+        private String fileName;
+        private boolean published = true;
+    }
+
+    @Entity(name = "ChatThread") @Table(name = "chat_threads") @Getter @Setter
+    public static class ChatThread extends TenantEntity {
+        private UUID studentId;
+        private String studentName;
+        private String subject;
+        private String status = "OPEN";
+        private Instant lastMessageAt;
+    }
+
+    @Entity(name = "ChatMessage") @Table(name = "chat_messages") @Getter @Setter
+    public static class ChatMessage extends TenantEntity {
+        private UUID threadId;
+        private String senderRole;
+        private String senderName;
+        @Column(columnDefinition = "TEXT")
+        private String body;
+    }
+
+    @Entity(name = "OneToOneSession") @Table(name = "one_to_one_sessions") @Getter @Setter
+    public static class OneToOneSession extends TenantEntity {
+        private String title;
+        private String mentorName;
+        private Integer durationMinutes = 30;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal price = BigDecimal.ZERO;
+        private String meetingUrl;
+        private String status = "OPEN";
+    }
+
+    @Entity(name = "BackendAddition") @Table(name = "backend_additions") @Getter @Setter
+    public static class BackendAddition extends TenantEntity {
+        private UUID courseId;
+        private UUID studentId;
+        private String studentName;
+        private String studentPhone;
+        private String studentEmail;
+        private String note;
+        private String status = "ADDED";
+    }
+
+    @Entity(name = "IntegrationConnection") @Table(name = "integration_connections") @Getter @Setter
+    public static class IntegrationConnection extends TenantEntity {
+        private String provider;
+        private String status = "NOT_CONNECTED";
+        @Column(columnDefinition = "TEXT")
+        private String configJson;
     }
 
     @Entity(name = "PlatformUserRole") @Table(name = "platform_user_roles") @Getter @Setter
