@@ -18,6 +18,7 @@ type Page = {
 
 type Org = {
   name: string;
+  slug?: string;
   websiteUrl?: string;
   customDomain?: string;
   websitePublished?: boolean;
@@ -128,7 +129,7 @@ export function WebsitePage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-navy">Website</h1>
-          <p className="text-sm text-slate-500">Manage pages, SEO, and domain — Classplus DIY style.</p>
+          <p className="text-sm text-slate-500">Student website: published courses, purchase, login, and study.</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -175,22 +176,22 @@ export function WebsitePage() {
               ])}
             />
             <div className="mt-4 flex flex-wrap gap-2">
-              <a
+              <Link
                 className="rounded-full border border-line px-4 py-2 text-sm"
-                href={org.data?.websiteUrl || "#"}
+                to={`/s/${org.data?.slug || "aarohan"}`}
                 target="_blank"
                 rel="noreferrer"
               >
-                Preview website
-              </a>
+                Open student website
+              </Link>
               <PrimaryButton
                 onClick={async () => {
                   if (!org.data) return;
-                  await updateRecord("/api/organization", { ...org.data, websitePublished: true });
+                  await updateRecord("/api/organization", { ...org.data, websitePublished: true, websiteUrl: `/s/${org.data.slug || "aarohan"}` });
                   org.reload();
                 }}
               >
-                Publish changes
+                Publish website
               </PrimaryButton>
             </div>
           </Card>
@@ -214,13 +215,15 @@ export function WebsitePage() {
         <div className="grid gap-4 lg:grid-cols-2">
           <Card title="Share your website">
             <p className="mb-3 text-sm text-slate-500">Students can download and access your courses from this link.</p>
-            <p className="text-sm font-medium">{org.data?.websiteUrl || "No public URL set yet"}</p>
+            <p className="text-sm font-medium">
+              {org.data?.slug ? `${window.location.origin}/s/${org.data.slug}` : "Publish to get a student website URL"}
+            </p>
             <p className="mt-2 text-xs text-slate-500">
               {org.data?.websitePublished ? "Website marked live" : "Website not published yet"}
             </p>
             <div className="mt-4">
-              <Link to="/courses" className="text-sm text-brand hover:underline">
-                View courses storefront →
+              <Link to={`/s/${org.data?.slug || "aarohan"}`} className="text-sm text-brand hover:underline" target="_blank">
+                Open student website →
               </Link>
             </div>
           </Card>

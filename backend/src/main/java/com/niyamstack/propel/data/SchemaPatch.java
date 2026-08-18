@@ -71,6 +71,22 @@ public class SchemaPatch {
                 "ALTER TABLE students ADD COLUMN IF NOT EXISTS institute_name VARCHAR(200)",
                 "ALTER TABLE students ADD COLUMN IF NOT EXISTS permanent_address VARCHAR(500)",
                 "ALTER TABLE students ADD COLUMN IF NOT EXISTS photo_url VARCHAR(500)",
+                "ALTER TABLE assignments ADD COLUMN IF NOT EXISTS course_id UUID",
+                "ALTER TABLE assessments ADD COLUMN IF NOT EXISTS course_id UUID",
+                """
+                CREATE TABLE IF NOT EXISTS course_enrollments (
+                    id UUID PRIMARY KEY,
+                    organization_id UUID NOT NULL,
+                    student_id UUID NOT NULL,
+                    course_id UUID NOT NULL,
+                    invoice_id UUID,
+                    status VARCHAR(40) NOT NULL DEFAULT 'ACTIVE',
+                    source VARCHAR(40) NOT NULL DEFAULT 'WEBSITE',
+                    purchased_at TIMESTAMP WITH TIME ZONE,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+                )
+                """,
                 "UPDATE organizations SET payment_status = 'UNPAID' WHERE payment_status IS NULL",
                 "UPDATE organizations SET payment_status = 'PAID' WHERE access_status = 'ACTIVE' AND payment_status = 'UNPAID'",
                 """

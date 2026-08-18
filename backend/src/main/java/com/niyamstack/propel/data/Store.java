@@ -121,6 +121,21 @@ public class Store {
         return users.isEmpty() ? null : users.getFirst();
     }
 
+    public Organization findOrgBySlug(String slug) {
+        if (slug == null || slug.isBlank()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Institute not found");
+        }
+        List<Organization> rows = em.createQuery(
+                        "select o from Organization o where lower(o.slug) = lower(:s)", Organization.class)
+                .setParameter("s", slug.trim())
+                .setMaxResults(1)
+                .getResultList();
+        if (rows.isEmpty()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Institute not found");
+        }
+        return rows.getFirst();
+    }
+
     public boolean slugTaken(String slug) {
         try {
             Long n = em.createQuery("select count(o) from Organization o where o.slug = :s", Long.class)

@@ -33,11 +33,20 @@ import { CampaignsPage } from "./pages/CampaignsPage";
 import { PeoplePage } from "./pages/PeoplePage";
 import { SelfServicePage } from "./pages/SelfServicePage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
+import { StorefrontAppPage, StorefrontCatalogPage, StorefrontCoursePage, StorefrontLayout, StorefrontLearnPage, StorefrontLoginPage, StorefrontStudyPage } from "./pages/Storefront";
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
   if (!token) return <Navigate to="/login" replace />;
   return children;
+}
+
+function HomePage() {
+  const { user } = useAuth();
+  if (user?.role === "STUDENT" && user.orgSlug) {
+    return <Navigate to={`/s/${user.orgSlug}/learn`} replace />;
+  }
+  return <DashboardPage />;
 }
 
 function PlatformGuard({ children }: { children: React.ReactNode }) {
@@ -61,6 +70,14 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/forgot" element={<ForgotPage />} />
+      <Route path="/s/:slug" element={<StorefrontLayout />}>
+        <Route index element={<StorefrontCatalogPage />} />
+        <Route path="courses/:courseId" element={<StorefrontCoursePage />} />
+        <Route path="login" element={<StorefrontLoginPage />} />
+        <Route path="app" element={<StorefrontAppPage />} />
+        <Route path="learn" element={<StorefrontLearnPage />} />
+        <Route path="learn/:courseId" element={<StorefrontStudyPage />} />
+      </Route>
       <Route path="/platform/login" element={<PlatformLoginPage />} />
       <Route
         path="/platform"
@@ -85,7 +102,7 @@ export default function App() {
         }
       >
         <Route element={<RoleGate />}>
-          <Route index element={<DashboardPage />} />
+          <Route index element={<HomePage />} />
           <Route path="website" element={<WebsitePage />} />
           <Route path="courses" element={<CoursesCommercePage />} />
           <Route path="courses/:courseId" element={<CourseWorkspacePage />} />

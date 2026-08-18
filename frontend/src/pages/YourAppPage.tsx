@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createRecord, updateRecord } from "../ops";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
 
-type Org = { name: string; appShareUrl?: string; logoUrl?: string; brandPrimary?: string };
+type Org = { name: string; slug?: string; appShareUrl?: string; logoUrl?: string; brandPrimary?: string };
 type Banner = { id: string; title: string; imageUrl?: string; linkUrl?: string; live: boolean; sortOrder?: number };
 type Push = { id: string; title: string; body?: string; audience: string; status: string; scheduledAt?: string };
 
@@ -104,8 +104,8 @@ export function YourAppPage() {
             </FormGrid>
             <div className="mt-3 flex flex-wrap gap-2">
               <PrimaryButton onClick={saveApp}>Save</PrimaryButton>
-              <a className="rounded-full border border-line px-4 py-2 text-sm" href={org.data?.appShareUrl || "#"} target="_blank" rel="noreferrer">
-                Share
+              <a className="rounded-full border border-line px-4 py-2 text-sm" href={org.data?.appShareUrl || `/s/${org.data?.slug || "aarohan"}/app`}>
+                Open student app
               </a>
             </div>
           </Card>

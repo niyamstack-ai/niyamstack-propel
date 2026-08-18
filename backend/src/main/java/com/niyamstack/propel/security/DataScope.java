@@ -5,7 +5,9 @@ import com.niyamstack.propel.domain.Model.*;
 import com.niyamstack.propel.domain.TenantEntity;
 import org.springframework.stereotype.Component;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -96,6 +98,12 @@ public class DataScope {
         if (type == Student.class) {
             return me.getId().equals(e.getId());
         }
+        if (e instanceof CourseEnrollment en) {
+            return me.getId().equals(en.getStudentId());
+        }
+        if (e instanceof Course c) {
+            return enrolledCourseIds(me).contains(c.getId());
+        }
         UUID sid = studentIdOf(e);
         if (sid != null) {
             return me.getId().equals(sid);
@@ -112,12 +120,21 @@ public class DataScope {
             return me.getId().equals(inv.getStudentId());
         }
         if (e instanceof ContentItem c) {
+            if (c.getCourseId() != null && enrolledCourseIds(me).contains(c.getCourseId())) {
+                return true;
+            }
             return c.getBatchId() == null || c.getBatchId().equals(me.getBatchId());
         }
         if (e instanceof Assignment a) {
+            if (a.getCourseId() != null && enrolledCourseIds(me).contains(a.getCourseId())) {
+                return true;
+            }
             return a.getBatchId() == null || a.getBatchId().equals(me.getBatchId());
         }
         if (e instanceof Assessment a) {
+            if (a.getCourseId() != null && enrolledCourseIds(me).contains(a.getCourseId())) {
+                return true;
+            }
             return a.getBatchId() == null || a.getBatchId().equals(me.getBatchId());
         }
         if (e instanceof LiveSession s) {
@@ -133,7 +150,7 @@ public class DataScope {
             return a.getBatchId() == null || a.getBatchId().equals(me.getBatchId());
         }
         if (e instanceof Drive || e instanceof Notification || e instanceof MessageTemplate || e instanceof Classroom
-                || e instanceof Course || e instanceof Batch || e instanceof AcademicYear || e instanceof Term
+                || e instanceof Batch || e instanceof AcademicYear || e instanceof Term
                 || e instanceof Center || e instanceof Question) {
             return true;
         }
@@ -163,7 +180,21 @@ public class DataScope {
         if (e instanceof StudentDocument d) return d.getStudentId();
         if (e instanceof Certificate c) return c.getStudentId();
         if (e instanceof Internship i) return i.getStudentId();
+        if (e instanceof CourseEnrollment en) return en.getStudentId();
         return null;
+    }
+
+    private Set<UUID> enrolledCourseIds(Student me) {
+        Set<UUID> ids = new HashSet<>();
+        if (me.getCourseId() != null) {
+            ids.add(me.getCourseId());
+        }
+        store.listBy(CourseEnrollment.class, me.getOrganizationId(), "studentId", me.getId()).stream()
+                .filter(e -> !"CANCELLED".equals(e.getStatus()))
+                .map(CourseEnrollment::getCourseId)
+                .filter(Objects::nonNull)
+                .forEach(ids::add);
+        return ids;
     }
 
     private static UUID centerOf(TenantEntity e) {

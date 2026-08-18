@@ -20,7 +20,10 @@ export function ForgotPage() {
 }
 
 function AuthGate({ children }: { children: ReactNode }) {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  if (token && user?.role === "STUDENT" && user.orgSlug) {
+    return <Navigate to={`/s/${user.orgSlug}/learn`} replace />;
+  }
   if (token) return <Navigate to="/" replace />;
   return <AuthShell>{children}</AuthShell>;
 }

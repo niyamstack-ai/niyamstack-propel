@@ -9,6 +9,7 @@ import com.niyamstack.propel.placement.PlacementService;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.Roles;
+import com.niyamstack.propel.storefront.StorefrontService;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -28,13 +29,22 @@ public class ActionsController {
     private final PlacementService placement;
     private final IntegrationStatusService integrations;
 
+    private final StorefrontService storefront;
+
     public ActionsController(Store store, FeeService fees, LmsService lms, PlacementService placement,
-                             IntegrationStatusService integrations) {
+                             IntegrationStatusService integrations, StorefrontService storefront) {
         this.store = store;
         this.fees = fees;
         this.lms = lms;
         this.placement = placement;
         this.integrations = integrations;
+        this.storefront = storefront;
+    }
+
+    @GetMapping("/my-courses")
+    public List<Map<String, Object>> myCourses() {
+        Access.requireAny(Auth.current(), Roles.STUDENT, Roles.OWNER, Roles.FACULTY);
+        return storefront.myCourses(Auth.current().organizationId(), Auth.current().userId());
     }
 
     @GetMapping("/integrations")

@@ -6,13 +6,12 @@ import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.AppUser;
 import com.niyamstack.propel.domain.Model.Organization;
 import com.niyamstack.propel.security.Auth;
-import com.niyamstack.propel.security.JwtService;
 import com.niyamstack.propel.security.OtpService;
 import com.niyamstack.propel.security.PasswordPolicy;
 import com.niyamstack.propel.security.Phones;
-import com.niyamstack.propel.security.PropelUser;
 import com.niyamstack.propel.security.ResetTokenService;
 import com.niyamstack.propel.security.Roles;
+import com.niyamstack.propel.security.SessionService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -22,7 +21,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -33,26 +31,26 @@ public class AuthController {
     private static final int MAX_FAILURES = 8;
     private final Store store;
     private final PasswordEncoder encoder;
-    private final JwtService jwt;
     private final AuditService audit;
     private final OtpService otp;
     private final ResetTokenService resets;
+    private final SessionService sessions;
     private final ConcurrentHashMap<String, Integer> ipFailures = new ConcurrentHashMap<>();
 
     public AuthController(
             Store store,
             PasswordEncoder encoder,
-            JwtService jwt,
             AuditService audit,
             OtpService otp,
-            ResetTokenService resets
+            ResetTokenService resets,
+            SessionService sessions
     ) {
         this.store = store;
         this.encoder = encoder;
-        this.jwt = jwt;
         this.audit = audit;
         this.otp = otp;
         this.resets = resets;
+        this.sessions = sessions;
     }
 
     public record LoginRequest(
@@ -94,7 +92,7 @@ public class AuthController {
         }
         clearLock(user, ip);
         audit.log("LOGIN", "AppUser", user.getId(), user.getEmail());
-        return session(user);
+        return sessions.issue(user);
     }
 
     @PostMapping("/otp/request")
@@ -113,7 +111,7 @@ public class AuthController {
         otp.verify(user.getPhone(), OtpService.LOGIN, body.otp());
         clearLock(user, "otp");
         audit.log("LOGIN_OTP", "AppUser", user.getId(), user.getPhone());
-        return session(user);
+        return sessions.issue(user);
     }
 
     @PostMapping("/signup")
@@ -223,39 +221,6 @@ public class AuthController {
         store.save(user);
         audit.log("PASSWORD_CHANGE", "AppUser", user.getId(), null);
         return Map.of("status", "updated");
-    }
-
-    private Map<String, Object> session(AppUser user) {
-        String tier = "STARTER";
-        String access = "ACTIVE";
-        if (user.getOrganizationId() != null) {
-            Organization org = store.get(Organization.class, user.getOrganizationId());
-            if (org.getPackageTier() != null) {
-                tier = org.getPackageTier();
-            }
-            if (org.getAccessStatus() != null && !org.getAccessStatus().isBlank()) {
-                access = org.getAccessStatus();
-            }
-        }
-        PropelUser principal = new PropelUser(
-                user.getId(),
-                user.getOrganizationId(),
-                user.getCenterId(),
-                user.getEmail(),
-                user.getFullName(),
-                user.getRole(),
-                tier);
-        Map<String, Object> profile = new LinkedHashMap<>();
-        profile.put("id", user.getId());
-        profile.put("name", user.getFullName());
-        profile.put("email", user.getEmail());
-        profile.put("phone", user.getPhone() == null ? "" : user.getPhone());
-        profile.put("role", user.getRole());
-        profile.put("organizationId", user.getOrganizationId());
-        profile.put("centerId", user.getCenterId() == null ? "" : user.getCenterId());
-        profile.put("packageTier", tier);
-        profile.put("accessStatus", access);
-        return Map.of("token", jwt.issue(principal), "user", profile);
     }
 
     private boolean passwordOk(AppUser user, String password, String ip, String email) {

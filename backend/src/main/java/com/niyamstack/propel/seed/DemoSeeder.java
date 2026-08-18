@@ -55,6 +55,8 @@ public class DemoSeeder implements CommandLineRunner {
         org.setApprovedAt(Instant.now());
         org.setBrandPrimary("#0078f0");
         org.setBrandSecondary("#071a33");
+        org.setWebsitePublished(true);
+        org.setWebsiteUrl("/s/aarohan");
         org = store.save(org);
         UUID oid = org.getId();
 
@@ -169,6 +171,9 @@ public class DemoSeeder implements CommandLineRunner {
         Student s1 = student(oid, pune.getId(), java.getId(), jfs.getId(), studentUser.getId(), "STU-1001", "Ishaan Patel");
         Student s2 = student(oid, pune.getId(), java.getId(), jfs.getId(), null, "STU-1002", "Riya Sen");
         Student s3 = student(oid, hyd.getId(), da.getId(), dab.getId(), null, "STU-2001", "Aditya Menon");
+        enroll(oid, s1.getId(), java.getId(), "BATCH");
+        enroll(oid, s2.getId(), java.getId(), "BATCH");
+        enroll(oid, s3.getId(), da.getId(), "BATCH");
 
         StudentDocument doc = new StudentDocument();
         doc.setOrganizationId(oid);
@@ -252,6 +257,7 @@ public class DemoSeeder implements CommandLineRunner {
         Assignment asg = new Assignment();
         asg.setOrganizationId(oid);
         asg.setBatchId(jfs.getId());
+        asg.setCourseId(java.getId());
         asg.setTitle("Build a student API");
         asg.setInstructions("CRUD + JWT + PostgreSQL.");
         asg.setDueAt(Instant.now().plusSeconds(86400 * 5));
@@ -269,6 +275,7 @@ public class DemoSeeder implements CommandLineRunner {
         Assessment exam = new Assessment();
         exam.setOrganizationId(oid);
         exam.setBatchId(jfs.getId());
+        exam.setCourseId(java.getId());
         exam.setTitle("Java mid-term");
         exam.setKind("MCQ");
         exam.setDurationMinutes(45);
@@ -569,7 +576,25 @@ public class DemoSeeder implements CommandLineRunner {
             org.setMaxStudents(500);
             org.setMaxCenters(5);
         }
+        org.setWebsitePublished(true);
+        if (org.getWebsiteUrl() == null || org.getWebsiteUrl().isBlank()) {
+            org.setWebsiteUrl("/s/aarohan");
+        }
         store.save(org);
+        for (Course course : store.list(Course.class, org.getId())) {
+            if (!course.isPublished()) {
+                course.setPublished(true);
+                course.setActive(true);
+                store.save(course);
+            }
+        }
+        if (store.list(CourseEnrollment.class, org.getId()).isEmpty()) {
+            for (Student student : store.list(Student.class, org.getId())) {
+                if (student.getCourseId() != null) {
+                    enroll(org.getId(), student.getId(), student.getCourseId(), "BATCH");
+                }
+            }
+        }
         phone("owner@aarohan.demo", "9876500001");
         phone("student@aarohan.demo", "9876500002");
         phone("faculty@aarohan.demo", "9876500003");
@@ -596,12 +621,26 @@ public class DemoSeeder implements CommandLineRunner {
         c.setOrganizationId(oid);
         c.setCode(code);
         c.setName(name);
+        c.setDescription(name + " — live classes, recordings, and placement support.");
+        c.setCategory("Career");
         c.setDurationMonths(months);
         c.setFees(fees);
+        c.setPublished(true);
+        c.setActive(true);
         c.setEligibility("Any graduate / final year");
         c.setOutcomes("Job-ready in " + name);
-        c.setActive(true);
         return store.save(c);
+    }
+
+    private void enroll(UUID oid, UUID studentId, UUID courseId, String source) {
+        CourseEnrollment row = new CourseEnrollment();
+        row.setOrganizationId(oid);
+        row.setStudentId(studentId);
+        row.setCourseId(courseId);
+        row.setStatus("ACTIVE");
+        row.setSource(source);
+        row.setPurchasedAt(Instant.now());
+        store.save(row);
     }
 
     private Batch batch(UUID oid, UUID centerId, UUID courseId, UUID yearId, UUID facultyId, String name) {

@@ -10,6 +10,8 @@ export type SessionUser = {
   organizationId: string;
   packageTier: string;
   accessStatus?: string;
+  orgSlug?: string;
+  orgName?: string;
 };
 
 type SessionResponse = { token: string; user: SessionUser };

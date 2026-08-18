@@ -248,6 +248,16 @@ public final class Model {
         private String photoUrl;
     }
 
+    @Entity(name = "CourseEnrollment") @Table(name = "course_enrollments") @Getter @Setter
+    public static class CourseEnrollment extends TenantEntity {
+        private UUID studentId;
+        private UUID courseId;
+        private UUID invoiceId;
+        private String status = "ACTIVE";
+        private String source = "WEBSITE";
+        private Instant purchasedAt;
+    }
+
     @Entity(name = "StudentDocument") @Table(name = "student_documents") @Getter @Setter
     public static class StudentDocument extends TenantEntity {
         private UUID studentId;
@@ -320,6 +330,7 @@ public final class Model {
     @Entity(name = "Assignment") @Table(name = "assignments") @Getter @Setter
     public static class Assignment extends TenantEntity {
         private UUID batchId;
+        private UUID courseId;
         private String title;
         private String instructions;
         private Instant dueAt;
@@ -342,6 +353,7 @@ public final class Model {
     @Entity(name = "Assessment") @Table(name = "assessments") @Getter @Setter
     public static class Assessment extends TenantEntity {
         private UUID batchId;
+        private UUID courseId;
         private String title;
         private String kind;
         private Instant scheduledAt;

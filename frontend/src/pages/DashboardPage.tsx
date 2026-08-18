@@ -146,6 +146,7 @@ function PlacementHome({ recruiter }: { recruiter: boolean }) {
 }
 
 function OwnerHome() {
+  const { user } = useAuth();
   const dash = useApi<Dash & {
     coursesPublished?: number;
     landingPages?: number;
@@ -176,8 +177,8 @@ function OwnerHome() {
         <p className="text-sm text-slate-500">Grow with website, courses, and campaigns — run admissions, fees, and placement.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <HomeLink to="/website" title="Your Website" text="Manage pages, SEO, domain" />
-        <HomeLink to="/your-app" title="Your App" text="Share app, banners, push" />
+        <HomeLink to={user?.orgSlug ? `/s/${user.orgSlug}` : "/website"} title="Student website" text="Catalog, purchase, login, study" />
+        <HomeLink to={user?.orgSlug ? `/s/${user.orgSlug}/app` : "/your-app"} title="Student app" text="Same courses on Android" />
       </div>
       <div>
         <h2 className="mb-3 text-lg font-semibold text-navy">Our Offerings</h2>

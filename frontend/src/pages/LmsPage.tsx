@@ -277,7 +277,7 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
                   disabled={!asgTitle}
                   onClick={() =>
                     run(async () => {
-                      await createRecord("/api/assignments", { title: asgTitle, instructions: asgInst, batchId: batchId || null, published: true });
+                      await createRecord("/api/assignments", { title: asgTitle, instructions: asgInst, batchId: batchId || null, courseId: courseId || null, published: true });
                       setAsgTitle("");
                       setAsgInst("");
                       asg.reload();
@@ -302,6 +302,7 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
                         title: examTitle,
                         kind: "MCQ",
                         batchId: batchId || null,
+                        courseId: courseId || null,
                         published: true,
                         durationMinutes: 45,
                         totalMarks: 100,
