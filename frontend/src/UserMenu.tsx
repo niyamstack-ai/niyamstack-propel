@@ -37,7 +37,6 @@ export function UserMenu() {
         <svg viewBox="0 0 20 20" className="h-4 w-4 text-slate-400" aria-hidden>
           <path fill="currentColor" d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z" />
         </svg>
-        <span className="absolute right-1.5 top-1 h-2 w-2 rounded-full bg-red-500" />
       </button>
       {open && (
         <div className="absolute right-0 z-30 mt-2 w-44 rounded-xl border border-line bg-white py-1 shadow-lg">

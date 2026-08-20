@@ -1,9 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { createRecord, updateRecord } from "../ops";
+import { createRecord, deleteRecord, updateRecord } from "../ops";
+import { fileSrc } from "../api";
 import { useAuth } from "../auth";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
 import { UserMenu } from "../UserMenu";
+import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, useApi } from "../ui";
+import { ShareLinkBar } from "../shareLink";
 
 export type Course = {
   id: string;
@@ -27,6 +29,8 @@ export type Course = {
   allowPreview?: boolean;
   allowLive?: boolean;
   active?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type Coupon = {
@@ -43,6 +47,7 @@ type Coupon = {
 type Addition = {
   id: string;
   courseId?: string;
+  studentId?: string;
   studentName?: string;
   studentPhone?: string;
   studentEmail?: string;
@@ -78,6 +83,21 @@ export function formatDuration(c: Course) {
   return `${n} ${word}`;
 }
 
+function formatFees(c: Course) {
+  if (c.courseType === "FREE" || Number(c.fees) === 0) return "Free";
+  return `₹${Number(c.fees).toLocaleString("en-IN")}`;
+}
+
+function createdByLine(role?: string) {
+  if (role === "STUDENT") return "Purchased by you";
+  if (role === "FACULTY") return "Created by: You (Faculty)";
+  return "Created by: You (Owner)";
+}
+
+function courseName(c: { name?: string }) {
+  return (c.name || "").trim() || "Untitled course";
+}
+
 export function CoursesCommercePage() {
   const { user } = useAuth();
   if (user?.role === "STUDENT") return <PurchasedCourses />;
@@ -92,20 +112,31 @@ function CourseCards({ subtitle, actionLabel }: { subtitle: string; actionLabel:
     const list = courses.data ?? [];
     if (!q.trim()) return list;
     const s = q.toLowerCase();
-    return list.filter((c) => c.name.toLowerCase().includes(s) || c.code?.toLowerCase().includes(s));
+    return list.filter((c) => courseName(c).toLowerCase().includes(s) || c.code?.toLowerCase().includes(s));
   }, [courses.data, q]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-[28px] font-bold leading-tight text-navy">Your Courses ({courses.data?.length ?? 0})</h1>
+          <h1 className="text-[28px] font-bold leading-tight text-navy">
+            Your Courses{courses.data ? ` (${courses.data.length})` : ""}
+          </h1>
           <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
         </div>
         <UserMenu />
       </div>
       <SearchBar value={q} onChange={setQ} />
-      <CourseGrid courses={filtered} empty="No courses yet." actionLabel={actionLabel} />
+      <ErrorText error={courses.error} />
+      {!courses.data && !courses.error ? (
+        <p className="text-sm text-slate-500">Loading…</p>
+      ) : (
+        <CourseGrid
+          courses={filtered}
+          empty={courses.error ? "Could not load courses." : q.trim() ? `No courses match “${q.trim()}”.` : "No courses yet."}
+          actionLabel={actionLabel}
+        />
+      )}
     </div>
   );
 }
@@ -130,8 +161,8 @@ function OwnerCourses() {
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("recent");
   const [filter, setFilter] = useState("all");
-  const [featuredOnly, setFeaturedOnly] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const filterWrap = useRef<HTMLDivElement>(null);
 
   const [couponCode, setCouponCode] = useState("");
   const [couponName, setCouponName] = useState("");
@@ -143,25 +174,75 @@ function OwnerCourses() {
   const [addStudent, setAddStudent] = useState("");
   const [addNote, setAddNote] = useState("");
 
+  const listTab = params.get("tab") === "unpublished" ? "unpublished" : "published";
+  const publishedCount = (courses.data ?? []).filter((c) => c.published !== false).length;
+  const unpublishedCount = (courses.data ?? []).filter((c) => c.published === false).length;
+  const helpOpen = params.get("view") === "help";
+  const loadingList = !courses.data && !courses.error;
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!filterWrap.current?.contains(e.target as Node)) setFilterOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
   const filtered = useMemo(() => {
     let list = [...(courses.data ?? [])];
+    if (listTab === "unpublished") list = list.filter((c) => c.published === false);
+    else list = list.filter((c) => c.published !== false);
     const s = q.trim().toLowerCase();
-    if (s) list = list.filter((c) => c.name.toLowerCase().includes(s) || c.code?.toLowerCase().includes(s));
-    if (featuredOnly || filter === "featured") list = list.filter((c) => c.featured);
-    if (filter === "published") list = list.filter((c) => c.published !== false);
-    if (filter === "unpublished") list = list.filter((c) => c.published === false);
+    if (s) list = list.filter((c) => courseName(c).toLowerCase().includes(s) || c.code?.toLowerCase().includes(s));
+    if (filter === "featured") list = list.filter((c) => c.featured);
     if (filter === "paid") list = list.filter((c) => (c.courseType || "PAID") !== "FREE");
     if (filter === "free") list = list.filter((c) => c.courseType === "FREE");
-    if (sort === "name") list.sort((a, b) => a.name.localeCompare(b.name));
+    if (sort === "name") list.sort((a, b) => courseName(a).localeCompare(courseName(b)));
     if (sort === "price-asc") list.sort((a, b) => Number(a.fees) - Number(b.fees));
     if (sort === "price-desc") list.sort((a, b) => Number(b.fees) - Number(a.fees));
+    if (sort === "recent") {
+      list.sort((a, b) => (b.createdAt || b.updatedAt || "").localeCompare(a.createdAt || a.updatedAt || ""));
+    }
     return list;
-  }, [courses.data, q, sort, filter, featuredOnly]);
+  }, [courses.data, q, sort, filter, listTab]);
+
+  function patchParams(mutate: (next: URLSearchParams) => void) {
+    const next = new URLSearchParams(params);
+    mutate(next);
+    setParams(next);
+  }
+
+  function setListTab(tab: "published" | "unpublished") {
+    patchParams((next) => {
+      next.delete("view");
+      if (tab === "unpublished") next.set("tab", "unpublished");
+      else next.delete("tab");
+    });
+  }
+
+  function emptyCopy() {
+    if (q.trim()) return `No courses match “${q.trim()}”.`;
+    if (filter === "free") return "No free courses in this tab.";
+    if (filter === "paid") return "No paid courses in this tab.";
+    if (filter === "featured") return "No featured courses in this tab.";
+    if (listTab === "unpublished") return "No unpublished courses. Unpublish a live course and it will move here.";
+    return "No published courses yet. Create a course and publish it.";
+  }
+
+  function courseLabel(id?: string) {
+    if (!id) return "All courses";
+    return courseName((courses.data ?? []).find((c) => c.id === id) || { name: "—" });
+  }
 
   async function togglePublish(c: Course) {
     try {
-      await updateRecord(`/api/courses/${c.id}`, { ...c, published: !c.published });
+      const willUnpublish = c.published !== false;
+      if (willUnpublish && !window.confirm(`Unpublish “${courseName(c)}”? Students will not see or buy it until you publish again.`)) {
+        return;
+      }
+      await updateRecord(`/api/courses/${c.id}`, { ...c, published: c.published === false });
       courses.reload();
+      setListTab(willUnpublish ? "unpublished" : "published");
     } catch (e) {
       setError((e as Error).message);
     }
@@ -178,18 +259,54 @@ function OwnerCourses() {
 
   async function saveCoupon() {
     setError(null);
+    const code = couponCode.trim();
+    if (!code) {
+      setError("Coupon code is required");
+      return;
+    }
+    if (!couponType) {
+      setError("Choose a discount type");
+      return;
+    }
+    const value = Number(couponValue);
+    if (!Number.isFinite(value) || value <= 0) {
+      setError("Discount value must be greater than 0");
+      return;
+    }
+    if (couponType === "PERCENT" && value > 100) {
+      setError("Percent discount must be between 1 and 100");
+      return;
+    }
+    if ((coupons.data ?? []).some((c) => c.code.toLowerCase() === code.toLowerCase())) {
+      setError("A coupon with this code already exists");
+      return;
+    }
     try {
       await createRecord("/api/coupons", {
-        code: couponCode,
-        name: couponName || couponCode,
+        code,
+        name: couponName.trim() || code,
         discountType: couponType,
-        discountValue: Number(couponValue),
+        discountValue: value,
         courseId: couponCourse || null,
         live: true,
         redeemedCount: 0,
       });
       setCouponCode("");
       setCouponName("");
+      setCouponValue("10");
+      setCouponType("PERCENT");
+      setCouponCourse("");
+      coupons.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function removeCoupon(id: string) {
+    if (!window.confirm("Delete this coupon?")) return;
+    setError(null);
+    try {
+      await deleteRecord(`/api/coupons/${id}`);
       coupons.reload();
     } catch (e) {
       setError((e as Error).message);
@@ -198,23 +315,42 @@ function OwnerCourses() {
 
   async function addStudentToCourse() {
     setError(null);
+    if (!addCourse || !addStudent) {
+      setError("Choose a course and a student");
+      return;
+    }
+    if ((additions.data ?? []).some((a) => a.courseId === addCourse && a.studentId === addStudent)) {
+      setError("This student is already added to that course");
+      return;
+    }
     try {
       const st = (students.data ?? []).find((s) => s.id === addStudent);
       await createRecord("/api/backend-additions", {
-        courseId: addCourse || null,
-        studentId: addStudent || null,
+        courseId: addCourse,
+        studentId: addStudent,
         studentName: st?.fullName,
         studentPhone: st?.phone,
         studentEmail: st?.email,
         note: addNote,
         status: "ADDED",
       });
-      if (st && addCourse) {
+      if (st) {
         await updateRecord(`/api/students/${st.id}`, { ...st, courseId: addCourse, status: "ENROLLED" });
       }
       setAddNote("");
       additions.reload();
       students.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function removeAddition(id: string) {
+    if (!window.confirm("Remove this student from the course list?")) return;
+    setError(null);
+    try {
+      await deleteRecord(`/api/backend-additions/${id}`);
+      additions.reload();
     } catch (e) {
       setError((e as Error).message);
     }
@@ -232,7 +368,7 @@ function OwnerCourses() {
           </div>
           <UserMenu />
         </div>
-        <ErrorText error={error} />
+        <ErrorText error={error || (view === "coupons" ? coupons.error : additions.error || students.error)} />
         {view === "coupons" && (
           <Card title="Manage coupons">
             <FormGrid>
@@ -252,18 +388,28 @@ function OwnerCourses() {
                 label="Course (optional)"
                 value={couponCourse}
                 onChange={setCouponCourse}
-                options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
+                options={(courses.data ?? []).map((c) => ({ value: c.id, label: courseName(c) }))}
               />
             </FormGrid>
             <div className="mt-3">
-              <PrimaryButton disabled={!couponCode} onClick={saveCoupon}>
+              <PrimaryButton disabled={!couponCode.trim()} onClick={saveCoupon}>
                 Create coupon
               </PrimaryButton>
             </div>
             <div className="mt-4">
               <Table
-                columns={["Code", "Type", "Value", "Live", "Redeemed"]}
-                rows={(coupons.data ?? []).map((c) => [c.code, c.discountType, String(c.discountValue), c.live ? "Live" : "Off", String(c.redeemedCount ?? 0)])}
+                columns={["Code", "Course", "Type", "Value", "Live", "Redeemed", ""]}
+                rows={(coupons.data ?? []).map((c) => [
+                  c.code,
+                  courseLabel(c.courseId),
+                  c.discountType,
+                  String(c.discountValue),
+                  c.live ? "Live" : "Off",
+                  String(c.redeemedCount ?? 0),
+                  <LinkButton key={c.id} onClick={() => removeCoupon(c.id)}>
+                    Delete
+                  </LinkButton>,
+                ])}
               />
             </div>
           </Card>
@@ -275,7 +421,7 @@ function OwnerCourses() {
                 label="Course"
                 value={addCourse}
                 onChange={setAddCourse}
-                options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
+                options={(courses.data ?? []).map((c) => ({ value: c.id, label: courseName(c) }))}
               />
               <Select
                 label="Student"
@@ -292,8 +438,17 @@ function OwnerCourses() {
             </div>
             <div className="mt-4">
               <Table
-                columns={["Student", "Phone", "Status", "Note"]}
-                rows={(additions.data ?? []).map((a) => [a.studentName || "—", a.studentPhone || "—", a.status, a.note || "—"])}
+                columns={["Student", "Course", "Phone", "Status", "Note", ""]}
+                rows={(additions.data ?? []).map((a) => [
+                  a.studentName || "—",
+                  courseLabel(a.courseId),
+                  a.studentPhone || "—",
+                  a.status,
+                  a.note || "—",
+                  <LinkButton key={a.id} onClick={() => removeAddition(a.id)}>
+                    Remove
+                  </LinkButton>,
+                ])}
               />
             </div>
           </Card>
@@ -306,24 +461,67 @@ function OwnerCourses() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-[28px] font-bold leading-tight text-navy">Your Courses ({courses.data?.length ?? 0})</h1>
+          <h1 className="text-[28px] font-bold leading-tight text-navy">
+            {loadingList
+              ? "Your Courses"
+              : listTab === "unpublished"
+                ? `Unpublished Courses (${unpublishedCount})`
+                : `Your Courses (${publishedCount})`}
+          </h1>
           <p className="mt-1 text-sm text-slate-500">
             Add/View courses of your brand{" "}
-            <button type="button" className="font-medium text-brand" onClick={() => setParams({ view: "help" })}>
+            <button
+              type="button"
+              className="font-medium text-brand"
+              onClick={() =>
+                patchParams((next) => {
+                  next.set("view", "help");
+                })
+              }
+            >
               Learn how →
             </button>
           </p>
-          {params.get("view") === "help" && (
+          {helpOpen && (
             <p className="mt-2 max-w-xl text-sm text-slate-500">
               Create a course, set price and validity, add videos or files, then publish. Students buy it on your website and study inside the course.
               {" "}
-              <button type="button" className="text-brand" onClick={() => setParams({})}>
+              <button
+                type="button"
+                className="text-brand"
+                onClick={() =>
+                  patchParams((next) => {
+                    next.delete("view");
+                  })
+                }
+              >
                 Dismiss
               </button>
             </p>
           )}
         </div>
         <UserMenu />
+      </div>
+
+      <div className="flex gap-1 border-b border-line">
+        <button
+          type="button"
+          className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
+            listTab === "published" ? "border-brand text-brand" : "border-transparent text-slate-500 hover:text-navy"
+          }`}
+          onClick={() => setListTab("published")}
+        >
+          Published ({loadingList ? "…" : publishedCount})
+        </button>
+        <button
+          type="button"
+          className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
+            listTab === "unpublished" ? "border-brand text-brand" : "border-transparent text-slate-500 hover:text-navy"
+          }`}
+          onClick={() => setListTab("unpublished")}
+        >
+          Unpublished ({loadingList ? "…" : unpublishedCount})
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -337,20 +535,20 @@ function OwnerCourses() {
             <option value="price-desc">Price: high to low</option>
           </select>
         </label>
-        <div className="relative">
+        <div className="relative" ref={filterWrap}>
           <button
             type="button"
-            className="inline-flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm"
+            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+              filter !== "all" && filter !== "featured" ? "border-brand bg-sky-50 text-brand" : "border-line bg-white"
+            }`}
             onClick={() => setFilterOpen((v) => !v)}
           >
-            <FunnelIcon /> Filter
+            <FunnelIcon /> Filter{filter !== "all" && filter !== "featured" ? `: ${filter}` : ""}
           </button>
           {filterOpen && (
             <div className="absolute right-0 z-20 mt-1 w-44 rounded-xl border border-line bg-white py-1 shadow-lg">
               {[
-                ["all", "All courses"],
-                ["published", "Published"],
-                ["unpublished", "Unpublished"],
+                ["all", "All in this tab"],
                 ["paid", "Paid"],
                 ["free", "Free"],
                 ["featured", "Featured"],
@@ -373,9 +571,9 @@ function OwnerCourses() {
         <button
           type="button"
           className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${
-            featuredOnly ? "border-brand bg-sky-50 text-brand" : "border-brand bg-white text-brand"
+            filter === "featured" ? "border-brand bg-sky-50 text-brand" : "border-brand bg-white text-brand"
           }`}
-          onClick={() => setFeaturedOnly((v) => !v)}
+          onClick={() => setFilter((v) => (v === "featured" ? "all" : "featured"))}
         >
           <StarIcon /> Featured
         </button>
@@ -388,14 +586,13 @@ function OwnerCourses() {
         </button>
       </div>
 
-      <ErrorText error={error} />
+      <ErrorText error={error || courses.error} />
 
-      <CourseGrid
-        courses={filtered}
-        empty="No courses yet. Create your first course."
-        onPublish={togglePublish}
-        onFeature={toggleFeatured}
-      />
+      {loadingList ? (
+        <p className="text-sm text-slate-500">Loading…</p>
+      ) : (
+        <CourseGrid courses={filtered} empty={courses.error ? "Could not load courses." : emptyCopy()} onPublish={togglePublish} onFeature={toggleFeatured} />
+      )}
 
       <p className="text-xs text-slate-400">
         <Link className="hover:text-brand" to="/courses?view=coupons">
@@ -418,7 +615,7 @@ function SearchBar({ value, onChange, className = "" }: { value: string; onChang
       </span>
       <input
         className="w-full rounded-lg border border-line bg-white py-2.5 pl-10 pr-3 text-sm outline-none focus:border-brand"
-        placeholder="Search by name"
+        placeholder="Search by name or code"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
@@ -460,15 +657,18 @@ function CourseCard({
   onPublish?: (c: Course) => void;
   onFeature?: (c: Course) => void;
 }) {
+  const { user } = useAuth();
   const duration = formatDuration(c);
-  const price = c.courseType === "FREE" || Number(c.fees) === 0 ? "Free" : `₹${Number(c.fees)}`;
+  const price = formatFees(c);
+  const title = courseName(c);
+  const href = c.published === false ? `/courses/${c.id}/edit` : `/courses/${c.id}`;
   return (
     <article className="overflow-hidden rounded-2xl border border-line bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
-      <Link to={`/courses/${c.id}`} className="block">
-        <div className={`relative h-36 p-4 text-white ${coverClass(c.id + c.name)}`}>
+      <Link to={href} className="block">
+        <div className={`relative h-36 p-4 text-white ${coverClass(c.id + title)}`}>
           {c.thumbnailUrl && (
             <>
-              <img src={c.thumbnailUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+              <img src={fileSrc(c.thumbnailUrl)} alt="" className="absolute inset-0 h-full w-full object-cover" />
               <div className="absolute inset-0 bg-black/25" />
             </>
           )}
@@ -478,34 +678,49 @@ function CourseCard({
           {c.featured && c.published !== false && (
             <span className="relative z-10 rounded bg-amber-300/90 px-2 py-0.5 text-[10px] font-medium text-navy">Featured</span>
           )}
-          <p className="relative z-10 mt-8 line-clamp-2 text-lg font-semibold leading-snug drop-shadow">{c.name}</p>
         </div>
       </Link>
       <div className="p-4">
-        <Link to={`/courses/${c.id}`} className="font-semibold text-navy hover:underline">
-          {c.name}
+        <Link to={href} className="font-semibold text-navy hover:underline">
+          {title}
         </Link>
-        <p className="mt-1 text-xs text-slate-500">Created by: You(Owner)</p>
+        <p className="mt-1 text-xs text-slate-500">{createdByLine(user?.role)}</p>
         {duration && <span className="mt-3 inline-block rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-700">{duration}</span>}
         <div className="mt-3 flex items-end justify-between gap-2">
           <p className="text-lg font-bold text-navy">{price}</p>
           {actionLabel && (
-            <Link to={`/courses/${c.id}`} className="text-sm font-medium text-brand">
+            <Link to={href} className="text-sm font-medium text-brand">
               {actionLabel} →
             </Link>
           )}
         </div>
         {onPublish && onFeature && (
-          <div className="mt-3 flex flex-wrap gap-3 text-xs">
-            <button type="button" className="text-brand hover:underline" onClick={() => onPublish(c)}>
-              {c.published ? "Unpublish" : "Publish"}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className={
+                c.published === false
+                  ? "rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white"
+                  : "rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-navy hover:border-brand hover:text-brand"
+              }
+              onClick={() => onPublish(c)}
+            >
+              {c.published === false ? "Publish" : "Unpublish"}
             </button>
-            <button type="button" className="text-brand hover:underline" onClick={() => onFeature(c)}>
+            <button type="button" className="text-xs text-brand hover:underline" onClick={() => onFeature(c)}>
               {c.featured ? "Unfeature" : "Mark featured"}
             </button>
-            <Link className="text-brand hover:underline" to={`/courses/${c.id}`}>
-              Open course
+            <Link className="text-xs text-brand hover:underline" to={`/courses/${c.id}/edit`}>
+              Edit
             </Link>
+            <Link className="text-xs text-brand hover:underline" to={href}>
+              {c.published === false ? "Continue setup" : "Open course"}
+            </Link>
+          </div>
+        )}
+        {c.published !== false && user?.orgSlug && (
+          <div className="mt-3">
+            <ShareLinkBar slug={user.orgSlug} courseId={c.id} published compact />
           </div>
         )}
       </div>

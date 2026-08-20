@@ -1,6 +1,7 @@
 package com.niyamstack.propel.web;
 
 import com.niyamstack.propel.catalog.Features;
+import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model;
 import com.niyamstack.propel.domain.Model.*;
@@ -14,6 +15,7 @@ import com.niyamstack.propel.security.Roles;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -83,6 +85,9 @@ public class ResourceController {
     @GetMapping("/courses") public List<Course> courses() { return list(Course.class); }
     @PostMapping("/courses") public Course createCourse(@RequestBody Course body) { return create(body, "SETUP"); }
     @PutMapping("/courses/{id}") public Course updateCourse(@PathVariable UUID id, @RequestBody Course body) { return update(Course.class, id, body, "SETUP"); }
+    @DeleteMapping("/courses/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteCourse(@PathVariable UUID id) { lms.deleteCourse(id); }
 
     @GetMapping("/batches") public List<Batch> batches() { return list(Batch.class); }
     @PostMapping("/batches") public Batch createBatch(@RequestBody Batch body) { return create(body, "SETUP"); }
@@ -270,8 +275,15 @@ public class ResourceController {
     @DeleteMapping("/website-pages/{id}") public void deleteWebsitePage(@PathVariable UUID id) { delete(WebsitePage.class, id, "GROWTH"); }
 
     @GetMapping("/coupons") public List<Coupon> coupons() { return list(Coupon.class); }
-    @PostMapping("/coupons") public Coupon createCoupon(@RequestBody Coupon body) { return create(body, "GROWTH"); }
-    @PutMapping("/coupons/{id}") public Coupon updateCoupon(@PathVariable UUID id, @RequestBody Coupon body) { return update(Coupon.class, id, body, "GROWTH"); }
+    @PostMapping("/coupons") public Coupon createCoupon(@RequestBody Coupon body) {
+        Access.requireTenant(Auth.current());
+        validateCoupon(body, null);
+        return create(body, "GROWTH");
+    }
+    @PutMapping("/coupons/{id}") public Coupon updateCoupon(@PathVariable UUID id, @RequestBody Coupon body) {
+        validateCoupon(body, id);
+        return update(Coupon.class, id, body, "GROWTH");
+    }
     @DeleteMapping("/coupons/{id}") public void deleteCoupon(@PathVariable UUID id) { delete(Coupon.class, id, "GROWTH"); }
 
     @GetMapping("/landing-pages") public List<LandingPage> landingPages() { return list(LandingPage.class); }
@@ -310,7 +322,22 @@ public class ResourceController {
     @PutMapping("/one-to-one-sessions/{id}") public OneToOneSession updateOneToOne(@PathVariable UUID id, @RequestBody OneToOneSession body) { return update(OneToOneSession.class, id, body, "GROWTH"); }
 
     @GetMapping("/backend-additions") public List<BackendAddition> backendAdditions() { return list(BackendAddition.class); }
-    @PostMapping("/backend-additions") public BackendAddition createBackendAddition(@RequestBody BackendAddition body) { return create(body, "GROWTH"); }
+    @PostMapping("/backend-additions") public BackendAddition createBackendAddition(@RequestBody BackendAddition body) {
+        Access.requireTenant(Auth.current());
+        if (body.getCourseId() == null || body.getStudentId() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Course and student are required");
+        }
+        UUID org = Auth.current().organizationId();
+        boolean already = store.list(BackendAddition.class, org).stream()
+                .anyMatch(a -> body.getCourseId().equals(a.getCourseId()) && body.getStudentId().equals(a.getStudentId()));
+        if (already) {
+            throw new ApiException(HttpStatus.CONFLICT, "This student is already added to that course");
+        }
+        return create(body, "GROWTH");
+    }
+    @DeleteMapping("/backend-additions/{id}") public void deleteBackendAddition(@PathVariable UUID id) {
+        delete(BackendAddition.class, id, "GROWTH");
+    }
 
     @GetMapping("/integration-connections") public List<IntegrationConnection> integrationConnections() { return list(IntegrationConnection.class); }
     @PostMapping("/integration-connections") public IntegrationConnection createIntegrationConnection(@RequestBody IntegrationConnection body) { return create(body, "GROWTH"); }
@@ -333,6 +360,30 @@ public class ResourceController {
                         "active", u.isActive()
                 ))
                 .toList();
+    }
+
+    private void validateCoupon(Coupon body, UUID ignoreId) {
+        Access.requireTenant(Auth.current());
+        String code = body.getCode() == null ? "" : body.getCode().trim();
+        if (code.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Coupon code is required");
+        }
+        body.setCode(code);
+        UUID org = Auth.current().organizationId();
+        boolean duplicate = store.list(Coupon.class, org).stream()
+                .anyMatch(c -> (ignoreId == null || !ignoreId.equals(c.getId()))
+                        && c.getCode() != null
+                        && c.getCode().equalsIgnoreCase(code));
+        if (duplicate) {
+            throw new ApiException(HttpStatus.CONFLICT, "A coupon with this code already exists");
+        }
+        BigDecimal value = body.getDiscountValue();
+        if (value == null || value.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Discount value must be greater than 0");
+        }
+        if ("PERCENT".equalsIgnoreCase(body.getDiscountType()) && value.compareTo(new BigDecimal("100")) > 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Percent discount must be between 1 and 100");
+        }
     }
 
     private <T extends TenantEntity> List<T> list(Class<T> type) {
