@@ -309,6 +309,7 @@ public final class Model {
         private String storageKey;
         private String visibility = "BATCH";
         private boolean published = true;
+        private UUID parentFolderId;
     }
 
     @Entity(name = "LiveSession") @Table(name = "live_sessions") @Getter @Setter
@@ -362,6 +363,8 @@ public final class Model {
         private boolean proctoring;
         private Integer passingScore;
         private Integer totalMarks;
+        private UUID parentFolderId;
+        private Integer maxAttempts;
     }
 
     @Entity(name = "Question") @Table(name = "questions") @Getter @Setter
@@ -371,7 +374,9 @@ public final class Model {
         private String topic;
         private String difficulty;
         private String prompt;
+        @Column(columnDefinition = "TEXT")
         private String optionsJson;
+        @Column(columnDefinition = "TEXT")
         private String answerKey;
     }
 

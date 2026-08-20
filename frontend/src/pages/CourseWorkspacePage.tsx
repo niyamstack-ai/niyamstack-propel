@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../auth";
 import { Card, useApi } from "../ui";
 import { StaffLms, StudentLms } from "./LmsPage";
+import { CourseContentPanel, StudentCourseLibrary } from "./courseContent";
 
 type Course = { id: string; name: string; code?: string; fees?: number; description?: string };
 
@@ -49,6 +50,7 @@ export function CourseWorkspacePage() {
           {course.description && <p className="mt-2 text-sm text-slate-500">{course.description}</p>}
         </Card>
       )}
+      {student ? <StudentCourseLibrary courseId={courseId} /> : <CourseContentPanel courseId={courseId} />}
       {student ? <StudentLms courseId={courseId} embedded /> : <StaffLms courseId={courseId} embedded />}
     </div>
   );

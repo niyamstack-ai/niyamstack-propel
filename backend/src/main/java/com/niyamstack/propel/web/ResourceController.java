@@ -5,11 +5,13 @@ import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model;
 import com.niyamstack.propel.domain.Model.*;
 import com.niyamstack.propel.domain.TenantEntity;
+import com.niyamstack.propel.lms.LmsService;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.DataScope;
 import com.niyamstack.propel.security.PropelUser;
 import com.niyamstack.propel.security.Roles;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,10 +23,12 @@ import java.util.UUID;
 public class ResourceController {
     private final Store store;
     private final DataScope scope;
+    private final LmsService lms;
 
-    public ResourceController(Store store, DataScope scope) {
+    public ResourceController(Store store, DataScope scope, LmsService lms) {
         this.store = store;
         this.scope = scope;
+        this.lms = lms;
     }
 
     @GetMapping("/features")
@@ -133,6 +137,10 @@ public class ResourceController {
 
     @GetMapping("/content") public List<ContentItem> content() { return list(ContentItem.class); }
     @PostMapping("/content") public ContentItem createContent(@RequestBody ContentItem body) { return create(body, "LMS"); }
+    @PutMapping("/content/{id}") public ContentItem updateContent(@PathVariable UUID id, @RequestBody ContentItem body) { return update(ContentItem.class, id, body, "LMS"); }
+    @DeleteMapping("/content/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteContent(@PathVariable UUID id) { lms.deleteContent(id); }
 
     @GetMapping("/live-sessions") public List<LiveSession> live() { return list(LiveSession.class); }
     @PostMapping("/live-sessions") public LiveSession createLive(@RequestBody LiveSession body) { return create(body, "LMS"); }
@@ -148,6 +156,10 @@ public class ResourceController {
 
     @GetMapping("/assessments") public List<Assessment> assessments() { return list(Assessment.class); }
     @PostMapping("/assessments") public Assessment createAssessment(@RequestBody Assessment body) { return create(body, "LMS"); }
+    @PutMapping("/assessments/{id}") public Assessment updateAssessment(@PathVariable UUID id, @RequestBody Assessment body) { return update(Assessment.class, id, body, "LMS"); }
+    @DeleteMapping("/assessments/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteAssessment(@PathVariable UUID id) { lms.deleteAssessment(id); }
 
     @GetMapping("/questions")
     public List<Question> questions() {
@@ -158,6 +170,10 @@ public class ResourceController {
         return rows;
     }
     @PostMapping("/questions") public Question createQuestion(@RequestBody Question body) { return create(body, "LMS"); }
+    @PutMapping("/questions/{id}") public Question updateQuestion(@PathVariable UUID id, @RequestBody Question body) { return update(Question.class, id, body, "LMS"); }
+    @DeleteMapping("/questions/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteQuestion(@PathVariable UUID id) { delete(Question.class, id, "LMS"); }
 
     @GetMapping("/doubts") public List<DoubtTicket> doubts() { return list(DoubtTicket.class); }
     @PostMapping("/doubts") public DoubtTicket createDoubt(@RequestBody DoubtTicket body) { return create(body, "LMS"); }
@@ -348,8 +364,11 @@ public class ResourceController {
 
     private void delete(Class<? extends TenantEntity> type, UUID id, String area) {
         Access.requireTenant(Auth.current());
-        Access.requireAny(Auth.current(), Roles.OWNER);
         Access.requireWrite(Auth.current(), area);
+        Access.requireAny(Auth.current(), Roles.OWNER, Roles.FACULTY);
+        if (Roles.STUDENT.equals(Auth.current().role())) {
+            Access.requireAny(Auth.current(), Roles.OWNER);
+        }
         store.deleteOwned(type, id, Auth.current().organizationId());
     }
 

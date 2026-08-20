@@ -3,6 +3,7 @@ import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from "rea
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { StudentLms } from "./LmsPage";
+import { StudentCourseLibrary } from "./courseContent";
 
 type Site = {
   id: string;
@@ -489,6 +490,7 @@ function StudyPage() {
         ← My learning
       </Link>
       <h1 className="text-2xl font-bold text-navy">{course?.name || "Course"}</h1>
+      {courseId && <StudentCourseLibrary courseId={courseId} />}
       <StudentLms courseId={courseId} embedded />
     </div>
   );

@@ -73,6 +73,9 @@ public class SchemaPatch {
                 "ALTER TABLE students ADD COLUMN IF NOT EXISTS photo_url VARCHAR(500)",
                 "ALTER TABLE assignments ADD COLUMN IF NOT EXISTS course_id UUID",
                 "ALTER TABLE assessments ADD COLUMN IF NOT EXISTS course_id UUID",
+                "ALTER TABLE content_items ADD COLUMN IF NOT EXISTS parent_folder_id UUID",
+                "ALTER TABLE assessments ADD COLUMN IF NOT EXISTS parent_folder_id UUID",
+                "ALTER TABLE assessments ADD COLUMN IF NOT EXISTS max_attempts INTEGER",
                 """
                 CREATE TABLE IF NOT EXISTS course_enrollments (
                     id UUID PRIMARY KEY,

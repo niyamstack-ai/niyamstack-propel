@@ -110,9 +110,10 @@ public class ActionsController {
             @RequestParam(value = "title", required = false) String title,
             @RequestParam(value = "batchId", required = false) UUID batchId,
             @RequestParam(value = "courseId", required = false) UUID courseId,
-            @RequestParam(value = "contentType", required = false) String contentType
+            @RequestParam(value = "contentType", required = false) String contentType,
+            @RequestParam(value = "parentFolderId", required = false) UUID parentFolderId
     ) {
-        return lms.upload(file, batchId, courseId, title, contentType);
+        return lms.upload(file, batchId, courseId, title, contentType, parentFolderId);
     }
 
     @PostMapping("/lms-packages")
@@ -152,7 +153,7 @@ public class ActionsController {
     }
 
     @PostMapping("/attempts/{id}/submit")
-    public ExamAttempt submitExam(@PathVariable UUID id, @RequestBody Map<String, String> answers) {
+    public Map<String, Object> submitExam(@PathVariable UUID id, @RequestBody Map<String, String> answers) {
         return lms.submitExam(id, answers);
     }
 

@@ -59,9 +59,13 @@ export function StudentLms({ courseId, embedded }: { courseId?: string; embedded
         </div>
       )}
       <ErrorText error={error} />
-      <Card title="Timetable">
-        <Table columns={["Subject", "Day", "Start"]} rows={(slots.data ?? []).map((s) => [s.subject, String(s.dayOfWeek), s.startTime])} />
-      </Card>
+      {!embedded && (
+        <Card title="Timetable">
+          <Table columns={["Subject", "Day", "Start"]} rows={(slots.data ?? []).map((s) => [s.subject, String(s.dayOfWeek), s.startTime])} />
+        </Card>
+      )}
+      {embedded ? null : (
+        <>
       <Card title="PDFs, videos & notes">
         <ul className="text-sm">
           {materials.map((c) => (
@@ -88,6 +92,8 @@ export function StudentLms({ courseId, embedded }: { courseId?: string; embedded
           ))}
         </ul>
       </Card>
+        </>
+      )}
       <Card title="Assignments">
         <ul className="space-y-2 text-sm">
           {homework.map((a) => (
@@ -109,6 +115,7 @@ export function StudentLms({ courseId, embedded }: { courseId?: string; embedded
           ))}
         </ul>
       </Card>
+      {!embedded && (
       <Card title="Quizzes & exams">
         <ul className="space-y-2 text-sm">
           {quizzes.map((e) => (
@@ -136,6 +143,7 @@ export function StudentLms({ courseId, embedded }: { courseId?: string; embedded
           ))}
         </ul>
       </Card>
+      )}
       <Card title="Ask a doubt">
         <FormGrid>
           <Field label="Subject" value={doubtSub} onChange={setDoubtSub} />
@@ -222,11 +230,12 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
         </div>
       )}
       {embedded && (
-        <p className="text-sm text-slate-500">Quizzes, recorded videos, PDFs, live class, and assignments for this course.</p>
+        <p className="text-sm text-slate-500">Attendance, assignments, and live class for this course.</p>
       )}
       <ErrorText error={error} />
       {faculty && (
         <>
+          {!embedded && (
           <Card title="Add PDF, video or notes">
             <FormGrid>
               <Field label="Title" value={title} onChange={setTitle} />
@@ -267,6 +276,7 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
               </PrimaryButton>
             </div>
           </Card>
+          )}
           <Card title="Create assignment">
             <FormGrid>
               <Field label="Title" value={asgTitle} onChange={setAsgTitle} />
@@ -365,12 +375,14 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
           rows={(slots.data ?? []).map((s) => [s.subject, String(s.dayOfWeek), s.startTime])}
         />
       </Card>
+      {!embedded && (
       <Card title="Learning content in this course">
         <Table
           columns={["Title", "Type", "Standard", "Published"]}
           rows={materials.map((c) => [c.title, c.contentType, c.scormStandard || "—", c.published === false ? "No" : "Yes"])}
         />
       </Card>
+      )}
       <Card title="LMS standards packages (SCORM / xAPI / LTI)">
         <Table
           columns={["Standard", "Version", "Status"]}

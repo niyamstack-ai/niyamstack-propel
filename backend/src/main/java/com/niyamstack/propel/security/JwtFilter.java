@@ -26,9 +26,15 @@ public class JwtFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String token = null;
         if (header != null && header.startsWith("Bearer ")) {
+            token = header.substring(7);
+        } else if (request.getParameter("access_token") != null && !request.getParameter("access_token").isBlank()) {
+            token = request.getParameter("access_token");
+        }
+        if (token != null) {
             try {
-                PropelUser user = jwtService.parse(header.substring(7));
+                PropelUser user = jwtService.parse(token);
                 var auth = new UsernamePasswordAuthenticationToken(
                         user,
                         null,

@@ -24,6 +24,7 @@ import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { WebsitePage } from "./pages/WebsitePage";
 import { CourseWorkspacePage } from "./pages/CourseWorkspacePage";
 import { CoursesCommercePage } from "./pages/CoursesCommercePage";
+import { CreateCourseWizard } from "./pages/CreateCourseWizard";
 import { ContentHubPage } from "./pages/ContentHubPage";
 import { YourAppPage } from "./pages/YourAppPage";
 import { LandingPagesPage } from "./pages/LandingPagesPage";
@@ -36,7 +37,8 @@ import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { StorefrontAppPage, StorefrontCatalogPage, StorefrontCoursePage, StorefrontLayout, StorefrontLearnPage, StorefrontLoginPage, StorefrontStudyPage } from "./pages/Storefront";
 
 function Guard({ children }: { children: React.ReactNode }) {
-  const { token } = useAuth();
+  const { token, ready } = useAuth();
+  if (!ready) return <p className="p-6 text-sm text-slate-500">Loading…</p>;
   if (!token) return <Navigate to="/login" replace />;
   return children;
 }
@@ -105,6 +107,7 @@ export default function App() {
           <Route index element={<HomePage />} />
           <Route path="website" element={<WebsitePage />} />
           <Route path="courses" element={<CoursesCommercePage />} />
+          <Route path="courses/new" element={<CreateCourseWizard />} />
           <Route path="courses/:courseId" element={<CourseWorkspacePage />} />
           <Route path="content-hub" element={<ContentHubPage />} />
           <Route path="your-app" element={<YourAppPage />} />

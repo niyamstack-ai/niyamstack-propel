@@ -23,6 +23,22 @@ function tokenFor(path: string) {
   return path.startsWith("/api/platform") ? getPlatformToken() : getToken();
 }
 
+function isPublicAuthPath(path: string) {
+  return path.startsWith("/api/auth/") || path === "/api/platform/login" || path.startsWith("/api/public/");
+}
+
+function expireClientSession(path: string) {
+  if (path.startsWith("/api/platform")) {
+    setPlatformToken(null);
+    localStorage.removeItem("propel.platform.user");
+    window.dispatchEvent(new Event("propel:platform-unauthorized"));
+    return;
+  }
+  setToken(null);
+  localStorage.removeItem("propel.user");
+  window.dispatchEvent(new Event("propel:unauthorized"));
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
@@ -42,11 +58,19 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     } catch {
       /* ignore */
     }
+    const sessionGone =
+      (res.status === 401 || (res.status === 403 && message === "Forbidden")) && !isPublicAuthPath(path);
+    if (sessionGone) {
+      expireClientSession(path);
+      throw new Error("Your session expired. Please sign in again.");
+    }
     if (message === "Internal Server Error") {
-      message = "Signup failed on the server. Make sure the API is running, then try again.";
+      message = "The server could not complete this request. Try again.";
     }
     throw new Error(message);
   }
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }

@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, getToken, setToken } from "./api";
 
 export type SessionUser = {
@@ -19,6 +19,7 @@ type SessionResponse = { token: string; user: SessionUser };
 type AuthState = {
   token: string | null;
   user: SessionUser | null;
+  ready: boolean;
   login: (email: string, password: string) => Promise<void>;
   loginWithOtp: (phone: string, otp: string) => Promise<void>;
   applySession: (res: SessionResponse) => void;
@@ -33,11 +34,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const raw = localStorage.getItem("propel.user");
     return raw ? (JSON.parse(raw) as SessionUser) : null;
   });
+  const [ready, setReady] = useState(() => !getToken());
+
+  useEffect(() => {
+    function expire() {
+      setToken(null);
+      localStorage.removeItem("propel.user");
+      setTok(null);
+      setUser(null);
+    }
+    window.addEventListener("propel:unauthorized", expire);
+    return () => window.removeEventListener("propel:unauthorized", expire);
+  }, []);
+
+  useEffect(() => {
+    if (!getToken()) {
+      setReady(true);
+      return;
+    }
+    let cancelled = false;
+    api("/api/me")
+      .catch(() => {
+        /* api() expires a dead session */
+      })
+      .finally(() => {
+        if (!cancelled) setReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const value = useMemo<AuthState>(
     () => ({
       token,
       user,
+      ready,
       applySession(res: SessionResponse) {
         setToken(res.token);
         localStorage.setItem("propel.user", JSON.stringify(res.user));
@@ -71,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
       },
     }),
-    [token, user]
+    [token, user, ready]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

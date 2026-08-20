@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { createRecord, updateRecord } from "../ops";
 import { useAuth } from "../auth";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
+import { UserMenu } from "../UserMenu";
 
-type Course = {
+export type Course = {
   id: string;
   code: string;
   name: string;
@@ -51,6 +52,32 @@ type Addition = {
 
 type Student = { id: string; fullName: string; phone?: string; email?: string };
 
+const COVERS = [
+  "bg-gradient-to-br from-[#163a66] to-[#0b2744]",
+  "bg-gradient-to-r from-[#ec4899] via-[#f97316] to-[#facc15]",
+  "bg-gradient-to-br from-[#38bdf8] to-[#0284c7]",
+  "bg-gradient-to-br from-[#7c3aed] to-[#4c1d95]",
+  "bg-gradient-to-br from-[#0ea5e9] to-[#0369a1]",
+  "bg-gradient-to-br from-[#059669] to-[#064e3b]",
+  "bg-gradient-to-br from-[#dc2626] to-[#7f1d1d]",
+  "bg-gradient-to-br from-[#4f46e5] to-[#1e1b4b]",
+];
+
+function coverClass(seed: string) {
+  let h = 0;
+  for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return COVERS[h % COVERS.length];
+}
+
+export function formatDuration(c: Course) {
+  if (c.validityType === "LIFETIME") return "Lifetime";
+  const n = c.validityValue || c.durationMonths;
+  if (!n) return null;
+  const unit = (c.validityUnit || "MONTH").toUpperCase();
+  const word = unit.startsWith("YEAR") ? (n === 1 ? "year" : "years") : unit.startsWith("DAY") ? (n === 1 ? "day" : "days") : n === 1 ? "month" : "months";
+  return `${n} ${word}`;
+}
+
 export function CoursesCommercePage() {
   const { user } = useAuth();
   if (user?.role === "STUDENT") return <PurchasedCourses />;
@@ -58,13 +85,7 @@ export function CoursesCommercePage() {
   return <OwnerCourses />;
 }
 
-function CourseCards({
-  subtitle,
-  actionLabel,
-}: {
-  subtitle: string;
-  actionLabel: string;
-}) {
+function CourseCards({ subtitle, actionLabel }: { subtitle: string; actionLabel: string }) {
   const courses = useApi<Course[]>("/api/courses");
   const [q, setQ] = useState("");
   const filtered = useMemo(() => {
@@ -76,23 +97,15 @@ function CourseCards({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-navy">Courses</h1>
-        <p className="text-sm text-slate-500">{subtitle}</p>
-      </div>
-      <Card title="Your courses">
-        <Field label="Search" value={q} onChange={setQ} placeholder="Search by name" />
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((c) => (
-            <Link key={c.id} to={`/courses/${c.id}`} className="rounded-2xl border border-line bg-white p-4 hover:border-brand">
-              <p className="font-semibold text-navy">{c.name}</p>
-              <p className="text-xs text-slate-500">{c.category || "General"}</p>
-              <p className="mt-3 text-sm text-brand">{actionLabel} →</p>
-            </Link>
-          ))}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-[28px] font-bold leading-tight text-navy">Your Courses ({courses.data?.length ?? 0})</h1>
+          <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
         </div>
-        {filtered.length === 0 && <p className="mt-3 text-sm text-slate-500">No courses yet.</p>}
-      </Card>
+        <UserMenu />
+      </div>
+      <SearchBar value={q} onChange={setQ} />
+      <CourseGrid courses={filtered} empty="No courses yet." actionLabel={actionLabel} />
     </div>
   );
 }
@@ -106,25 +119,19 @@ function TaughtCourses() {
 }
 
 function OwnerCourses() {
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const view = params.get("view");
   const courses = useApi<Course[]>("/api/courses");
   const coupons = useApi<Coupon[]>("/api/coupons");
   const additions = useApi<Addition[]>("/api/backend-additions");
   const students = useApi<Student[]>("/api/students");
-  const [tab, setTab] = useState<"list" | "create" | "coupons" | "backend">("list");
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
-
-  const [name, setName] = useState("");
-  const [code, setCode] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("IT");
-  const [subCategory, setSubCategory] = useState("OTHERS");
-  const [courseType, setCourseType] = useState("PAID");
-  const [fees, setFees] = useState("1980");
-  const [discount, setDiscount] = useState("0");
-  const [validityType, setValidityType] = useState("SINGLE");
-  const [validityValue, setValidityValue] = useState("6");
-  const [thumbnailUrl, setThumbnailUrl] = useState("");
+  const [sort, setSort] = useState("recent");
+  const [filter, setFilter] = useState("all");
+  const [featuredOnly, setFeaturedOnly] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
 
   const [couponCode, setCouponCode] = useState("");
   const [couponName, setCouponName] = useState("");
@@ -137,46 +144,19 @@ function OwnerCourses() {
   const [addNote, setAddNote] = useState("");
 
   const filtered = useMemo(() => {
-    const list = courses.data ?? [];
-    if (!q.trim()) return list;
-    const s = q.toLowerCase();
-    return list.filter((c) => c.name.toLowerCase().includes(s) || c.code?.toLowerCase().includes(s));
-  }, [courses.data, q]);
-
-  async function createCourse() {
-    setError(null);
-    try {
-      await createRecord("/api/courses", {
-        code: code || `CRS-${Date.now().toString().slice(-6)}`,
-        name,
-        description,
-        thumbnailUrl,
-        category,
-        subCategory,
-        courseType,
-        fees: Number(fees),
-        discount: Number(discount),
-        validityType,
-        validityValue: Number(validityValue),
-        validityUnit: "MONTH",
-        durationMonths: Number(validityValue) || 6,
-        published: true,
-        featured: false,
-        allowOffline: false,
-        allowTrial: false,
-        allowPreview: true,
-        allowLive: true,
-        active: true,
-      });
-      setName("");
-      setCode("");
-      setDescription("");
-      courses.reload();
-      setTab("list");
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
+    let list = [...(courses.data ?? [])];
+    const s = q.trim().toLowerCase();
+    if (s) list = list.filter((c) => c.name.toLowerCase().includes(s) || c.code?.toLowerCase().includes(s));
+    if (featuredOnly || filter === "featured") list = list.filter((c) => c.featured);
+    if (filter === "published") list = list.filter((c) => c.published !== false);
+    if (filter === "unpublished") list = list.filter((c) => c.published === false);
+    if (filter === "paid") list = list.filter((c) => (c.courseType || "PAID") !== "FREE");
+    if (filter === "free") list = list.filter((c) => c.courseType === "FREE");
+    if (sort === "name") list.sort((a, b) => a.name.localeCompare(b.name));
+    if (sort === "price-asc") list.sort((a, b) => Number(a.fees) - Number(b.fees));
+    if (sort === "price-desc") list.sort((a, b) => Number(b.fees) - Number(a.fees));
+    return list;
+  }, [courses.data, q, sort, filter, featuredOnly]);
 
   async function togglePublish(c: Course) {
     try {
@@ -240,194 +220,318 @@ function OwnerCourses() {
     }
   }
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-navy">Courses</h1>
-          <p className="text-sm text-slate-500">
-            Create and sell courses. After a student purchases, learning (videos, PDFs, quizzes) lives inside that course. Your Courses (
-            {courses.data?.length ?? 0})
-          </p>
+  if (view === "coupons" || view === "backend") {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <Link to="/courses" className="text-sm text-brand hover:underline">
+              ← Your Courses
+            </Link>
+            <h1 className="mt-1 text-[28px] font-bold text-navy">{view === "coupons" ? "Manage coupons" : "Backend addition"}</h1>
+          </div>
+          <UserMenu />
         </div>
-        <div className="flex flex-wrap gap-2">
-          {(
-            [
-              ["list", "My Courses"],
-              ["create", "Create Course"],
-              ["coupons", "Manage Coupons"],
-              ["backend", "Backend Addition"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              className={`rounded-full px-3 py-1.5 text-sm ${tab === id ? "bg-navy text-white" : "bg-mist"}`}
-              onClick={() => setTab(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <ErrorText error={error} />
+        {view === "coupons" && (
+          <Card title="Manage coupons">
+            <FormGrid>
+              <Field label="Coupon code" value={couponCode} onChange={setCouponCode} />
+              <Field label="Name" value={couponName} onChange={setCouponName} />
+              <Select
+                label="Discount type"
+                value={couponType}
+                onChange={setCouponType}
+                options={[
+                  { value: "PERCENT", label: "Percent" },
+                  { value: "FLAT", label: "Flat ₹" },
+                ]}
+              />
+              <Field label="Value" value={couponValue} onChange={setCouponValue} />
+              <Select
+                label="Course (optional)"
+                value={couponCourse}
+                onChange={setCouponCourse}
+                options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
+              />
+            </FormGrid>
+            <div className="mt-3">
+              <PrimaryButton disabled={!couponCode} onClick={saveCoupon}>
+                Create coupon
+              </PrimaryButton>
+            </div>
+            <div className="mt-4">
+              <Table
+                columns={["Code", "Type", "Value", "Live", "Redeemed"]}
+                rows={(coupons.data ?? []).map((c) => [c.code, c.discountType, String(c.discountValue), c.live ? "Live" : "Off", String(c.redeemedCount ?? 0)])}
+              />
+            </div>
+          </Card>
+        )}
+        {view === "backend" && (
+          <Card title="Add students directly into courses">
+            <FormGrid>
+              <Select
+                label="Course"
+                value={addCourse}
+                onChange={setAddCourse}
+                options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
+              />
+              <Select
+                label="Student"
+                value={addStudent}
+                onChange={setAddStudent}
+                options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))}
+              />
+              <Field label="Note" value={addNote} onChange={setAddNote} />
+            </FormGrid>
+            <div className="mt-3">
+              <PrimaryButton disabled={!addCourse || !addStudent} onClick={addStudentToCourse}>
+                Add student
+              </PrimaryButton>
+            </div>
+            <div className="mt-4">
+              <Table
+                columns={["Student", "Phone", "Status", "Note"]}
+                rows={(additions.data ?? []).map((a) => [a.studentName || "—", a.studentPhone || "—", a.status, a.note || "—"])}
+              />
+            </div>
+          </Card>
+        )}
       </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-[28px] font-bold leading-tight text-navy">Your Courses ({courses.data?.length ?? 0})</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Add/View courses of your brand{" "}
+            <button type="button" className="font-medium text-brand" onClick={() => setParams({ view: "help" })}>
+              Learn how →
+            </button>
+          </p>
+          {params.get("view") === "help" && (
+            <p className="mt-2 max-w-xl text-sm text-slate-500">
+              Create a course, set price and validity, add videos or files, then publish. Students buy it on your website and study inside the course.
+              {" "}
+              <button type="button" className="text-brand" onClick={() => setParams({})}>
+                Dismiss
+              </button>
+            </p>
+          )}
+        </div>
+        <UserMenu />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchBar value={q} onChange={setQ} className="min-w-[220px] flex-1" />
+        <label className="flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-slate-600">
+          Sort by
+          <select className="bg-transparent font-medium text-navy outline-none" value={sort} onChange={(e) => setSort(e.target.value)}>
+            <option value="recent">Recent</option>
+            <option value="name">Name</option>
+            <option value="price-asc">Price: low to high</option>
+            <option value="price-desc">Price: high to low</option>
+          </select>
+        </label>
+        <div className="relative">
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm"
+            onClick={() => setFilterOpen((v) => !v)}
+          >
+            <FunnelIcon /> Filter
+          </button>
+          {filterOpen && (
+            <div className="absolute right-0 z-20 mt-1 w-44 rounded-xl border border-line bg-white py-1 shadow-lg">
+              {[
+                ["all", "All courses"],
+                ["published", "Published"],
+                ["unpublished", "Unpublished"],
+                ["paid", "Paid"],
+                ["free", "Free"],
+                ["featured", "Featured"],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`block w-full px-3 py-2 text-left text-sm ${filter === id ? "bg-sky-50 text-brand" : "hover:bg-mist"}`}
+                  onClick={() => {
+                    setFilter(id);
+                    setFilterOpen(false);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${
+            featuredOnly ? "border-brand bg-sky-50 text-brand" : "border-brand bg-white text-brand"
+          }`}
+          onClick={() => setFeaturedOnly((v) => !v)}
+        >
+          <StarIcon /> Featured
+        </button>
+        <button
+          type="button"
+          className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm"
+          onClick={() => navigate("/courses/new")}
+        >
+          Create Course
+        </button>
+      </div>
+
       <ErrorText error={error} />
 
-      {tab === "list" && (
-        <Card title="Add / view courses of your brand">
-          <div className="mb-4">
-            <Field label="Search by name" value={q} onChange={setQ} placeholder="Search by name" />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {filtered.map((c) => (
-              <div key={c.id} className="rounded-2xl border border-line bg-white p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <Link to={`/courses/${c.id}`} className="font-semibold text-navy hover:underline">
-                      {c.name}
-                    </Link>
-                    <p className="text-xs text-slate-500">
-                      {c.category || "General"} · {c.durationMonths || c.validityValue || "—"} months
-                    </p>
-                  </div>
-                  {!c.published && <span className="rounded bg-slate-200 px-2 py-0.5 text-[10px]">Unpublished</span>}
-                  {c.featured && <span className="rounded bg-brand/10 px-2 py-0.5 text-[10px] text-brand">Featured</span>}
-                </div>
-                <p className="mt-3 text-lg font-bold">₹{c.fees}</p>
-                {Number(c.discount || 0) > 0 && <p className="text-xs text-slate-500">Discount ₹{c.discount}</p>}
-                <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                  <button className="text-brand hover:underline" type="button" onClick={() => togglePublish(c)}>
-                    {c.published ? "Unpublish" : "Publish"}
-                  </button>
-                  <button className="text-brand hover:underline" type="button" onClick={() => toggleFeatured(c)}>
-                    {c.featured ? "Unfeature" : "Mark featured"}
-                  </button>
-                  <Link className="text-brand hover:underline" to={`/courses/${c.id}`}>
-                    Open course (LMS)
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
-          {(filtered.length === 0) && <p className="text-sm text-slate-500">No courses yet. Create your first course.</p>}
-        </Card>
-      )}
+      <CourseGrid
+        courses={filtered}
+        empty="No courses yet. Create your first course."
+        onPublish={togglePublish}
+        onFeature={toggleFeatured}
+      />
 
-      {tab === "create" && (
-        <Card title="Create course — basic information & price">
-          <FormGrid>
-            <Field label="Course name" value={name} onChange={setName} placeholder="Enter course name" />
-            <Field label="Code" value={code} onChange={setCode} placeholder="Auto if blank" />
-            <Field label="Description" value={description} onChange={setDescription} placeholder="Enter course description here" />
-            <Field label="Thumbnail URL" value={thumbnailUrl} onChange={setThumbnailUrl} />
-            <Field label="Category" value={category} onChange={setCategory} />
-            <Field label="Sub category" value={subCategory} onChange={setSubCategory} />
-            <Select
-              label="Course type"
-              value={courseType}
-              onChange={setCourseType}
-              options={[
-                { value: "PAID", label: "Paid Course" },
-                { value: "FREE", label: "Free Course" },
-              ]}
-            />
-            <Select
-              label="Validity type"
-              value={validityType}
-              onChange={setValidityType}
-              options={[
-                { value: "SINGLE", label: "Single Validity" },
-                { value: "MULTIPLE", label: "Multiple Validity" },
-                { value: "LIFETIME", label: "Lifetime Validity" },
-                { value: "EXPIRY_DATE", label: "Course Expiry Date" },
-              ]}
-            />
-            <Field label="Validity (months)" value={validityValue} onChange={setValidityValue} />
-            <Field label="Price (₹)" value={fees} onChange={setFees} />
-            <Field label="Discount (₹)" value={discount} onChange={setDiscount} />
-            <Field label="Effective price" value={String(Math.max(0, Number(fees) - Number(discount || 0)))} onChange={() => {}} />
-          </FormGrid>
-          <p className="mt-3 text-xs text-slate-500">
-            Features supported: offline download, installments (via Fees), trial, LIVE classes, course preview, limit access.
-          </p>
-          <div className="mt-4">
-            <PrimaryButton disabled={!name} onClick={createCourse}>
-              Create course
-            </PrimaryButton>
-          </div>
-        </Card>
-      )}
-
-      {tab === "coupons" && (
-        <Card title="Manage coupons">
-          <FormGrid>
-            <Field label="Coupon code" value={couponCode} onChange={setCouponCode} />
-            <Field label="Name" value={couponName} onChange={setCouponName} />
-            <Select
-              label="Discount type"
-              value={couponType}
-              onChange={setCouponType}
-              options={[
-                { value: "PERCENT", label: "Percent" },
-                { value: "FLAT", label: "Flat ₹" },
-              ]}
-            />
-            <Field label="Value" value={couponValue} onChange={setCouponValue} />
-            <Select
-              label="Course (optional)"
-              value={couponCourse}
-              onChange={setCouponCourse}
-              options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
-            />
-          </FormGrid>
-          <div className="mt-3">
-            <PrimaryButton disabled={!couponCode} onClick={saveCoupon}>
-              Create coupon
-            </PrimaryButton>
-          </div>
-          <div className="mt-4">
-            <Table
-              columns={["Code", "Type", "Value", "Live", "Redeemed"]}
-              rows={(coupons.data ?? []).map((c) => [
-                c.code,
-                c.discountType,
-                String(c.discountValue),
-                c.live ? "Live" : "Off",
-                String(c.redeemedCount ?? 0),
-              ])}
-            />
-          </div>
-        </Card>
-      )}
-
-      {tab === "backend" && (
-        <Card title="Backend addition — add students directly into courses">
-          <FormGrid>
-            <Select
-              label="Course"
-              value={addCourse}
-              onChange={setAddCourse}
-              options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
-            />
-            <Select
-              label="Student"
-              value={addStudent}
-              onChange={setAddStudent}
-              options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))}
-            />
-            <Field label="Note" value={addNote} onChange={setAddNote} />
-          </FormGrid>
-          <div className="mt-3">
-            <PrimaryButton disabled={!addCourse || !addStudent} onClick={addStudentToCourse}>
-              Add student
-            </PrimaryButton>
-          </div>
-          <div className="mt-4">
-            <Table
-              columns={["Student", "Phone", "Status", "Note"]}
-              rows={(additions.data ?? []).map((a) => [a.studentName || "—", a.studentPhone || "—", a.status, a.note || "—"])}
-            />
-          </div>
-        </Card>
-      )}
+      <p className="text-xs text-slate-400">
+        <Link className="hover:text-brand" to="/courses?view=coupons">
+          Manage coupons
+        </Link>
+        {" · "}
+        <Link className="hover:text-brand" to="/courses?view=backend">
+          Add students to a course
+        </Link>
+      </p>
     </div>
+  );
+}
+
+function SearchBar({ value, onChange, className = "" }: { value: string; onChange: (v: string) => void; className?: string }) {
+  return (
+    <label className={`relative block ${className}`}>
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+        <SearchIcon />
+      </span>
+      <input
+        className="w-full rounded-lg border border-line bg-white py-2.5 pl-10 pr-3 text-sm outline-none focus:border-brand"
+        placeholder="Search by name"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  );
+}
+
+function CourseGrid({
+  courses,
+  empty,
+  actionLabel,
+  onPublish,
+  onFeature,
+}: {
+  courses: Course[];
+  empty: string;
+  actionLabel?: string;
+  onPublish?: (c: Course) => void;
+  onFeature?: (c: Course) => void;
+}) {
+  if (courses.length === 0) return <p className="text-sm text-slate-500">{empty}</p>;
+  return (
+    <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+      {courses.map((c) => (
+        <CourseCard key={c.id} course={c} actionLabel={actionLabel} onPublish={onPublish} onFeature={onFeature} />
+      ))}
+    </div>
+  );
+}
+
+function CourseCard({
+  course: c,
+  actionLabel,
+  onPublish,
+  onFeature,
+}: {
+  course: Course;
+  actionLabel?: string;
+  onPublish?: (c: Course) => void;
+  onFeature?: (c: Course) => void;
+}) {
+  const duration = formatDuration(c);
+  const price = c.courseType === "FREE" || Number(c.fees) === 0 ? "Free" : `₹${Number(c.fees)}`;
+  return (
+    <article className="overflow-hidden rounded-2xl border border-line bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+      <Link to={`/courses/${c.id}`} className="block">
+        <div className={`relative h-36 p-4 text-white ${coverClass(c.id + c.name)}`}>
+          {c.thumbnailUrl && (
+            <>
+              <img src={c.thumbnailUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+              <div className="absolute inset-0 bg-black/25" />
+            </>
+          )}
+          {c.published === false && (
+            <span className="relative z-10 rounded bg-white/85 px-2 py-0.5 text-[10px] font-medium text-slate-700">Unpublished Course</span>
+          )}
+          {c.featured && c.published !== false && (
+            <span className="relative z-10 rounded bg-amber-300/90 px-2 py-0.5 text-[10px] font-medium text-navy">Featured</span>
+          )}
+          <p className="relative z-10 mt-8 line-clamp-2 text-lg font-semibold leading-snug drop-shadow">{c.name}</p>
+        </div>
+      </Link>
+      <div className="p-4">
+        <Link to={`/courses/${c.id}`} className="font-semibold text-navy hover:underline">
+          {c.name}
+        </Link>
+        <p className="mt-1 text-xs text-slate-500">Created by: You(Owner)</p>
+        {duration && <span className="mt-3 inline-block rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-700">{duration}</span>}
+        <div className="mt-3 flex items-end justify-between gap-2">
+          <p className="text-lg font-bold text-navy">{price}</p>
+          {actionLabel && (
+            <Link to={`/courses/${c.id}`} className="text-sm font-medium text-brand">
+              {actionLabel} →
+            </Link>
+          )}
+        </div>
+        {onPublish && onFeature && (
+          <div className="mt-3 flex flex-wrap gap-3 text-xs">
+            <button type="button" className="text-brand hover:underline" onClick={() => onPublish(c)}>
+              {c.published ? "Unpublish" : "Publish"}
+            </button>
+            <button type="button" className="text-brand hover:underline" onClick={() => onFeature(c)}>
+              {c.featured ? "Unfeature" : "Mark featured"}
+            </button>
+            <Link className="text-brand hover:underline" to={`/courses/${c.id}`}>
+              Open course
+            </Link>
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3-3" />
+    </svg>
+  );
+}
+function FunnelIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
+      <path d="M3 4h18l-7 8v6l-4 2v-8L3 4Z" />
+    </svg>
+  );
+}
+function StarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
+      <path d="m12 2 2.9 6.6L22 9.3l-5 4.7 1.4 7-6.4-3.8L5.6 21 7 14 2 9.3l7.1-.7L12 2Z" />
+    </svg>
   );
 }

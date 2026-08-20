@@ -35,7 +35,7 @@ public class LocalObjectStorage implements ObjectStorage {
             Path dest = root.resolve(key);
             Files.createDirectories(dest.getParent());
             Files.copy(data, dest);
-            return new StoredObject(key, "/files/" + key, provider());
+            return new StoredObject(key, "/api/files/" + key, provider());
         } catch (IOException e) {
             throw new IllegalStateException("Could not store file");
         }

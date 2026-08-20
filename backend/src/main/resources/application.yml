@@ -8,8 +8,8 @@ spring:
     active: ${SPRING_PROFILES_ACTIVE:}
   servlet:
     multipart:
-      max-file-size: 50MB
-      max-request-size: 50MB
+      max-file-size: 200MB
+      max-request-size: 200MB
   datasource:
     url: jdbc:postgresql://${PROPEL_DB_HOST:localhost}:${PROPEL_DB_PORT:5432}/${PROPEL_DB_NAME:propel}
     username: ${PROPEL_DB_USER:propel}

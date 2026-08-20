@@ -36,7 +36,7 @@ public class LmsService {
     }
 
     @Transactional
-    public ContentItem upload(MultipartFile file, UUID batchId, UUID courseId, String title, String contentType) {
+    public ContentItem upload(MultipartFile file, UUID batchId, UUID courseId, String title, String contentType, UUID parentFolderId) {
         PropelUser user = Auth.current();
         Access.requireWrite(user, "LMS");
         if (Roles.STUDENT.equals(user.role())) {
@@ -49,12 +49,13 @@ public class LmsService {
             item.setOrganizationId(user.organizationId());
             item.setBatchId(batchId);
             item.setCourseId(courseId);
+            item.setParentFolderId(parentFolderId);
             item.setTitle(title == null || title.isBlank() ? file.getOriginalFilename() : title);
             item.setContentType(contentType == null ? "FILE" : contentType);
             item.setStorageKey(stored.key());
             item.setUrl(stored.url());
             item.setPublished(true);
-            item.setVisibility("BATCH");
+            item.setVisibility(courseId != null ? "COURSE" : "BATCH");
             item = store.save(item);
             audit.log("CONTENT_UPLOAD", "ContentItem", item.getId(), stored.key());
             return item;
@@ -63,6 +64,41 @@ public class LmsService {
         } catch (Exception e) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Upload failed");
         }
+    }
+
+    @Transactional
+    public void deleteContent(UUID id) {
+        PropelUser user = Auth.current();
+        Access.requireWrite(user, "LMS");
+        if (Roles.STUDENT.equals(user.role())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Students cannot delete content");
+        }
+        ContentItem item = store.getOwned(ContentItem.class, id, user.organizationId());
+        if ("FOLDER".equalsIgnoreCase(item.getContentType())) {
+            for (ContentItem child : store.listBy(ContentItem.class, user.organizationId(), "parentFolderId", id)) {
+                deleteContent(child.getId());
+            }
+            for (Assessment exam : store.listBy(Assessment.class, user.organizationId(), "parentFolderId", id)) {
+                deleteAssessment(exam.getId());
+            }
+        }
+        store.deleteOwned(ContentItem.class, id, user.organizationId());
+        audit.log("CONTENT_DELETE", "ContentItem", id, item.getTitle());
+    }
+
+    @Transactional
+    public void deleteAssessment(UUID id) {
+        PropelUser user = Auth.current();
+        Access.requireWrite(user, "LMS");
+        if (Roles.STUDENT.equals(user.role())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Students cannot delete tests");
+        }
+        Assessment exam = store.getOwned(Assessment.class, id, user.organizationId());
+        for (Question q : store.listBy(Question.class, user.organizationId(), "assessmentId", id)) {
+            store.deleteOwned(Question.class, q.getId(), user.organizationId());
+        }
+        store.deleteOwned(Assessment.class, id, user.organizationId());
+        audit.log("ASSESSMENT_DELETE", "Assessment", id, exam.getTitle());
     }
 
     @Transactional
@@ -156,6 +192,21 @@ public class LmsService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Exam is not published");
         }
         Student student = requireCurrentStudent(user);
+        List<ExamAttempt> existing = store.listBy(ExamAttempt.class, user.organizationId(), "assessmentId", exam.getId());
+        ExamAttempt inProgress = existing.stream()
+                .filter(a -> student.getId().equals(a.getStudentId()) && "IN_PROGRESS".equals(a.getStatus()))
+                .findFirst()
+                .orElse(null);
+        if (inProgress != null) {
+            return inProgress;
+        }
+        long submitted = existing.stream()
+                .filter(a -> student.getId().equals(a.getStudentId()) && "SUBMITTED".equals(a.getStatus()))
+                .count();
+        Integer max = exam.getMaxAttempts();
+        if (max != null && max > 0 && submitted >= max) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "No attempts remaining for this test");
+        }
         ExamAttempt attempt = new ExamAttempt();
         attempt.setOrganizationId(user.organizationId());
         attempt.setAssessmentId(exam.getId());
@@ -167,7 +218,7 @@ public class LmsService {
     }
 
     @Transactional
-    public ExamAttempt submitExam(UUID attemptId, Map<String, String> answers) {
+    public Map<String, Object> submitExam(UUID attemptId, Map<String, String> answers) {
         PropelUser user = Auth.current();
         ExamAttempt attempt = store.getOwned(ExamAttempt.class, attemptId, user.organizationId());
         if (!"IN_PROGRESS".equals(attempt.getStatus())) {
@@ -176,14 +227,23 @@ public class LmsService {
         Assessment exam = store.getOwned(Assessment.class, attempt.getAssessmentId(), user.organizationId());
         List<Question> questions = store.listBy(Question.class, user.organizationId(), "assessmentId", exam.getId());
         int correct = 0;
+        List<Map<String, Object>> breakdown = new java.util.ArrayList<>();
         for (Question q : questions) {
             String given = answers.getOrDefault(q.getId().toString(), "");
-            if (q.getAnswerKey() != null && q.getAnswerKey().equalsIgnoreCase(given.trim())) {
+            boolean ok = q.getAnswerKey() != null && q.getAnswerKey().trim().equalsIgnoreCase(given.trim());
+            if (ok) {
                 correct++;
             }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("questionId", q.getId());
+            row.put("prompt", q.getPrompt());
+            row.put("yourAnswer", given);
+            row.put("correctAnswer", q.getAnswerKey());
+            row.put("correct", ok);
+            breakdown.add(row);
         }
         int max = Math.max(questions.size(), 1);
-        int score = (int) Math.round(correct * 100.0 / max);
+        int score = questions.isEmpty() ? 0 : (int) Math.round(correct * 100.0 / max);
         attempt.setAnswersJson(answers.toString());
         attempt.setScore(score);
         attempt.setMaxScore(100);
@@ -191,7 +251,18 @@ public class LmsService {
         attempt.setStatus("SUBMITTED");
         attempt = store.save(attempt);
         audit.log("EXAM_SUBMIT", "ExamAttempt", attempt.getId(), "score=" + score);
-        return attempt;
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", attempt.getId());
+        out.put("score", score);
+        out.put("maxScore", 100);
+        out.put("status", "SUBMITTED");
+        out.put("correctCount", correct);
+        out.put("total", questions.size());
+        int passing = exam.getPassingScore() == null ? 40 : exam.getPassingScore();
+        out.put("passed", score >= passing);
+        out.put("passingScore", passing);
+        out.put("breakdown", breakdown);
+        return out;
     }
 
     public Map<String, Object> progress(UUID studentId) {
