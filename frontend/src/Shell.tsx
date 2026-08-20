@@ -113,7 +113,7 @@ function SidebarBrand() {
 }
 
 function isCourseChrome(path: string) {
-  return path === "/courses" || path === "/courses/new";
+  return path === "/courses" || path.startsWith("/courses/");
 }
 
 export function Shell() {
@@ -156,7 +156,7 @@ export function Shell() {
           </a>
         </div>
       </aside>
-      <div className="sm:pl-60">
+      <div className="min-w-0 sm:pl-60">
         {(user?.accessStatus === "DEMO" || user?.accessStatus === "PENDING_APPROVAL") && (
           <div className="bg-amber-50 px-4 py-2 text-sm text-amber-900 sm:px-6">
             {user.accessStatus === "DEMO"
@@ -194,7 +194,7 @@ export function Shell() {
             </div>
           </header>
         )}
-        <main className={courseChrome ? "px-4 py-4 sm:px-8 sm:py-6" : "p-4 sm:p-6"}>
+        <main className={courseChrome ? "min-w-0 overflow-x-hidden px-4 py-4 sm:px-6 sm:py-6" : "min-w-0 p-4 sm:p-6"}>
           <Outlet />
         </main>
       </div>

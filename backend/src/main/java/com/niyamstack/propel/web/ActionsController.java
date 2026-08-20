@@ -142,9 +142,25 @@ public class ActionsController {
         return lms.submitAssignment(id, body.get("content"), body.get("fileUrl"));
     }
 
+    @PostMapping("/submissions/upload")
+    public Map<String, String> uploadSubmission(@RequestParam("file") MultipartFile file) {
+        return lms.uploadSubmissionFile(file);
+    }
+
     @PostMapping("/submissions/{id}/grade")
     public Submission grade(@PathVariable UUID id, @RequestBody Map<String, String> body) {
         return lms.grade(id, body.get("grade"), body.get("feedback"));
+    }
+
+    @PostMapping("/courses/{courseId}/quizzes")
+    public Assessment saveCourseQuiz(@PathVariable UUID courseId, @RequestBody LmsService.CourseQuizInput body) {
+        return lms.saveCourseQuiz(courseId, body);
+    }
+
+    @PostMapping("/courses/{courseId}/content/arrange")
+    public Map<String, String> arrangeCourseContent(@PathVariable UUID courseId, @RequestBody LmsService.ArrangeRequest body) {
+        lms.arrangeCourseContent(courseId, body);
+        return Map.of("status", "ok");
     }
 
     @PostMapping("/assessments/{id}/start")
@@ -152,9 +168,25 @@ public class ActionsController {
         return lms.startExam(id);
     }
 
+    @GetMapping("/assessments/{id}/paper")
+    public List<Map<String, Object>> examPaper(@PathVariable UUID id) {
+        return lms.examPaper(id);
+    }
+
+    @PostMapping("/attempts/{id}/draft")
+    public ExamAttempt saveExamDraft(@PathVariable UUID id, @RequestBody Map<String, String> answers) {
+        return lms.saveExamDraft(id, answers);
+    }
+
     @PostMapping("/attempts/{id}/submit")
-    public Map<String, Object> submitExam(@PathVariable UUID id, @RequestBody Map<String, String> answers) {
-        return lms.submitExam(id, answers);
+    public Map<String, Object> submitExam(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> answers) {
+        String reason = answers == null ? null : answers.remove("_reason");
+        return lms.submitExam(id, answers == null ? Map.of() : answers, reason);
+    }
+
+    @GetMapping("/attempts/{id}/result")
+    public Map<String, Object> examResult(@PathVariable UUID id) {
+        return lms.examResult(id);
     }
 
     @GetMapping("/progress/{studentId}")

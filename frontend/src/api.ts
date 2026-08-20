@@ -5,6 +5,16 @@ export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+/** Authenticated URL for files stored behind /api/files. */
+export function fileSrc(url?: string) {
+  if (!url) return "";
+  const path = url.startsWith("/files/") ? `/api${url}` : url;
+  if (/^https?:\/\//i.test(path)) return path;
+  const token = getToken();
+  if (!token) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}`;
+}
+
 export function setToken(token: string | null) {
   if (token) localStorage.setItem(TOKEN_KEY, token);
   else localStorage.removeItem(TOKEN_KEY);

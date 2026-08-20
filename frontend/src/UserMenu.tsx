@@ -8,7 +8,15 @@ export function initialsOf(name?: string) {
   return letters.toUpperCase();
 }
 
-export function UserMenu() {
+export function UserMenu({
+  signOutTo = "/login",
+  profileTo,
+  extraLinks = [],
+}: {
+  signOutTo?: string;
+  profileTo?: string;
+  extraLinks?: { label: string; to: string }[];
+} = {}) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -29,6 +37,7 @@ export function UserMenu() {
         className="relative flex items-center gap-2 rounded-full border border-line bg-white py-1 pl-1 pr-3 shadow-sm"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        aria-label="Account menu"
       >
         <span className="grid h-9 w-9 place-items-center rounded-full bg-amber-400 text-[11px] font-bold text-navy">
           {initialsOf(user?.name)}
@@ -39,14 +48,40 @@ export function UserMenu() {
         </svg>
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-2 w-44 rounded-xl border border-line bg-white py-1 shadow-lg">
-          <p className="truncate px-3 py-2 text-xs text-slate-500 sm:hidden">{user?.name}</p>
+        <div className="absolute right-0 z-30 mt-2 w-48 rounded-xl border border-line bg-white py-1 shadow-lg">
+          <p className="truncate px-3 py-2 text-xs text-slate-500">{user?.name}</p>
+          {user?.email && <p className="truncate px-3 pb-2 text-xs text-slate-400">{user.email}</p>}
+          {profileTo && (
+            <button
+              type="button"
+              className="block w-full px-3 py-2 text-left text-sm hover:bg-mist"
+              onClick={() => {
+                setOpen(false);
+                navigate(profileTo);
+              }}
+            >
+              My profile
+            </button>
+          )}
+          {extraLinks.map((link) => (
+            <button
+              key={link.to}
+              type="button"
+              className="block w-full px-3 py-2 text-left text-sm hover:bg-mist"
+              onClick={() => {
+                setOpen(false);
+                navigate(link.to);
+              }}
+            >
+              {link.label}
+            </button>
+          ))}
           <button
             type="button"
             className="block w-full px-3 py-2 text-left text-sm hover:bg-mist"
             onClick={() => {
               logout();
-              navigate("/login");
+              navigate(signOutTo);
             }}
           >
             Sign out

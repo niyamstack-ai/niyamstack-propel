@@ -170,7 +170,10 @@ public class ResourceController {
     public List<Question> questions() {
         List<Question> rows = list(Question.class);
         if (!Access.canSeeAnswerKeys(Auth.current())) {
-            rows.forEach(q -> q.setAnswerKey(null));
+            rows.forEach(q -> {
+                q.setAnswerKey(null);
+                q.setExplanation(null);
+            });
         }
         return rows;
     }
@@ -400,6 +403,12 @@ public class ResourceController {
         }
         body.setId(null);
         body.setOrganizationId(Auth.current().organizationId());
+        if (body instanceof DoubtTicket ticket && Roles.STUDENT.equals(Auth.current().role())) {
+            var me = scope.studentFor(Auth.current());
+            if (me != null) {
+                ticket.setStudentId(me.getId());
+            }
+        }
         return store.save(body);
     }
 

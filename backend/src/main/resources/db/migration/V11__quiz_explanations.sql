@@ -1,0 +1,3 @@
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS explanation TEXT;
+ALTER TABLE doubt_tickets ADD COLUMN IF NOT EXISTS course_id UUID;
+ALTER TABLE exam_attempts ALTER COLUMN answers_json SET DATA TYPE TEXT;

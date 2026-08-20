@@ -23,23 +23,36 @@ export function StudentsPage() {
   return <StaffStudents canEnroll={user?.role === "OWNER" || user?.role === "COUNSELOR"} />;
 }
 
-function MyStudentRecord() {
+export function MyStudentRecord() {
+  const { user } = useAuth();
   const students = useApi<Student[]>("/api/students");
   const guardians = useApi<{ fullName: string; relation: string }[]>("/api/guardians");
+  const record = students.data?.[0];
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-navy">My profile</h1>
+      <Card title="Signed in as">
+        <ul className="text-sm">
+          <li>Name: {user?.name || record?.fullName || "—"}</li>
+          <li>Email: {user?.email || record?.email || "—"}</li>
+          {user?.phone ? <li>Phone: {user.phone}</li> : record?.phone ? <li>Phone: {record.phone}</li> : null}
+          <li>Role: Student</li>
+        </ul>
+      </Card>
       <Card title="Student record">
         <ul className="text-sm">
-          {(students.data ?? []).map((s) => (
-            <li key={s.id}>
-              {s.studentCode} · {s.fullName} · {s.status} · {s.email}
+          {record ? (
+            <li>
+              {record.studentCode} · {record.fullName} · {record.status} · {record.email}
             </li>
-          ))}
+          ) : (
+            <li>No student record is linked to this login yet.</li>
+          )}
         </ul>
       </Card>
       <Card title="Guardians">
         <ul className="text-sm">
+          {(guardians.data ?? []).length === 0 && <li>No guardian linked.</li>}
           {(guardians.data ?? []).map((g, i) => (
             <li key={i}>
               {g.fullName} ({g.relation})

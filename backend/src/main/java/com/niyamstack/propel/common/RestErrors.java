@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -27,6 +28,12 @@ public class RestErrors {
                 .map(err -> err.getField() + " " + err.getDefaultMessage())
                 .orElse("Invalid request");
         return ResponseEntity.badRequest().body(Map.of("error", message));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, String>> handleUnreadable(HttpMessageNotReadableException ex) {
+        log.warn("Unreadable request", ex);
+        return ResponseEntity.badRequest().body(Map.of("error", "Could not read this request. Check the test name and questions, then save again."));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

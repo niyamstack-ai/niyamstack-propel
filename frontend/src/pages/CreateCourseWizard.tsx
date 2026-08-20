@@ -1,12 +1,32 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { api, fileSrc } from "../api";
 import { createRecord, updateRecord, uploadContentFile } from "../ops";
 import { ErrorText, useApi } from "../ui";
 import { UserMenu } from "../UserMenu";
 import { CourseContentPanel } from "./courseContent";
 
-type Draft = { id: string; name: string; code?: string; published?: boolean };
-type CourseOption = { id: string; name: string };
+type Draft = {
+  id: string;
+  name: string;
+  code?: string;
+  published?: boolean;
+  description?: string;
+  thumbnailUrl?: string;
+  category?: string;
+  subCategory?: string;
+  courseType?: string;
+  validityType?: string;
+  validityValue?: number;
+  validityUnit?: string;
+  fees?: number;
+  discount?: number;
+  allowOffline?: boolean;
+  allowTrial?: boolean;
+  allowPreview?: boolean;
+  allowLive?: boolean;
+  featured?: boolean;
+};
 
 const STEPS = ["Basic Information", "Edit Price", "Add Content", "Bundle (Optional)"] as const;
 
@@ -31,7 +51,10 @@ const FEATURES = [
 
 export function CreateCourseWizard() {
   const navigate = useNavigate();
-  const courses = useApi<CourseOption[]>("/api/courses");
+  const { courseId } = useParams();
+  const courses = useApi<Draft[]>("/api/courses");
+  const editing = Boolean(courseId);
+  const [loaded, setLoaded] = useState(false);
 
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -43,6 +66,7 @@ export function CreateCourseWizard() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [thumbnailUrl, setThumbnailUrl] = useState("");
+  const thumbnailRef = useRef("");
   const [categoryRows, setCategoryRows] = useState([{ category: "", subCategory: "" }]);
 
   const [courseType, setCourseType] = useState<"PAID" | "FREE">("PAID");
@@ -70,6 +94,35 @@ export function CreateCourseWizard() {
   const [bundleIds, setBundleIds] = useState<string[]>([]);
 
   const thumbInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!courseId || loaded || !courses.data) return;
+    const existing = courses.data.find((c) => c.id === courseId);
+    if (!existing) {
+      setError("This course was not found.");
+      setLoaded(true);
+      return;
+    }
+    setDraft(existing);
+    setName(existing.name || "");
+    setDescription(existing.description || "");
+    setThumbnailUrl(existing.thumbnailUrl || "");
+    thumbnailRef.current = existing.thumbnailUrl || "";
+    setCategoryRows([{ category: existing.category || "", subCategory: existing.subCategory || "" }]);
+    setCourseType(existing.courseType === "FREE" ? "FREE" : "PAID");
+    setValidityType(existing.validityType || "SINGLE");
+    setValidityValue(String(existing.validityValue || 1));
+    setValidityUnit(existing.validityUnit || "MONTH");
+    setFees(String(existing.fees ?? 0));
+    setDiscount(String(existing.discount ?? 0));
+    setAllowOffline(Boolean(existing.allowOffline));
+    setAllowTrial(Boolean(existing.allowTrial));
+    setAllowPreview(existing.allowPreview !== false);
+    setAllowLive(Boolean(existing.allowLive));
+    setFeatured(Boolean(existing.featured));
+    setLoaded(true);
+  }, [courseId, courses.data, loaded]);
+
   const paid = courseType === "PAID";
   const basePrice = Math.max(0, Number(fees || 0) - Number(discount || 0));
   const internetFee = payInternet ? 0 : 0.05;
@@ -90,7 +143,7 @@ export function CreateCourseWizard() {
       code: draft?.code || `CRS-${Date.now().toString().slice(-6)}`,
       name,
       description,
-      thumbnailUrl,
+      thumbnailUrl: thumbnailRef.current || thumbnailUrl,
       category: primary?.category || "Others",
       subCategory: primary?.subCategory || "Others",
       courseType,
@@ -122,10 +175,12 @@ export function CreateCourseWizard() {
     }
   }
 
+  const live = Boolean(draft) && draft.published !== false;
+
   async function persist(published = false) {
     const body = payload(published);
     if (draft) {
-      const updated = await updateRecord<Draft>(`/api/courses/${draft.id}`, body);
+      const updated = await updateRecord<Draft>(`/api/courses/${draft.id}`, { ...draft, ...body });
       setDraft(updated);
       return updated;
     }
@@ -140,15 +195,23 @@ export function CreateCourseWizard() {
       return;
     }
     await run(async () => {
-      if (step <= 1) await persist(false);
+      if (step <= 1) await persist(live);
       setStep((s) => Math.min(s + 1, 3));
     });
   }
 
   async function publish() {
     await run(async () => {
-      await persist(true);
-      navigate("/courses");
+      const saved = await persist(true);
+      try {
+        const org = await api<{ slug?: string; websitePublished?: boolean; name?: string; websiteUrl?: string }>("/api/organization");
+        if (org.slug && org.websitePublished === false) {
+          await updateRecord("/api/organization", { ...org, websitePublished: true, websiteUrl: org.websiteUrl || `/s/${org.slug}` });
+        }
+      } catch {
+        /* course is published even if the website flag cannot be updated */
+      }
+      navigate(`/courses/${saved.id}?share=1`);
     });
   }
 
@@ -156,16 +219,27 @@ export function CreateCourseWizard() {
     if (!file) return;
     await run(async () => {
       const stored = await uploadContentFile(file, { title: `${name || "Course"} thumbnail`, contentType: "IMAGE" });
-      if (stored.url) setThumbnailUrl(stored.url);
+      const url = stored.url;
+      if (!url) throw new Error("Thumbnail uploaded, but no file URL was returned. Try another image.");
+      thumbnailRef.current = url;
+      setThumbnailUrl(url);
+      if (draft) {
+        const updated = await updateRecord<Draft>(`/api/courses/${draft.id}`, { ...draft, ...payload(live), thumbnailUrl: url });
+        setDraft(updated);
+      }
     });
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-[28px] font-bold leading-tight text-navy">Create Course</h1>
-          <p className="mt-1 text-sm text-slate-500">Add / view content of your course.</p>
+    <div className="min-w-0 max-w-full space-y-5">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-[28px] font-bold leading-tight text-navy">{editing || draft ? (live ? "Edit Course" : "Finish Course") : "Create Course"}</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {live
+              ? "Update thumbnail, price, or content. Changes apply as soon as you save."
+              : "Finish setup, then publish. Students cannot see an unpublished course."}
+          </p>
         </div>
         <UserMenu />
       </div>
@@ -173,10 +247,10 @@ export function CreateCourseWizard() {
       <Stepper step={step} onJump={(i) => i <= step && setStep(i)} />
       <ErrorText error={error} />
 
-      <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+      <div className="min-w-0 overflow-x-hidden rounded-2xl border border-line bg-white shadow-sm">
         {step === 0 && (
-          <div className="grid gap-0 lg:grid-cols-[1fr_280px]">
-            <div className="space-y-5 p-6 sm:p-8">
+          <div className="grid min-w-0 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_16rem]">
+            <div className="min-w-0 space-y-5 p-5 sm:p-8">
               <label className="block text-sm">
                 <span className="font-medium text-slate-700">Name</span>
                 <input
@@ -201,13 +275,27 @@ export function CreateCourseWizard() {
                 <button type="button" className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-brand" onClick={() => thumbInput.current?.click()}>
                   <UploadIcon /> Upload thumbnail image
                 </button>
-                {thumbnailUrl && <p className="mt-1 truncate text-xs text-slate-500">{thumbnailUrl}</p>}
+                {thumbnailUrl && (
+                  <div className="mt-3 max-w-xs overflow-hidden rounded-lg border border-line">
+                    <img src={fileSrc(thumbnailUrl)} alt="Course thumbnail" className="h-36 w-full object-cover" />
+                    <div className="flex items-center justify-between px-2 py-1">
+                      <p className="text-xs text-slate-500">Thumbnail uploaded</p>
+                      <button
+                        type="button"
+                        className="text-xs text-brand hover:underline"
+                        onClick={() => thumbInput.current?.click()}
+                      >
+                        Replace
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
                   <span className="text-amber-400">💡</span> Recommended Image Size: 800px x 600px, PNG or JPEG file.
                 </p>
               </div>
               {categoryRows.map((row, i) => (
-                <div key={i} className="grid gap-3 sm:grid-cols-2">
+                <div key={i} className="grid min-w-0 gap-3 sm:grid-cols-2">
                   <label className="block text-sm">
                     <span className="font-medium text-slate-700">Category</span>
                     <select
@@ -256,17 +344,17 @@ export function CreateCourseWizard() {
                 + Add Another Category
               </button>
             </div>
-            <aside className="border-t border-line bg-[#f4f8fc] p-6 lg:border-l lg:border-t-0">
+            <aside className="min-w-0 border-t border-line bg-[#f4f8fc] p-5 xl:border-l xl:border-t-0">
               <h3 className="font-semibold text-navy">Features</h3>
               <ul className="mt-4 space-y-3">
                 {FEATURES.map((f) => (
-                  <li key={f} className="flex items-start gap-2.5 text-sm text-slate-700">
+                  <li key={f} className="flex min-w-0 items-start gap-2.5 text-sm text-slate-700">
                     <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-500 text-white">
                       <svg viewBox="0 0 20 20" className="h-3 w-3" aria-hidden>
                         <path fill="currentColor" d="M7.7 13.3 4.4 10l-1.4 1.4 4.7 4.7L17 6.8 15.6 5.4z" />
                       </svg>
                     </span>
-                    {f}
+                    <span className="min-w-0 break-words">{f}</span>
                   </li>
                 ))}
               </ul>
@@ -275,8 +363,8 @@ export function CreateCourseWizard() {
         )}
 
         {step === 1 && (
-          <div className="grid gap-0 lg:grid-cols-[1fr_280px]">
-            <div className="space-y-6 p-6 sm:p-8">
+          <div className="grid min-w-0 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_16rem]">
+            <div className="min-w-0 space-y-6 p-5 sm:p-8">
               <div>
                 <p className="text-sm font-semibold text-navy">Course Type</p>
                 <div className="mt-3 flex flex-wrap gap-6 text-sm">
@@ -349,7 +437,7 @@ export function CreateCourseWizard() {
                 </button>
               </div>
             </div>
-            <aside className="border-t border-line bg-[#f4f8fc] p-6 lg:border-l lg:border-t-0">
+            <aside className="min-w-0 border-t border-line bg-[#f4f8fc] p-5 xl:border-l xl:border-t-0">
               <h3 className="font-semibold text-navy">What is Course Validity?</h3>
               <p className="mt-3 text-sm leading-relaxed text-slate-600">
                 Validity is the predefined time period students can access this course after purchase. Choose{" "}
@@ -396,7 +484,7 @@ export function CreateCourseWizard() {
           </div>
         )}
 
-        <div className="flex items-center justify-between border-t border-line px-4 py-4 sm:px-8">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-4 sm:px-8">
           {step > 0 ? (
             <button
               type="button"
@@ -415,30 +503,30 @@ export function CreateCourseWizard() {
               type="button"
               disabled={busy || (step === 0 && !name.trim())}
               className="inline-flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
-              onClick={step === 2 ? publish : goNext}
+              onClick={goNext}
             >
-              {step === 2 ? "Publish" : "Next"} →
+              Next →
             </button>
           ) : (
-            <button
-              type="button"
-              disabled={busy}
-              className="inline-flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
-              onClick={publish}
-            >
-              Publish →
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" disabled={busy} className="text-sm text-slate-500 hover:text-navy" onClick={publish}>
+                Skip bundle
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                className="inline-flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                onClick={publish}
+              >
+                {live ? "Save & share" : "Publish"} →
+              </button>
+            </div>
           )}
         </div>
       </div>
 
       {step === 2 && (
-        <p className="text-center text-xs text-slate-500">
-          Bundle is optional.{" "}
-          <button type="button" className="font-medium text-brand" onClick={() => setStep(3)}>
-            Add a bundle →
-          </button>
-        </p>
+        <p className="text-center text-xs text-slate-500">Next opens Bundle, which you can skip. Publish is on the last step.</p>
       )}
 
       <button type="button" className="text-sm text-brand" onClick={() => setShowHelp((v) => !v)}>
@@ -498,26 +586,28 @@ export function CreateCourseWizard() {
 
 function Stepper({ step, onJump }: { step: number; onJump: (i: number) => void }) {
   return (
-    <ol className="flex items-start justify-between gap-2">
+    <ol className="flex min-w-0 items-start justify-between gap-1 sm:gap-2">
       {STEPS.map((label, i) => {
         const done = i < step;
         const active = i === step;
         return (
-          <li key={label} className="flex flex-1 flex-col items-center">
+          <li key={label} className="flex min-w-0 flex-1 flex-col items-center">
             <div className="flex w-full items-center">
-              <div className={`h-0.5 flex-1 ${i === 0 ? "bg-transparent" : done || active ? "bg-brand" : "bg-slate-200"}`} />
+              <div className={`h-0.5 min-w-0 flex-1 ${i === 0 ? "bg-transparent" : done || active ? "bg-brand" : "bg-slate-200"}`} />
               <button
                 type="button"
                 onClick={() => onJump(i)}
-                className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-semibold ${
+                className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-semibold sm:h-9 sm:w-9 ${
                   done ? "bg-brand text-white" : active ? "bg-sky-100 text-brand" : "border border-slate-300 bg-white text-slate-500"
                 }`}
               >
                 {done ? "✓" : i + 1}
               </button>
-              <div className={`h-0.5 flex-1 ${i === STEPS.length - 1 ? "bg-transparent" : done ? "bg-brand" : "bg-slate-200"}`} />
+              <div className={`h-0.5 min-w-0 flex-1 ${i === STEPS.length - 1 ? "bg-transparent" : done ? "bg-brand" : "bg-slate-200"}`} />
             </div>
-            <span className={`mt-2 text-center text-xs sm:text-sm ${active ? "font-semibold text-navy" : "text-slate-500"}`}>{label}</span>
+            <span className={`mt-2 max-w-full px-0.5 text-center text-[11px] leading-tight sm:text-sm ${active ? "font-semibold text-navy" : "text-slate-500"}`}>
+              {label}
+            </span>
           </li>
         );
       })}

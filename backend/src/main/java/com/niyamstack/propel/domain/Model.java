@@ -100,6 +100,7 @@ public final class Model {
         private String name;
         @Column(columnDefinition = "TEXT")
         private String description;
+        @Column(length = 1000)
         private String thumbnailUrl;
         private String category;
         private String subCategory;
@@ -310,6 +311,7 @@ public final class Model {
         private String visibility = "BATCH";
         private boolean published = true;
         private UUID parentFolderId;
+        private Integer sortOrder = 0;
     }
 
     @Entity(name = "LiveSession") @Table(name = "live_sessions") @Getter @Setter
@@ -365,6 +367,7 @@ public final class Model {
         private Integer totalMarks;
         private UUID parentFolderId;
         private Integer maxAttempts;
+        private Integer sortOrder = 0;
     }
 
     @Entity(name = "Question") @Table(name = "questions") @Getter @Setter
@@ -378,12 +381,15 @@ public final class Model {
         private String optionsJson;
         @Column(columnDefinition = "TEXT")
         private String answerKey;
+        @Column(columnDefinition = "TEXT")
+        private String explanation;
     }
 
     @Entity(name = "DoubtTicket") @Table(name = "doubt_tickets") @Getter @Setter
     public static class DoubtTicket extends TenantEntity {
         private UUID studentId;
         private UUID batchId;
+        private UUID courseId;
         private String subject;
         private String body;
         private String status;
@@ -643,7 +649,7 @@ public final class Model {
         private UUID studentId;
         private Instant startedAt;
         private Instant submittedAt;
-        @Column(length = 8000)
+        @Column(columnDefinition = "TEXT")
         private String answersJson;
         private Integer score;
         private Integer maxScore;

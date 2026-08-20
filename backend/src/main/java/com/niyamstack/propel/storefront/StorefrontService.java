@@ -3,6 +3,9 @@ package com.niyamstack.propel.storefront;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.AppUser;
+import com.niyamstack.propel.domain.Model.Assessment;
+import com.niyamstack.propel.domain.Model.ContentItem;
+import com.niyamstack.propel.domain.Model.Coupon;
 import com.niyamstack.propel.domain.Model.Course;
 import com.niyamstack.propel.domain.Model.CourseEnrollment;
 import com.niyamstack.propel.domain.Model.Invoice;
@@ -20,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
@@ -43,10 +47,15 @@ public class StorefrontService {
 
     public Organization liveOrg(String slug) {
         Organization org = store.findOrgBySlug(slug);
-        if (!org.isWebsitePublished()) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "This institute website is not live yet");
+        if (org.isWebsitePublished()) {
+            return org;
         }
-        return org;
+        boolean hasLiveCourse = store.list(Course.class, org.getId()).stream()
+                .anyMatch(c -> c.isActive() && c.isPublished());
+        if (hasLiveCourse) {
+            return org;
+        }
+        throw new ApiException(HttpStatus.NOT_FOUND, "This institute website is not live yet");
     }
 
     public Map<String, Object> publicOrg(Organization org) {
@@ -76,7 +85,7 @@ public class StorefrontService {
     }
 
     @Transactional
-    public Map<String, Object> purchase(String slug, String fullName, String email, String phoneRaw, UUID courseId) {
+    public Map<String, Object> purchase(String slug, String fullName, String email, String phoneRaw, UUID courseId, String couponCode) {
         if (fullName == null || fullName.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Name is required");
         }
@@ -142,6 +151,12 @@ public class StorefrontService {
         }
 
         BigDecimal price = payable(course);
+        Coupon applied = couponFor(org.getId(), course.getId(), couponCode);
+        if (applied != null) {
+            price = discounted(price, applied);
+            applied.setRedeemedCount((applied.getRedeemedCount() == null ? 0 : applied.getRedeemedCount()) + 1);
+            store.save(applied);
+        }
         Invoice invoice = new Invoice();
         invoice.setOrganizationId(org.getId());
         invoice.setStudentId(student.getId());
@@ -229,6 +244,7 @@ public class StorefrontService {
     public Map<String, Object> publicCourse(Course course) {
         BigDecimal fees = course.getFees() == null ? BigDecimal.ZERO : course.getFees();
         BigDecimal discount = course.getDiscount() == null ? BigDecimal.ZERO : course.getDiscount();
+        Organization org = store.get(Organization.class, course.getOrganizationId());
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("id", course.getId());
         out.put("code", course.getCode());
@@ -236,13 +252,110 @@ public class StorefrontService {
         out.put("description", course.getDescription());
         out.put("thumbnailUrl", course.getThumbnailUrl());
         out.put("category", course.getCategory());
+        out.put("subCategory", course.getSubCategory());
         out.put("durationMonths", course.getDurationMonths());
+        out.put("validityType", course.getValidityType());
+        out.put("validityValue", course.getValidityValue());
+        out.put("validityUnit", course.getValidityUnit());
+        out.put("allowOffline", course.isAllowOffline());
+        out.put("allowPreview", course.isAllowPreview());
+        out.put("allowLive", course.isAllowLive());
+        out.put("instituteName", org.getName());
         out.put("fees", fees);
         out.put("discount", discount);
         out.put("price", payable(course));
         out.put("courseType", course.getCourseType() == null ? "PAID" : course.getCourseType());
         out.put("featured", course.isFeatured());
         return out;
+    }
+
+    public List<Map<String, Object>> courseOutline(Organization org, UUID courseId) {
+        course(org, courseId);
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (ContentItem item : store.listBy(ContentItem.class, org.getId(), "courseId", courseId)) {
+            if (!item.isPublished()) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", item.getId());
+            row.put("title", item.getTitle());
+            row.put("type", item.getContentType());
+            row.put("parentFolderId", item.getParentFolderId());
+            row.put("sortOrder", item.getSortOrder() == null ? 0 : item.getSortOrder());
+            rows.add(row);
+        }
+        for (Assessment exam : store.listBy(Assessment.class, org.getId(), "courseId", courseId)) {
+            if (!exam.isPublished()) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", exam.getId());
+            row.put("title", exam.getTitle());
+            row.put("type", "TEST");
+            row.put("parentFolderId", exam.getParentFolderId());
+            row.put("sortOrder", exam.getSortOrder() == null ? 0 : exam.getSortOrder());
+            rows.add(row);
+        }
+        rows.sort((a, b) -> Integer.compare((Integer) a.get("sortOrder"), (Integer) b.get("sortOrder")));
+        return rows;
+    }
+
+    public Map<String, Object> applyCoupon(String slug, UUID courseId, String code) {
+        Organization org = liveOrg(slug);
+        Course course = store.getOwned(Course.class, courseId, org.getId());
+        if (!course.isActive() || !course.isPublished()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Course not found");
+        }
+        Coupon coupon = couponFor(org.getId(), courseId, code);
+        if (coupon == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "This coupon is not valid for this course.");
+        }
+        BigDecimal original = payable(course);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("valid", true);
+        out.put("code", coupon.getCode());
+        out.put("originalPrice", original);
+        out.put("price", discounted(original, coupon));
+        return out;
+    }
+
+    public String thumbnailKey(Course course) {
+        String url = course.getThumbnailUrl();
+        if (url == null || url.isBlank()) {
+            return null;
+        }
+        String marker = "/api/files/";
+        int at = url.indexOf(marker);
+        if (at < 0) {
+            return null;
+        }
+        return url.substring(at + marker.length());
+    }
+
+    private Coupon couponFor(UUID orgId, UUID courseId, String code) {
+        if (code == null || code.isBlank()) {
+            return null;
+        }
+        String wanted = code.trim();
+        return store.list(Coupon.class, orgId).stream()
+                .filter(Coupon::isLive)
+                .filter(c -> c.getCode() != null && c.getCode().equalsIgnoreCase(wanted))
+                .filter(c -> c.getCourseId() == null || courseId.equals(c.getCourseId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static BigDecimal discounted(BigDecimal price, Coupon coupon) {
+        if (coupon.getDiscountValue() == null) {
+            return price;
+        }
+        BigDecimal next = price;
+        if ("PERCENT".equalsIgnoreCase(coupon.getDiscountType())) {
+            next = price.subtract(price.multiply(coupon.getDiscountValue()).divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP));
+        } else {
+            next = price.subtract(coupon.getDiscountValue());
+        }
+        return next.signum() < 0 ? BigDecimal.ZERO : next;
     }
 
     private static BigDecimal payable(Course course) {

@@ -1,17 +1,23 @@
 import { useState } from "react";
-import { api } from "../api";
-import { createRecord } from "../ops";
+import { api, fileSrc } from "../api";
+import { createRecord, uploadSubmissionFile } from "../ops";
 import { useAuth } from "../auth";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
 
 type Content = { id: string; title: string; contentType: string; scormStandard?: string; published?: boolean; courseId?: string };
-type Assignment = { id: string; title: string; instructions: string; courseId?: string };
-type Submission = { id: string; grade?: string; status?: string; content?: string };
+type Assignment = { id: string; title: string; instructions: string; courseId?: string; dueAt?: string };
+type Submission = { id: string; assignmentId?: string; grade?: string; status?: string; content?: string; fileUrl?: string; feedback?: string; submittedAt?: string };
 type Assessment = { id: string; title: string; kind: string; proctoring: boolean; published: boolean; courseId?: string };
 type Attempt = { id: string; score?: number; status: string };
 type Pkg = { id: string; standard: string; status: string; versionLabel?: string };
 type Named = { id: string; name: string };
 type Student = { id: string; fullName: string };
+type Doubt = { id?: string; subject: string; body?: string; status: string; facultyReply?: string; courseId?: string };
+
+function inCourse<T extends { courseId?: string }>(rows: T[] | null | undefined, courseId?: string, strict = false) {
+  if (!courseId) return rows ?? [];
+  return (rows ?? []).filter((row) => (strict ? row.courseId === courseId : !row.courseId || row.courseId === courseId));
+}
 
 export function LmsPage() {
   const { user } = useAuth();
@@ -19,23 +25,20 @@ export function LmsPage() {
   return <StaffLms />;
 }
 
-function inCourse<T extends { courseId?: string }>(rows: T[] | null | undefined, courseId?: string) {
-  if (!courseId) return rows ?? [];
-  return (rows ?? []).filter((row) => !row.courseId || row.courseId === courseId);
-}
-
 export function StudentLms({ courseId, embedded }: { courseId?: string; embedded?: boolean } = {}) {
   const content = useApi<Content[]>("/api/content");
   const live = useApi<{ title: string; provider: string; meetingUrl: string }[]>("/api/live-sessions");
   const recs = useApi<{ title: string; videoUrl: string }[]>("/api/recordings");
   const asg = useApi<Assignment[]>("/api/assignments");
-  const exams = useApi<Assessment[]>("/api/assessments");
   const attempts = useApi<Attempt[]>("/api/exam-attempts");
-  const doubts = useApi<{ subject: string; status: string; facultyReply?: string }[]>("/api/doubts");
+  const subs = useApi<Submission[]>("/api/submissions");
+  const doubts = useApi<Doubt[]>("/api/doubts");
+  const me = useApi<Student[]>("/api/students");
   const slots = useApi<{ subject: string; dayOfWeek: number; startTime: string }[]>("/api/timetable");
   const [error, setError] = useState<string | null>(null);
   const [doubtSub, setDoubtSub] = useState("");
   const [doubtBody, setDoubtBody] = useState("");
+  const [openAsg, setOpenAsg] = useState<Assignment | null>(null);
 
   async function run(fn: () => Promise<void>) {
     setError(null);
@@ -47,8 +50,14 @@ export function StudentLms({ courseId, embedded }: { courseId?: string; embedded
   }
 
   const materials = inCourse(content.data, courseId);
-  const quizzes = inCourse(exams.data, courseId);
-  const homework = inCourse(asg.data, courseId);
+  const homework = inCourse(asg.data, courseId, !!embedded);
+  const courseDoubts = (doubts.data ?? []).filter((d) => !courseId || d.courseId === courseId);
+
+  function latestSub(assignmentId: string) {
+    return (subs.data ?? [])
+      .filter((s) => s.assignmentId === assignmentId)
+      .sort((a, b) => String(b.submittedAt || "").localeCompare(String(a.submittedAt || "")))[0];
+  }
 
   return (
     <div className="space-y-6">
@@ -95,46 +104,32 @@ export function StudentLms({ courseId, embedded }: { courseId?: string; embedded
         </>
       )}
       <Card title="Assignments">
-        <ul className="space-y-2 text-sm">
-          {homework.map((a) => (
-            <li key={a.id} className="flex flex-wrap items-center justify-between gap-2">
-              <span>{a.title}</span>
-              <PrimaryButton
-                onClick={() =>
-                  run(async () => {
-                    await api(`/api/actions/assignments/${a.id}/submit`, {
-                      method: "POST",
-                      body: JSON.stringify({ content: "Submitted from student portal" }),
-                    });
-                  })
-                }
-              >
-                Submit
-              </PrimaryButton>
-            </li>
-          ))}
+        {homework.length === 0 && <p className="text-sm text-slate-500">No assignments in this course yet.</p>}
+        <ul className="space-y-3 text-sm">
+          {homework.map((a) => {
+            const last = latestSub(a.id);
+            return (
+              <li key={a.id} className="flex flex-wrap items-start justify-between gap-2">
+                <span>
+                  <span className="block font-medium text-navy">{a.title}</span>
+                  {a.instructions && <span className="mt-0.5 block text-slate-500">{a.instructions}</span>}
+                  {a.dueAt && <span className="mt-0.5 block text-xs text-slate-400">Due {new Date(a.dueAt).toLocaleString()}</span>}
+                  {last && (
+                    <span className="mt-0.5 block text-xs text-slate-500">
+                      {last.status === "GRADED" ? `Graded ${last.grade || ""}` : "Submitted"}
+                      {last.feedback ? ` · ${last.feedback}` : ""}
+                    </span>
+                  )}
+                </span>
+                <PrimaryButton onClick={() => setOpenAsg(a)}>{last ? "Resubmit" : "Submit"}</PrimaryButton>
+              </li>
+            );
+          })}
         </ul>
       </Card>
       {!embedded && (
       <Card title="Quizzes & exams">
-        <ul className="space-y-2 text-sm">
-          {quizzes.map((e) => (
-            <li key={e.id} className="flex flex-wrap items-center justify-between gap-2">
-              <span>{e.title}</span>
-              <PrimaryButton
-                onClick={() =>
-                  run(async () => {
-                    const attempt = await api<{ id: string }>(`/api/actions/assessments/${e.id}/start`, { method: "POST", body: "{}" });
-                    await api(`/api/actions/attempts/${attempt.id}/submit`, { method: "POST", body: JSON.stringify({}) });
-                    attempts.reload();
-                  })
-                }
-              >
-                Attempt
-              </PrimaryButton>
-            </li>
-          ))}
-        </ul>
+        <p className="text-sm text-slate-500">Open a course to take tests with the timer and question paper.</p>
         <ul className="mt-3 text-xs text-slate-500">
           {(attempts.data ?? []).map((a) => (
             <li key={a.id}>
@@ -147,14 +142,23 @@ export function StudentLms({ courseId, embedded }: { courseId?: string; embedded
       <Card title="Ask a doubt">
         <FormGrid>
           <Field label="Subject" value={doubtSub} onChange={setDoubtSub} />
-          <Field label="Question" value={doubtBody} onChange={setDoubtBody} />
+          <label className="block text-sm">
+            <span className="text-slate-600">Question</span>
+            <textarea className="mt-1 w-full rounded-lg border border-line px-3 py-2" rows={4} value={doubtBody} onChange={(e) => setDoubtBody(e.target.value)} />
+          </label>
         </FormGrid>
         <div className="mt-3">
           <PrimaryButton
             disabled={!doubtSub || !doubtBody}
             onClick={() =>
               run(async () => {
-                await createRecord("/api/doubts", { subject: doubtSub, body: doubtBody, status: "OPEN" });
+                await createRecord("/api/doubts", {
+                  subject: doubtSub,
+                  body: doubtBody,
+                  status: "OPEN",
+                  courseId: courseId || null,
+                  studentId: me.data?.[0]?.id || null,
+                });
                 setDoubtSub("");
                 setDoubtBody("");
                 doubts.reload();
@@ -164,15 +168,109 @@ export function StudentLms({ courseId, embedded }: { courseId?: string; embedded
             Send
           </PrimaryButton>
         </div>
-        <ul className="mt-4 text-sm">
-          {(doubts.data ?? []).map((d, i) => (
-            <li key={i}>
-              {d.subject} — {d.status}
-              {d.facultyReply ? `: ${d.facultyReply}` : ""}
+        <ul className="mt-4 space-y-2 text-sm">
+          {courseDoubts.map((d, i) => (
+            <li key={d.id || i}>
+              <span className="font-medium">{d.subject}</span> — {d.status}
+              {d.body ? <span className="mt-0.5 block text-slate-500">{d.body}</span> : null}
+              {d.facultyReply ? <span className="mt-0.5 block text-navy">Reply: {d.facultyReply}</span> : null}
             </li>
           ))}
         </ul>
       </Card>
+      {openAsg && (
+        <AssignmentSubmitModal
+          assignment={openAsg}
+          last={latestSub(openAsg.id)}
+          onClose={() => setOpenAsg(null)}
+          onSaved={() => {
+            setOpenAsg(null);
+            subs.reload();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AssignmentSubmitModal({
+  assignment,
+  last,
+  onClose,
+  onSaved,
+}: {
+  assignment: Assignment;
+  last?: Submission;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [text, setText] = useState(last?.content && !last.content.startsWith("Submitted from") ? last.content : "");
+  const [fileUrl, setFileUrl] = useState(last?.fileUrl || "");
+  const [fileName, setFileName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onFile(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const stored = await uploadSubmissionFile(file);
+      setFileUrl(stored.url);
+      setFileName(stored.fileName);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submit() {
+    setError(null);
+    setBusy(true);
+    try {
+      await api(`/api/actions/assignments/${assignment.id}/submit`, {
+        method: "POST",
+        body: JSON.stringify({ content: text, fileUrl }),
+      });
+      onSaved();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold text-navy">{assignment.title}</h3>
+        {assignment.instructions && <p className="mt-2 text-sm text-slate-600">{assignment.instructions}</p>}
+        {assignment.dueAt && <p className="mt-1 text-xs text-slate-400">Due {new Date(assignment.dueAt).toLocaleString()}</p>}
+        <label className="mt-4 block text-sm">
+          <span className="text-slate-600">Your work (text or link)</span>
+          <textarea className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm" rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste a GitHub link or write your answer" />
+        </label>
+        <label className="mt-3 block text-sm">
+          <span className="text-slate-600">Or attach a file</span>
+          <input className="mt-1 block w-full text-sm" type="file" onChange={(e) => void onFile(e.target.files?.[0])} />
+          {fileName && <span className="mt-1 block text-xs text-slate-500">Attached: {fileName}</span>}
+          {fileUrl && !fileName && (
+            <a className="mt-1 block text-xs text-brand" href={fileSrc(fileUrl)} target="_blank" rel="noreferrer">
+              Current file
+            </a>
+          )}
+        </label>
+        <ErrorText error={error} />
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" className="rounded-lg px-3 py-2 text-sm" onClick={onClose}>
+            Cancel
+          </button>
+          <PrimaryButton disabled={busy} onClick={() => void submit()}>
+            {busy ? "Submitting…" : "Submit work"}
+          </PrimaryButton>
+        </div>
+      </div>
     </div>
   );
 }

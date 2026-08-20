@@ -50,6 +50,8 @@ public class SchemaPatch {
                 "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS website_published BOOLEAN DEFAULT FALSE",
                 "ALTER TABLE courses ADD COLUMN IF NOT EXISTS description TEXT",
                 "ALTER TABLE courses ADD COLUMN IF NOT EXISTS thumbnail_url VARCHAR(500)",
+                "ALTER TABLE courses ALTER COLUMN thumbnail_url SET DATA TYPE VARCHAR(1000)",
+                "ALTER TABLE courses ALTER COLUMN thumbnail_url TYPE VARCHAR(1000)",
                 "ALTER TABLE courses ADD COLUMN IF NOT EXISTS category VARCHAR(80)",
                 "ALTER TABLE courses ADD COLUMN IF NOT EXISTS sub_category VARCHAR(80)",
                 "ALTER TABLE courses ADD COLUMN IF NOT EXISTS course_type VARCHAR(20) DEFAULT 'PAID'",
@@ -76,6 +78,12 @@ public class SchemaPatch {
                 "ALTER TABLE content_items ADD COLUMN IF NOT EXISTS parent_folder_id UUID",
                 "ALTER TABLE assessments ADD COLUMN IF NOT EXISTS parent_folder_id UUID",
                 "ALTER TABLE assessments ADD COLUMN IF NOT EXISTS max_attempts INTEGER",
+                "ALTER TABLE content_items ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0",
+                "ALTER TABLE assessments ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0",
+                "ALTER TABLE questions ADD COLUMN IF NOT EXISTS explanation TEXT",
+                "ALTER TABLE doubt_tickets ADD COLUMN IF NOT EXISTS course_id UUID",
+                "ALTER TABLE exam_attempts ALTER COLUMN answers_json SET DATA TYPE TEXT",
+                "ALTER TABLE exam_attempts ALTER COLUMN answers_json TYPE TEXT",
                 """
                 CREATE TABLE IF NOT EXISTS course_enrollments (
                     id UUID PRIMARY KEY,

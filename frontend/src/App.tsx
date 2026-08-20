@@ -34,7 +34,7 @@ import { CampaignsPage } from "./pages/CampaignsPage";
 import { PeoplePage } from "./pages/PeoplePage";
 import { SelfServicePage } from "./pages/SelfServicePage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
-import { StorefrontAppPage, StorefrontCatalogPage, StorefrontCoursePage, StorefrontLayout, StorefrontLearnPage, StorefrontLoginPage, StorefrontStudyPage } from "./pages/Storefront";
+import { StorefrontAppPage, StorefrontCatalogPage, StorefrontCoursePage, StorefrontFeesPage, StorefrontJobsPage, StorefrontLayout, StorefrontLearnPage, StorefrontLoginPage, StorefrontProfilePage, StorefrontStudyPage } from "./pages/Storefront";
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { token, ready } = useAuth();
@@ -79,6 +79,9 @@ export default function App() {
         <Route path="app" element={<StorefrontAppPage />} />
         <Route path="learn" element={<StorefrontLearnPage />} />
         <Route path="learn/:courseId" element={<StorefrontStudyPage />} />
+        <Route path="profile" element={<StorefrontProfilePage />} />
+        <Route path="fees" element={<StorefrontFeesPage />} />
+        <Route path="jobs" element={<StorefrontJobsPage />} />
       </Route>
       <Route path="/platform/login" element={<PlatformLoginPage />} />
       <Route
@@ -108,6 +111,7 @@ export default function App() {
           <Route path="website" element={<WebsitePage />} />
           <Route path="courses" element={<CoursesCommercePage />} />
           <Route path="courses/new" element={<CreateCourseWizard />} />
+          <Route path="courses/:courseId/edit" element={<CreateCourseWizard />} />
           <Route path="courses/:courseId" element={<CourseWorkspacePage />} />
           <Route path="content-hub" element={<ContentHubPage />} />
           <Route path="your-app" element={<YourAppPage />} />

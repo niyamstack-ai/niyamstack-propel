@@ -1,5 +1,8 @@
 package com.niyamstack.propel.lms;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.niyamstack.propel.audit.AuditService;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
@@ -15,10 +18,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -27,12 +34,14 @@ public class LmsService {
     private final ObjectStorage storage;
     private final MeetingGateway meetings;
     private final AuditService audit;
+    private final ObjectMapper json;
 
-    public LmsService(Store store, ObjectStorage storage, MeetingGateway meetings, AuditService audit) {
+    public LmsService(Store store, ObjectStorage storage, MeetingGateway meetings, AuditService audit, ObjectMapper json) {
         this.store = store;
         this.storage = storage;
         this.meetings = meetings;
         this.audit = audit;
+        this.json = json;
     }
 
     @Transactional
@@ -56,6 +65,7 @@ public class LmsService {
             item.setUrl(stored.url());
             item.setPublished(true);
             item.setVisibility(courseId != null ? "COURSE" : "BATCH");
+            item.setSortOrder(nextSortOrder(user.organizationId(), courseId, parentFolderId));
             item = store.save(item);
             audit.log("CONTENT_UPLOAD", "ContentItem", item.getId(), stored.key());
             return item;
@@ -99,6 +109,24 @@ public class LmsService {
         }
         store.deleteOwned(Assessment.class, id, user.organizationId());
         audit.log("ASSESSMENT_DELETE", "Assessment", id, exam.getTitle());
+    }
+
+    @Transactional
+    public void deleteCourse(UUID id) {
+        PropelUser user = Auth.current();
+        Access.requireAny(user, Roles.OWNER);
+        Access.requireWrite(user, "SETUP");
+        Course course = store.getOwned(Course.class, id, user.organizationId());
+        for (ContentItem item : store.listBy(ContentItem.class, user.organizationId(), "courseId", id)) {
+            if (item.getParentFolderId() == null) {
+                deleteContent(item.getId());
+            }
+        }
+        for (Assessment exam : store.listBy(Assessment.class, user.organizationId(), "courseId", id)) {
+            deleteAssessment(exam.getId());
+        }
+        store.deleteOwned(Course.class, id, user.organizationId());
+        audit.log("COURSE_DELETE", "Course", id, course.getName());
     }
 
     @Transactional
@@ -154,16 +182,42 @@ public class LmsService {
     }
 
     @Transactional
+    public Map<String, String> uploadSubmissionFile(MultipartFile file) {
+        PropelUser user = Auth.current();
+        requireCurrentStudent(user);
+        if (file == null || file.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Choose a file to upload");
+        }
+        try {
+            var stored = storage.put(user.organizationId(), file.getOriginalFilename(), file.getContentType(),
+                    file.getInputStream(), file.getSize());
+            Map<String, String> out = new LinkedHashMap<>();
+            out.put("url", stored.url());
+            out.put("fileName", file.getOriginalFilename() == null ? "file" : file.getOriginalFilename());
+            return out;
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Upload failed");
+        }
+    }
+
+    @Transactional
     public Submission submitAssignment(UUID assignmentId, String content, String fileUrl) {
         PropelUser user = Auth.current();
         Assignment assignment = store.getOwned(Assignment.class, assignmentId, user.organizationId());
         Student student = requireCurrentStudent(user);
+        String text = content == null ? "" : content.trim();
+        String fileLink = fileUrl == null ? "" : fileUrl.trim();
+        if (text.isEmpty() && fileLink.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Add your work as text, a link, or a file");
+        }
         Submission sub = new Submission();
         sub.setOrganizationId(user.organizationId());
         sub.setAssignmentId(assignment.getId());
         sub.setStudentId(student.getId());
-        sub.setContent(content);
-        sub.setFileUrl(fileUrl);
+        sub.setContent(text.isEmpty() ? null : text);
+        sub.setFileUrl(fileLink.isEmpty() ? null : fileLink);
         sub.setSubmittedAt(Instant.now());
         sub.setStatus("SUBMITTED");
         sub = store.save(sub);
@@ -198,6 +252,10 @@ public class LmsService {
                 .findFirst()
                 .orElse(null);
         if (inProgress != null) {
+            if (timedOut(exam, inProgress)) {
+                submitExam(inProgress.getId(), parseAnswers(inProgress.getAnswersJson()), "TIME");
+                return store.getOwned(ExamAttempt.class, inProgress.getId(), user.organizationId());
+            }
             return inProgress;
         }
         long submitted = existing.stream()
@@ -213,56 +271,78 @@ public class LmsService {
         attempt.setStudentId(student.getId());
         attempt.setStartedAt(Instant.now());
         attempt.setStatus("IN_PROGRESS");
+        attempt.setAnswersJson("{}");
         attempt.setMaxScore(exam.getTotalMarks() == null ? 100 : exam.getTotalMarks());
         return store.save(attempt);
     }
 
     @Transactional
-    public Map<String, Object> submitExam(UUID attemptId, Map<String, String> answers) {
+    public ExamAttempt saveExamDraft(UUID attemptId, Map<String, String> answers) {
         PropelUser user = Auth.current();
         ExamAttempt attempt = store.getOwned(ExamAttempt.class, attemptId, user.organizationId());
+        requireAttemptOwner(user, attempt);
         if (!"IN_PROGRESS".equals(attempt.getStatus())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Attempt already submitted");
+            return attempt;
         }
         Assessment exam = store.getOwned(Assessment.class, attempt.getAssessmentId(), user.organizationId());
-        List<Question> questions = store.listBy(Question.class, user.organizationId(), "assessmentId", exam.getId());
-        int correct = 0;
-        List<Map<String, Object>> breakdown = new java.util.ArrayList<>();
-        for (Question q : questions) {
-            String given = answers.getOrDefault(q.getId().toString(), "");
-            boolean ok = q.getAnswerKey() != null && q.getAnswerKey().trim().equalsIgnoreCase(given.trim());
-            if (ok) {
-                correct++;
-            }
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("questionId", q.getId());
-            row.put("prompt", q.getPrompt());
-            row.put("yourAnswer", given);
-            row.put("correctAnswer", q.getAnswerKey());
-            row.put("correct", ok);
-            breakdown.add(row);
+        attempt.setAnswersJson(writeAnswers(answers));
+        if (timedOut(exam, attempt)) {
+            submitExam(attempt.getId(), parseAnswers(attempt.getAnswersJson()), "TIME");
+            return store.getOwned(ExamAttempt.class, attemptId, user.organizationId());
         }
-        int max = Math.max(questions.size(), 1);
-        int score = questions.isEmpty() ? 0 : (int) Math.round(correct * 100.0 / max);
-        attempt.setAnswersJson(answers.toString());
-        attempt.setScore(score);
-        attempt.setMaxScore(100);
-        attempt.setSubmittedAt(Instant.now());
-        attempt.setStatus("SUBMITTED");
-        attempt = store.save(attempt);
-        audit.log("EXAM_SUBMIT", "ExamAttempt", attempt.getId(), "score=" + score);
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("id", attempt.getId());
-        out.put("score", score);
-        out.put("maxScore", 100);
-        out.put("status", "SUBMITTED");
-        out.put("correctCount", correct);
-        out.put("total", questions.size());
-        int passing = exam.getPassingScore() == null ? 40 : exam.getPassingScore();
-        out.put("passed", score >= passing);
-        out.put("passingScore", passing);
-        out.put("breakdown", breakdown);
+        return store.save(attempt);
+    }
+
+    public List<Map<String, Object>> examPaper(UUID assessmentId) {
+        PropelUser user = Auth.current();
+        Assessment exam = store.getOwned(Assessment.class, assessmentId, user.organizationId());
+        if (!exam.isPublished() && !Access.canSeeAnswerKeys(user)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Exam is not published");
+        }
+        boolean keys = Access.canSeeAnswerKeys(user);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Question q : store.listBy(Question.class, user.organizationId(), "assessmentId", exam.getId())) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", q.getId());
+            row.put("assessmentId", q.getAssessmentId());
+            row.put("prompt", q.getPrompt());
+            row.put("optionsJson", q.getOptionsJson());
+            if (keys) {
+                row.put("answerKey", q.getAnswerKey());
+                row.put("explanation", q.getExplanation());
+            }
+            out.add(row);
+        }
         return out;
+    }
+
+    public Map<String, Object> examResult(UUID attemptId) {
+        PropelUser user = Auth.current();
+        ExamAttempt attempt = store.getOwned(ExamAttempt.class, attemptId, user.organizationId());
+        requireAttemptOwner(user, attempt);
+        if (!"SUBMITTED".equals(attempt.getStatus())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Attempt is not submitted yet");
+        }
+        Assessment exam = store.getOwned(Assessment.class, attempt.getAssessmentId(), user.organizationId());
+        return buildResult(attempt, exam, parseAnswers(attempt.getAnswersJson()), null);
+    }
+
+    @Transactional
+    public Map<String, Object> submitExam(UUID attemptId, Map<String, String> answers) {
+        return submitExam(attemptId, answers, null);
+    }
+
+    @Transactional
+    public Map<String, Object> submitExam(UUID attemptId, Map<String, String> answers, String reason) {
+        PropelUser user = Auth.current();
+        ExamAttempt attempt = store.getOwned(ExamAttempt.class, attemptId, user.organizationId());
+        requireAttemptOwner(user, attempt);
+        Assessment exam = store.getOwned(Assessment.class, attempt.getAssessmentId(), user.organizationId());
+        Map<String, String> given = answers == null ? Map.of() : answers;
+        if ("SUBMITTED".equals(attempt.getStatus())) {
+            return buildResult(attempt, exam, parseAnswers(attempt.getAnswersJson()), reason);
+        }
+        return buildResult(scoreAndSave(attempt, exam, given, reason), exam, given, reason);
     }
 
     public Map<String, Object> progress(UUID studentId) {
@@ -295,5 +375,303 @@ public class LmsService {
             return students.getFirst();
         }
         throw new ApiException(HttpStatus.BAD_REQUEST, "Pass a student-linked user to submit");
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class CourseQuizInput {
+        public UUID id;
+        public String title;
+        public String kind;
+        public UUID parentFolderId;
+        public Integer durationMinutes;
+        public Integer passingScore;
+        public Integer maxAttempts;
+        public List<QuizQuestionInput> questions;
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class QuizQuestionInput {
+        public String prompt;
+        public List<String> options;
+        public String answerKey;
+        public String explanation;
+    }
+
+    @Transactional
+    public Assessment saveCourseQuiz(UUID courseId, CourseQuizInput body) {
+        PropelUser user = Auth.current();
+        Access.requireWrite(user, "LMS");
+        if (Roles.STUDENT.equals(user.role())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Students cannot create tests");
+        }
+        store.getOwned(Course.class, courseId, user.organizationId());
+        if (body == null || body.title == null || body.title.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a test name.");
+        }
+        List<QuizQuestionInput> questions = body.questions == null ? List.of() : body.questions.stream()
+                .filter(q -> q != null && q.prompt != null && !q.prompt.isBlank())
+                .toList();
+        if (questions.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Add at least one question.");
+        }
+        Assessment exam;
+        if (body.id != null) {
+            exam = store.getOwned(Assessment.class, body.id, user.organizationId());
+            if (exam.getCourseId() != null && !courseId.equals(exam.getCourseId())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "This test belongs to another course.");
+            }
+        } else {
+            exam = new Assessment();
+            exam.setOrganizationId(user.organizationId());
+            exam.setSortOrder(nextSortOrder(user.organizationId(), courseId, body.parentFolderId));
+        }
+        exam.setCourseId(courseId);
+        exam.setTitle(body.title.trim());
+        exam.setKind(body.kind == null || body.kind.isBlank() ? "MCQ" : body.kind);
+        exam.setParentFolderId(body.parentFolderId);
+        exam.setDurationMinutes(body.durationMinutes == null ? 30 : body.durationMinutes);
+        exam.setPassingScore(body.passingScore == null ? 40 : body.passingScore);
+        exam.setTotalMarks(100);
+        exam.setMaxAttempts(body.maxAttempts == null ? 0 : body.maxAttempts);
+        exam.setPublished(true);
+        exam = store.save(exam);
+        for (Question old : store.listBy(Question.class, user.organizationId(), "assessmentId", exam.getId())) {
+            store.deleteOwned(Question.class, old.getId(), user.organizationId());
+        }
+        for (QuizQuestionInput q : questions) {
+            Question row = new Question();
+            row.setOrganizationId(user.organizationId());
+            row.setAssessmentId(exam.getId());
+            row.setPrompt(q.prompt.trim());
+            List<String> options = q.options == null ? List.of() : q.options.stream()
+                    .filter(o -> o != null && !o.isBlank())
+                    .toList();
+            row.setOptionsJson(jsonArray(options));
+            row.setAnswerKey(q.answerKey == null ? "" : q.answerKey);
+            row.setExplanation(q.explanation == null ? "" : q.explanation.trim());
+            row.setDifficulty("MEDIUM");
+            store.save(row);
+        }
+        audit.log("ASSESSMENT_SAVE", "Assessment", exam.getId(), exam.getTitle());
+        return exam;
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class ArrangeRequest {
+        public UUID parentFolderId;
+        public List<ArrangeItem> items;
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class ArrangeItem {
+        public String kind;
+        public UUID id;
+    }
+
+    @Transactional
+    public void arrangeCourseContent(UUID courseId, ArrangeRequest body) {
+        PropelUser user = Auth.current();
+        Access.requireWrite(user, "LMS");
+        if (Roles.STUDENT.equals(user.role())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Students cannot rearrange content");
+        }
+        store.getOwned(Course.class, courseId, user.organizationId());
+        if (body == null || body.items == null || body.items.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Nothing to move.");
+        }
+        UUID parent = body.parentFolderId;
+        if (parent != null) {
+            ContentItem folder = store.getOwned(ContentItem.class, parent, user.organizationId());
+            if (!"FOLDER".equalsIgnoreCase(folder.getContentType())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "You can only drop items into a folder.");
+            }
+            if (folder.getCourseId() != null && !courseId.equals(folder.getCourseId())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "That folder belongs to another course.");
+            }
+        }
+        int order = 0;
+        Set<UUID> seen = new HashSet<>();
+        for (ArrangeItem item : body.items) {
+            if (item == null || item.id == null) {
+                continue;
+            }
+            if (!seen.add(item.id)) {
+                continue;
+            }
+            if (item.kind != null && "ASSESSMENT".equalsIgnoreCase(item.kind)) {
+                Assessment exam = store.getOwned(Assessment.class, item.id, user.organizationId());
+                if (exam.getCourseId() != null && !courseId.equals(exam.getCourseId())) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "This test belongs to another course.");
+                }
+                exam.setParentFolderId(parent);
+                exam.setSortOrder(order);
+                store.save(exam);
+            } else {
+                ContentItem row = store.getOwned(ContentItem.class, item.id, user.organizationId());
+                if (row.getCourseId() != null && !courseId.equals(row.getCourseId())) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "This item belongs to another course.");
+                }
+                if (parent != null && folderWouldCycle(row, parent, user.organizationId())) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "A folder cannot be moved into itself.");
+                }
+                row.setParentFolderId(parent);
+                row.setSortOrder(order);
+                store.save(row);
+            }
+            order += 10;
+        }
+        audit.log("CONTENT_ARRANGE", "Course", courseId, "items=" + seen.size());
+    }
+
+    private boolean folderWouldCycle(ContentItem moving, UUID targetFolderId, UUID orgId) {
+        if (!"FOLDER".equalsIgnoreCase(moving.getContentType())) {
+            return false;
+        }
+        UUID current = targetFolderId;
+        Set<UUID> walked = new HashSet<>();
+        while (current != null && walked.add(current)) {
+            if (moving.getId().equals(current)) {
+                return true;
+            }
+            ContentItem folder = store.getOwned(ContentItem.class, current, orgId);
+            current = folder.getParentFolderId();
+        }
+        return false;
+    }
+
+    private int nextSortOrder(UUID orgId, UUID courseId, UUID parentFolderId) {
+        int max = 0;
+        if (courseId != null) {
+            for (ContentItem row : store.listBy(ContentItem.class, orgId, "courseId", courseId)) {
+                if (sameFolder(row.getParentFolderId(), parentFolderId) && row.getSortOrder() != null) {
+                    max = Math.max(max, row.getSortOrder());
+                }
+            }
+            for (Assessment exam : store.listBy(Assessment.class, orgId, "courseId", courseId)) {
+                if (sameFolder(exam.getParentFolderId(), parentFolderId) && exam.getSortOrder() != null) {
+                    max = Math.max(max, exam.getSortOrder());
+                }
+            }
+        }
+        return max + 10;
+    }
+
+    private static boolean sameFolder(UUID a, UUID b) {
+        if (a == null || b == null) {
+            return a == null && b == null;
+        }
+        return a.equals(b);
+    }
+
+    private ExamAttempt scoreAndSave(ExamAttempt attempt, Assessment exam, Map<String, String> answers, String reason) {
+        List<Question> questions = store.listBy(Question.class, attempt.getOrganizationId(), "assessmentId", exam.getId());
+        boolean subjective = "SUBJECTIVE".equalsIgnoreCase(exam.getKind());
+        int correct = 0;
+        for (Question q : questions) {
+            String given = answers.getOrDefault(q.getId().toString(), "");
+            if (!subjective && q.getAnswerKey() != null && q.getAnswerKey().trim().equalsIgnoreCase(given.trim())) {
+                correct++;
+            }
+        }
+        int max = Math.max(questions.size(), 1);
+        Integer score = subjective ? null : (questions.isEmpty() ? 0 : (int) Math.round(correct * 100.0 / max));
+        attempt.setAnswersJson(writeAnswers(answers));
+        attempt.setScore(score);
+        attempt.setMaxScore(100);
+        attempt.setSubmittedAt(Instant.now());
+        attempt.setStatus("SUBMITTED");
+        attempt = store.save(attempt);
+        audit.log("EXAM_SUBMIT", "ExamAttempt", attempt.getId(),
+                (reason == null ? "score=" : reason + " score=") + (score == null ? "pending" : score));
+        return attempt;
+    }
+
+    private Map<String, Object> buildResult(ExamAttempt attempt, Assessment exam, Map<String, String> answers, String reason) {
+        List<Question> questions = store.listBy(Question.class, attempt.getOrganizationId(), "assessmentId", exam.getId());
+        boolean subjective = "SUBJECTIVE".equalsIgnoreCase(exam.getKind());
+        int correct = 0;
+        List<Map<String, Object>> breakdown = new ArrayList<>();
+        for (Question q : questions) {
+            String given = answers.getOrDefault(q.getId().toString(), "");
+            boolean ok = !subjective && q.getAnswerKey() != null && q.getAnswerKey().trim().equalsIgnoreCase(given.trim());
+            if (ok) {
+                correct++;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("questionId", q.getId());
+            row.put("prompt", q.getPrompt());
+            row.put("yourAnswer", given);
+            row.put("correctAnswer", q.getAnswerKey());
+            row.put("explanation", q.getExplanation() == null ? "" : q.getExplanation());
+            row.put("correct", ok);
+            breakdown.add(row);
+        }
+        int passing = exam.getPassingScore() == null ? 40 : exam.getPassingScore();
+        Integer score = attempt.getScore();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", attempt.getId());
+        out.put("score", score);
+        out.put("maxScore", 100);
+        out.put("status", attempt.getStatus());
+        out.put("correctCount", correct);
+        out.put("total", questions.size());
+        out.put("passed", !subjective && score != null && score >= passing);
+        out.put("passingScore", passing);
+        out.put("pendingReview", subjective);
+        out.put("reason", reason);
+        out.put("startedAt", attempt.getStartedAt());
+        out.put("submittedAt", attempt.getSubmittedAt());
+        out.put("durationMinutes", exam.getDurationMinutes());
+        out.put("breakdown", breakdown);
+        return out;
+    }
+
+    private void requireAttemptOwner(PropelUser user, ExamAttempt attempt) {
+        if (Access.canSeeAnswerKeys(user)) {
+            return;
+        }
+        Student student = requireCurrentStudent(user);
+        if (!student.getId().equals(attempt.getStudentId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Not your attempt");
+        }
+    }
+
+    private static boolean timedOut(Assessment exam, ExamAttempt attempt) {
+        if (exam.getDurationMinutes() == null || exam.getDurationMinutes() <= 0 || attempt.getStartedAt() == null) {
+            return false;
+        }
+        Instant deadline = attempt.getStartedAt().plus(Duration.ofMinutes(exam.getDurationMinutes()));
+        return Instant.now().isAfter(deadline);
+    }
+
+    private Map<String, String> parseAnswers(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return Map.of();
+        }
+        try {
+            Map<String, String> parsed = json.readValue(raw, new TypeReference<>() {});
+            return parsed == null ? Map.of() : parsed;
+        } catch (Exception e) {
+            return Map.of();
+        }
+    }
+
+    private String writeAnswers(Map<String, String> answers) {
+        try {
+            return json.writeValueAsString(answers == null ? Map.of() : answers);
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
+    private static String jsonArray(List<String> values) {
+        StringBuilder out = new StringBuilder("[");
+        for (int i = 0; i < values.size(); i++) {
+            if (i > 0) {
+                out.append(',');
+            }
+            out.append('"').append(values.get(i).replace("\\", "\\\\").replace("\"", "\\\"")).append('"');
+        }
+        return out.append(']').toString();
     }
 }

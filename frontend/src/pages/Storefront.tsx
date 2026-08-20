@@ -2,8 +2,12 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { UserMenu } from "../UserMenu";
 import { StudentLms } from "./LmsPage";
 import { StudentCourseLibrary } from "./courseContent";
+import { MyStudentRecord } from "./StudentsPage";
+import { FeesPage } from "./FeesPage";
+import { PlacementPage } from "./PlacementPage";
 
 type Site = {
   id: string;
@@ -20,11 +24,27 @@ type PublicCourse = {
   name: string;
   description?: string;
   category?: string;
+  subCategory?: string;
   durationMonths?: number;
+  validityType?: string;
+  validityValue?: number;
+  validityUnit?: string;
+  allowOffline?: boolean;
+  allowPreview?: boolean;
+  allowLive?: boolean;
+  instituteName?: string;
   fees: number;
   discount?: number;
   price: number;
   courseType?: string;
+};
+
+type OutlineItem = {
+  id: string;
+  title: string;
+  type: string;
+  parentFolderId?: string | null;
+  sortOrder?: number;
 };
 
 type MyCourse = { id?: string; status?: string; source?: string; course: PublicCourse };
@@ -93,6 +113,30 @@ export function StorefrontStudyPage() {
   );
 }
 
+export function StorefrontProfilePage() {
+  return (
+    <StudentGate>
+      <MyStudentRecord />
+    </StudentGate>
+  );
+}
+
+export function StorefrontFeesPage() {
+  return (
+    <StudentGate>
+      <FeesPage />
+    </StudentGate>
+  );
+}
+
+export function StorefrontJobsPage() {
+  return (
+    <StudentGate>
+      <PlacementPage />
+    </StudentGate>
+  );
+}
+
 function StudentGate({ children }: { children: React.ReactNode }) {
   const { token, user } = useAuth();
   const slug = useSlug();
@@ -109,8 +153,7 @@ function StudentGate({ children }: { children: React.ReactNode }) {
 function StorefrontShell() {
   const slug = useSlug();
   const { site, error } = useSite(slug);
-  const { user, token, logout } = useAuth();
-  const navigate = useNavigate();
+  const { user, token } = useAuth();
   const accent = site?.brandPrimary || "#0078f0";
 
   useEffect(() => {
@@ -160,16 +203,14 @@ function StorefrontShell() {
                 <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`/s/${slug}/learn`}>
                   My learning
                 </Link>
-                <button
-                  className="rounded-full border border-line px-3 py-1.5"
-                  type="button"
-                  onClick={() => {
-                    logout();
-                    navigate(`/s/${slug}`);
-                  }}
-                >
-                  Sign out
-                </button>
+                <UserMenu
+                  signOutTo={`/s/${slug}`}
+                  profileTo={`/s/${slug}/profile`}
+                  extraLinks={[
+                    { label: "Fees", to: `/s/${slug}/fees` },
+                    { label: "Jobs", to: `/s/${slug}/jobs` },
+                  ]}
+                />
               </>
             ) : (
               <Link className="rounded-full bg-brand px-3 py-1.5 font-semibold text-white" to={`/s/${slug}/login`}>
@@ -210,12 +251,14 @@ function CatalogPage() {
       {courses.length === 0 && <p className="text-sm text-slate-500">No published courses yet.</p>}
       <div className="grid gap-4 sm:grid-cols-2">
         {courses.map((c) => (
-          <Link key={c.id} to={`/s/${slug}/courses/${c.id}`} className="rounded-2xl border border-line bg-white p-5 hover:border-brand">
-            <p className="text-xs uppercase tracking-wide text-slate-400">{c.category || "Course"}</p>
-            <h2 className="mt-1 text-lg font-semibold text-navy">{c.name}</h2>
-            <p className="mt-2 line-clamp-2 text-sm text-slate-500">{c.description || "Open for details."}</p>
-            <p className="mt-4 text-lg font-bold text-navy">{c.price === 0 ? "Free" : `₹${c.price}`}</p>
-            {c.durationMonths ? <p className="text-xs text-slate-400">{c.durationMonths} months</p> : null}
+          <Link key={c.id} to={`/s/${slug}/courses/${c.id}`} className="overflow-hidden rounded-2xl border border-line bg-white hover:border-brand">
+            <img src={`/api/public/sites/${slug}/courses/${c.id}/cover`} alt="" className="h-36 w-full bg-navy object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            <div className="p-5">
+              <p className="text-xs uppercase tracking-wide text-slate-400">{c.category || "Course"}</p>
+              <h2 className="mt-1 text-lg font-semibold text-navy">{c.name}</h2>
+              <p className="mt-2 line-clamp-2 text-sm text-slate-500">{c.description || "Open for details."}</p>
+              <p className="mt-4 text-lg font-bold text-navy">{c.price === 0 ? "Free" : `₹${c.price}`}</p>
+            </div>
           </Link>
         ))}
       </div>
@@ -229,18 +272,48 @@ function CoursePage() {
   const { token, user, applySession } = useAuth();
   const navigate = useNavigate();
   const [course, setCourse] = useState<PublicCourse | null>(null);
+  const [outline, setOutline] = useState<OutlineItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<"overview" | "content">("overview");
   const [name, setName] = useState(user?.name || "");
   const [email, setEmail] = useState(user?.email || "");
   const [phone, setPhone] = useState(user?.phone || "");
+  const [coupon, setCoupon] = useState("");
+  const [price, setPrice] = useState<number | null>(null);
+  const [couponOk, setCouponOk] = useState<string | null>(null);
 
   useEffect(() => {
     if (!slug || !courseId) return;
     api<PublicCourse>(`/api/public/sites/${slug}/courses/${courseId}`)
-      .then(setCourse)
+      .then((row) => {
+        setCourse(row);
+        setPrice(Number(row.price));
+      })
       .catch((err: Error) => setError(err.message));
+    api<OutlineItem[]>(`/api/public/sites/${slug}/courses/${courseId}/outline`)
+      .then(setOutline)
+      .catch(() => setOutline([]));
   }, [slug, courseId]);
+
+  async function applyCoupon() {
+    if (!slug || !courseId || !coupon.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api<{ price: number; code: string }>(`/api/public/sites/${slug}/coupons/apply`, {
+        method: "POST",
+        body: JSON.stringify({ courseId, code: coupon.trim() }),
+      });
+      setPrice(Number(res.price));
+      setCouponOk(res.code);
+    } catch (err) {
+      setCouponOk(null);
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function buy(e?: FormEvent) {
     e?.preventDefault();
@@ -252,7 +325,7 @@ function CoursePage() {
         `/api/public/sites/${slug}/purchase`,
         {
           method: "POST",
-          body: JSON.stringify({ fullName: name, email, phone, courseId }),
+          body: JSON.stringify({ fullName: name, email, phone, courseId, couponCode: couponOk || undefined }),
         }
       );
       applySession(res);
@@ -268,57 +341,146 @@ function CoursePage() {
   if (!course) return <p className="text-sm text-red-600">{error}</p>;
 
   const loggedStudent = token && user?.role === "STUDENT";
+  const pay = price ?? Number(course.price);
+  const validity =
+    course.validityType === "LIFETIME"
+      ? "Lifetime access"
+      : course.validityValue
+        ? `${course.validityValue} ${(course.validityUnit || "MONTH").toLowerCase()}${Number(course.validityValue) === 1 ? "" : "s"} validity`
+        : course.durationMonths
+          ? `${course.durationMonths} month validity`
+          : null;
+  const folders = outline.filter((row) => row.type === "FOLDER");
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-      <div className="rounded-2xl border border-line bg-white p-6">
-        <Link to={`/s/${slug}`} className="text-sm text-brand hover:underline">
-          ← All courses
-        </Link>
-        <h1 className="mt-3 text-2xl font-bold text-navy">{course.name}</h1>
-        <p className="mt-2 text-sm text-slate-500">{course.description}</p>
-        <p className="mt-4 text-2xl font-bold text-navy">{course.price === 0 ? "Free" : `₹${course.price}`}</p>
-        {Number(course.discount || 0) > 0 && <p className="text-sm text-slate-400">List price ₹{course.fees}</p>}
-      </div>
-      <div className="rounded-2xl border border-line bg-white p-6">
-        {loggedStudent ? (
-          <div className="space-y-3">
-            <h2 className="font-semibold text-navy">Buy and start learning</h2>
-            <p className="text-sm text-slate-500">You are logged in as {user?.name}. Purchase unlocks this course in My learning and the app.</p>
-            {error && <p className="text-sm text-red-600">{error}</p>}
-            <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy} onClick={() => buy()}>
-              {busy ? "Unlocking…" : course.price === 0 ? "Enroll free" : `Pay ₹${course.price}`}
-            </button>
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="space-y-5">
+        <p className="text-sm text-slate-500">
+          <Link to={`/s/${slug}`} className="text-brand hover:underline">
+            Courses
+          </Link>
+          <span className="px-1">/</span>
+          {course.name}
+        </p>
+        <h1 className="text-2xl font-bold text-navy">{course.name}</h1>
+        <div className="flex gap-6 border-b border-line text-sm font-semibold">
+          <button type="button" className={`-mb-px border-b-2 pb-2 ${tab === "overview" ? "border-brand text-brand" : "border-transparent text-slate-500"}`} onClick={() => setTab("overview")}>
+            OVERVIEW
+          </button>
+          <button type="button" className={`-mb-px border-b-2 pb-2 ${tab === "content" ? "border-brand text-brand" : "border-transparent text-slate-500"}`} onClick={() => setTab("content")}>
+            CONTENT
+          </button>
+        </div>
+
+        {tab === "overview" ? (
+          <div className="space-y-5">
+            <section>
+              <h2 className="font-semibold text-navy">About this course</h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">{course.description || "Details will appear here after the institute adds a description."}</p>
+              {validity && (
+                <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-line bg-white px-3 py-2 text-sm text-navy">
+                  <span className="grid h-8 w-8 place-items-center rounded-full bg-sky-100 text-brand">▶</span>
+                  {validity}
+                </div>
+              )}
+            </section>
+            <section className="rounded-2xl bg-amber-50 px-4 py-4">
+              <h3 className="font-semibold text-navy">What else you will get?</h3>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {course.allowOffline !== false && (
+                  <p className="text-sm text-slate-700">
+                    <span className="font-medium">Offline download</span>
+                    <span className="block text-slate-500">Learn at your convenience.</span>
+                  </p>
+                )}
+                <p className="text-sm text-slate-700">
+                  <span className="font-medium">Available on web</span>
+                  <span className="block text-slate-500">Bigger screen, better clarity.</span>
+                </p>
+              </div>
+            </section>
+            <section>
+              <p className="text-sm text-slate-500">You pay</p>
+              <p className="text-2xl font-bold text-navy">{pay === 0 ? "Free" : `₹ ${pay}`}</p>
+              {Number(course.discount || 0) > 0 && <p className="text-xs text-slate-400">List price ₹{course.fees}</p>}
+            </section>
+            <section className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-sky-50 px-4 py-3 text-sm">
+              <span>Have a coupon code</span>
+              <div className="flex gap-2">
+                <input className="w-36 rounded-lg border border-line px-2 py-1.5" placeholder="Code" value={coupon} onChange={(e) => setCoupon(e.target.value)} />
+                <button type="button" className="font-semibold text-brand" onClick={applyCoupon}>
+                  Apply here
+                </button>
+              </div>
+            </section>
+            {couponOk && <p className="text-sm text-emerald-700">Coupon {couponOk} applied.</p>}
+            <p className="text-xs text-slate-400">By purchasing you agree to the institute terms and refund policy.</p>
+            <section>
+              <h3 className="font-semibold text-navy">About course creator</h3>
+              <p className="mt-2 text-sm text-slate-600">{course.instituteName || "Institute"}</p>
+            </section>
           </div>
         ) : (
-          <form className="space-y-3" onSubmit={buy}>
-            <h2 className="font-semibold text-navy">Purchase</h2>
-            <p className="text-sm text-slate-500">Pay (demo UPI) and you are logged in to study immediately.</p>
-            <label className="block text-sm font-medium">
-              Name
-              <input className="mt-1 w-full rounded-lg border border-line px-3 py-2" required value={name} onChange={(e) => setName(e.target.value)} />
-            </label>
-            <label className="block text-sm font-medium">
-              Mobile
-              <input className="mt-1 w-full rounded-lg border border-line px-3 py-2" required inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value)} />
-            </label>
-            <label className="block text-sm font-medium">
-              Email
-              <input className="mt-1 w-full rounded-lg border border-line px-3 py-2" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </label>
-            {error && <p className="text-sm text-red-600">{error}</p>}
-            <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy}>
-              {busy ? "Processing…" : course.price === 0 ? "Enroll free" : `Pay ₹${course.price} and start`}
-            </button>
-            <p className="text-center text-xs text-slate-400">
-              Already purchased?{" "}
-              <Link className="text-brand" to={`/s/${slug}/login`}>
-                Login
-              </Link>
-            </p>
-          </form>
+          <div className="divide-y divide-line rounded-2xl border border-line bg-white">
+            {outline.length === 0 && <p className="px-4 py-6 text-sm text-slate-500">Content is added after you purchase.</p>}
+            {folders.map((folder) => (
+              <div key={folder.id} className="px-4 py-3">
+                <p className="font-medium text-navy">{folder.title}</p>
+                <p className="text-xs text-slate-500">
+                  {outline.filter((row) => row.parentFolderId === folder.id).length} item(s)
+                </p>
+              </div>
+            ))}
+            {outline
+              .filter((row) => !row.parentFolderId && row.type !== "FOLDER")
+              .map((row) => (
+                <div key={row.id} className="px-4 py-3 text-sm text-navy">
+                  {row.title}
+                  <span className="ml-2 text-xs uppercase text-slate-400">{row.type.toLowerCase()}</span>
+                </div>
+              ))}
+          </div>
         )}
+        {error && <p className="text-sm text-red-600">{error}</p>}
       </div>
+
+      <aside className="sticky top-4 overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+        <div className="bg-navy p-5 text-white">
+          <img
+            src={`/api/public/sites/${slug}/courses/${course.id}/cover`}
+            alt=""
+            className="mb-3 h-28 w-full rounded-xl object-cover"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = "none";
+            }}
+          />
+          <h2 className="text-lg font-bold leading-snug">{course.name}</h2>
+          <p className="mt-1 text-xs text-sky-200">{course.category || "Course"}</p>
+        </div>
+        <div className="space-y-3 p-5">
+          <p className="text-xl font-bold text-navy">{pay === 0 ? "Free" : `₹ ${pay}`}</p>
+          {loggedStudent ? (
+            <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy} onClick={() => buy()}>
+              {busy ? "Unlocking…" : pay === 0 ? "Enroll free" : "Get this course"}
+            </button>
+          ) : (
+            <form className="space-y-2" onSubmit={buy}>
+              <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" required placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+              <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" required placeholder="Mobile" inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value)} />
+              <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy}>
+                {busy ? "Processing…" : pay === 0 ? "Enroll free" : "Get this course"}
+              </button>
+            </form>
+          )}
+          <p className="text-center text-xs text-slate-400">
+            Already purchased?{" "}
+            <Link className="text-brand" to={`/s/${slug}/login`}>
+              Login
+            </Link>
+          </p>
+        </div>
+      </aside>
     </div>
   );
 }
@@ -390,7 +552,10 @@ function StudentLoginPage() {
   return (
     <div className="mx-auto max-w-md rounded-2xl border border-line bg-white p-6">
       <h1 className="text-xl font-bold text-navy">Student login</h1>
-      <p className="mt-1 text-sm text-slate-500">Use the mobile you purchased with. Demo student: 9876500002, OTP 123456.</p>
+      <p className="mt-1 text-sm text-slate-500">Use the mobile you purchased with.</p>
+      {import.meta.env.DEV && (
+        <p className="mt-1 text-xs text-slate-400">Demo student: 9876500002, OTP 123456.</p>
+      )}
       <div className="mt-4 flex gap-2">
         <button type="button" className={`rounded-full px-3 py-1 text-sm ${mode === "otp" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => setMode("otp")}>
           Mobile OTP

@@ -1,5 +1,6 @@
 package com.niyamstack.propel.security;
 
+import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.*;
 import com.niyamstack.propel.domain.TenantEntity;
@@ -149,9 +150,30 @@ public class DataScope {
         if (e instanceof Announcement a) {
             return a.getBatchId() == null || a.getBatchId().equals(me.getBatchId());
         }
+        if (e instanceof Question q) {
+            if (q.getAssessmentId() == null) {
+                return false;
+            }
+            Assessment exam;
+            try {
+                exam = store.get(Assessment.class, q.getAssessmentId());
+            } catch (ApiException ex) {
+                return false;
+            }
+            if (exam.getOrganizationId() != null && !exam.getOrganizationId().equals(me.getOrganizationId())) {
+                return false;
+            }
+            if (!exam.isPublished()) {
+                return false;
+            }
+            if (exam.getCourseId() != null) {
+                return enrolledCourseIds(me).contains(exam.getCourseId());
+            }
+            return exam.getBatchId() == null || exam.getBatchId().equals(me.getBatchId());
+        }
         if (e instanceof Drive || e instanceof Notification || e instanceof MessageTemplate || e instanceof Classroom
                 || e instanceof Batch || e instanceof AcademicYear || e instanceof Term
-                || e instanceof Center || e instanceof Question) {
+                || e instanceof Center) {
             return true;
         }
         return true;
