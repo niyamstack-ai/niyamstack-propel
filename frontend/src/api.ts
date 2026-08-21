@@ -77,6 +77,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     if (message === "Internal Server Error") {
       message = "The server could not complete this request. Try again.";
     }
+    if (/no static resource/i.test(message)) {
+      message = "Could not load this. Restart the API and try again.";
+    }
     throw new Error(message);
   }
   if (res.status === 204) return undefined as T;

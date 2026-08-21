@@ -44,9 +44,9 @@ public final class Access {
             case "SETUP" -> false;
             case "CRM" -> Set.of(Roles.COUNSELOR).contains(role);
             case "SIS" -> Set.of(Roles.COUNSELOR, Roles.FACULTY).contains(role);
-            case "LMS" -> Set.of(Roles.FACULTY, Roles.STUDENT).contains(role);
+            case "LMS" -> Set.of(Roles.FACULTY).contains(role);
             case "FEES" -> Set.of(Roles.ACCOUNTANT).contains(role);
-            case "PLACEMENT" -> Set.of(Roles.PLACEMENT_HEAD, Roles.RECRUITER, Roles.STUDENT).contains(role);
+            case "PLACEMENT" -> Set.of(Roles.PLACEMENT_HEAD, Roles.RECRUITER).contains(role);
             case "COMMS" -> Set.of(Roles.COUNSELOR, Roles.FACULTY, Roles.PLACEMENT_HEAD).contains(role);
             case "GROWTH" -> Set.of(Roles.COUNSELOR).contains(role);
             case "ADMIN" -> false;

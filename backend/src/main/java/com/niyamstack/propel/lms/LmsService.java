@@ -210,6 +210,7 @@ public class LmsService {
         PropelUser user = Auth.current();
         Assignment assignment = store.getOwned(Assignment.class, assignmentId, user.organizationId());
         Student student = requireCurrentStudent(user);
+        requireEnrolled(student, assignment.getCourseId(), assignment.getBatchId());
         String text = content == null ? "" : content.trim();
         String fileLink = fileUrl == null ? "" : fileUrl.trim();
         if (text.isEmpty() && fileLink.isEmpty()) {
@@ -249,6 +250,7 @@ public class LmsService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Exam is not published");
         }
         Student student = requireCurrentStudent(user);
+        requireEnrolled(student, exam.getCourseId(), exam.getBatchId());
         List<ExamAttempt> existing = store.listBy(ExamAttempt.class, user.organizationId(), "assessmentId", exam.getId());
         ExamAttempt inProgress = existing.stream()
                 .filter(a -> student.getId().equals(a.getStudentId()) && "IN_PROGRESS".equals(a.getStatus()))
@@ -301,6 +303,9 @@ public class LmsService {
         Assessment exam = store.getOwned(Assessment.class, assessmentId, user.organizationId());
         if (!exam.isPublished() && !Access.canSeeAnswerKeys(user)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Exam is not published");
+        }
+        if (!Access.canSeeAnswerKeys(user)) {
+            requireEnrolled(requireCurrentStudent(user), exam.getCourseId(), exam.getBatchId());
         }
         boolean keys = Access.canSeeAnswerKeys(user);
         List<Map<String, Object>> out = new ArrayList<>();
@@ -379,6 +384,31 @@ public class LmsService {
             return students.getFirst();
         }
         throw new ApiException(HttpStatus.BAD_REQUEST, "Pass a student-linked user to submit");
+    }
+
+    private void requireEnrolled(Student student, UUID courseId, UUID batchId) {
+        PropelUser user = Auth.current();
+        if (Access.canSeeAnswerKeys(user)) {
+            return;
+        }
+        if (courseId != null) {
+            Set<UUID> courses = new HashSet<>();
+            if (student.getCourseId() != null) {
+                courses.add(student.getCourseId());
+            }
+            store.listBy(CourseEnrollment.class, student.getOrganizationId(), "studentId", student.getId()).stream()
+                    .filter(e -> !"CANCELLED".equals(e.getStatus()))
+                    .map(CourseEnrollment::getCourseId)
+                    .filter(id -> id != null)
+                    .forEach(courses::add);
+            if (!courses.contains(courseId)) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "You are not enrolled in this course");
+            }
+            return;
+        }
+        if (batchId != null && student.getBatchId() != null && !batchId.equals(student.getBatchId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You are not in this batch");
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

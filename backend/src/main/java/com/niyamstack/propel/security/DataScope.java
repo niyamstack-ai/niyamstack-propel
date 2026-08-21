@@ -121,34 +121,41 @@ public class DataScope {
             return me.getId().equals(inv.getStudentId());
         }
         if (e instanceof ContentItem c) {
-            if (c.getCourseId() != null && enrolledCourseIds(me).contains(c.getCourseId())) {
-                return true;
+            if (c.getCourseId() != null) {
+                return enrolledCourseIds(me).contains(c.getCourseId());
             }
-            return c.getBatchId() == null || c.getBatchId().equals(me.getBatchId());
+            return c.getBatchId() != null && c.getBatchId().equals(me.getBatchId());
         }
         if (e instanceof Assignment a) {
-            if (a.getCourseId() != null && enrolledCourseIds(me).contains(a.getCourseId())) {
-                return true;
+            if (a.getCourseId() != null) {
+                return enrolledCourseIds(me).contains(a.getCourseId());
             }
-            return a.getBatchId() == null || a.getBatchId().equals(me.getBatchId());
+            return a.getBatchId() != null && a.getBatchId().equals(me.getBatchId());
         }
         if (e instanceof Assessment a) {
-            if (a.getCourseId() != null && enrolledCourseIds(me).contains(a.getCourseId())) {
-                return true;
+            if (a.getCourseId() != null) {
+                return enrolledCourseIds(me).contains(a.getCourseId());
             }
-            return a.getBatchId() == null || a.getBatchId().equals(me.getBatchId());
+            return a.getBatchId() != null && a.getBatchId().equals(me.getBatchId());
         }
         if (e instanceof LiveSession s) {
-            return s.getBatchId() == null || s.getBatchId().equals(me.getBatchId());
+            return s.getBatchId() != null && s.getBatchId().equals(me.getBatchId());
         }
         if (e instanceof Recording r) {
-            return r.getBatchId() == null || r.getBatchId().equals(me.getBatchId());
+            return r.getBatchId() != null && r.getBatchId().equals(me.getBatchId());
         }
         if (e instanceof TimetableSlot t) {
-            return t.getBatchId() == null || t.getBatchId().equals(me.getBatchId());
+            return t.getBatchId() != null && t.getBatchId().equals(me.getBatchId());
         }
         if (e instanceof Announcement a) {
             return a.getBatchId() == null || a.getBatchId().equals(me.getBatchId());
+        }
+        if (e instanceof Notification n) {
+            String audience = n.getAudience();
+            if (audience == null || audience.isBlank() || "ALL".equalsIgnoreCase(audience) || "STUDENT".equalsIgnoreCase(audience)) {
+                return true;
+            }
+            return false;
         }
         if (e instanceof Question q) {
             if (q.getAssessmentId() == null) {
@@ -166,12 +173,10 @@ public class DataScope {
             if (!exam.isPublished()) {
                 return false;
             }
-            if (exam.getCourseId() != null) {
-                return enrolledCourseIds(me).contains(exam.getCourseId());
-            }
-            return exam.getBatchId() == null || exam.getBatchId().equals(me.getBatchId());
+            return store.listBy(ExamAttempt.class, me.getOrganizationId(), "assessmentId", exam.getId()).stream()
+                    .anyMatch(a -> me.getId().equals(a.getStudentId()) && "IN_PROGRESS".equals(a.getStatus()));
         }
-        if (e instanceof Drive || e instanceof Notification || e instanceof MessageTemplate || e instanceof Classroom
+        if (e instanceof Drive || e instanceof MessageTemplate || e instanceof Classroom
                 || e instanceof Batch || e instanceof AcademicYear || e instanceof Term
                 || e instanceof Center) {
             return true;

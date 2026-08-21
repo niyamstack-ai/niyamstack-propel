@@ -12,10 +12,12 @@ export function UserMenu({
   signOutTo = "/login",
   profileTo,
   extraLinks = [],
+  showName,
 }: {
   signOutTo?: string;
   profileTo?: string;
   extraLinks?: { label: string; to: string }[];
+  showName?: boolean;
 } = {}) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -42,7 +44,7 @@ export function UserMenu({
         <span className="grid h-9 w-9 place-items-center rounded-full bg-amber-400 text-[11px] font-bold text-navy">
           {initialsOf(user?.name)}
         </span>
-        <span className="hidden max-w-[180px] truncate text-sm font-medium text-navy sm:inline">{user?.name}</span>
+        <span className={`${showName ? "inline" : "hidden sm:inline"} max-w-[180px] truncate text-sm font-medium text-navy`}>{user?.name}</span>
         <svg viewBox="0 0 20 20" className="h-4 w-4 text-slate-400" aria-hidden>
           <path fill="currentColor" d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z" />
         </svg>

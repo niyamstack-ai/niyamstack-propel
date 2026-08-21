@@ -16,6 +16,14 @@ export function FeesPage() {
   return <StaffFees />;
 }
 
+function escHtml(value: string | number | undefined) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function MyFees() {
   const invoices = useApi<Invoice[]>("/api/invoices");
   const payments = useApi<Payment[]>("/api/payments");
@@ -38,15 +46,15 @@ function MyFees() {
         setError("Allow pop-ups to print the receipt.");
         return;
       }
-      win.document.write(`<!doctype html><html><head><title>${rec.receiptNo}</title>
+      win.document.write(`<!doctype html><html><head><title>${escHtml(rec.receiptNo)}</title>
         <style>body{font-family:sans-serif;padding:32px;color:#071a33}h1{margin:0 0 8px}p{margin:4px 0}</style></head>
         <body>
-          <h1>${rec.instituteName || "Receipt"}</h1>
-          <p>Receipt ${rec.receiptNo}</p>
-          <p>Invoice ${rec.invoiceNo || "—"}</p>
-          <p>Amount ₹${rec.amount}</p>
-          ${rec.gstin ? `<p>GSTIN ${rec.gstin}</p>` : ""}
-          <p>${rec.issuedAt ? new Date(rec.issuedAt).toLocaleString() : ""}</p>
+          <h1>${escHtml(rec.instituteName || "Receipt")}</h1>
+          <p>Receipt ${escHtml(rec.receiptNo)}</p>
+          <p>Invoice ${escHtml(rec.invoiceNo || "—")}</p>
+          <p>Amount ₹${escHtml(rec.amount)}</p>
+          ${rec.gstin ? `<p>GSTIN ${escHtml(rec.gstin)}</p>` : ""}
+          <p>${escHtml(rec.issuedAt ? new Date(rec.issuedAt).toLocaleString() : "")}</p>
           <script>window.print()<\/script>
         </body></html>`);
       win.document.close();

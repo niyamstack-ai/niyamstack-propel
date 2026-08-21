@@ -76,7 +76,7 @@ public class AuthController {
 
     public record ResetEmailRequest(@NotBlank String token, @NotBlank String newPassword) {}
 
-    public record PasswordChangeRequest(@NotBlank String currentPassword, @NotBlank String newPassword) {}
+    public record PasswordChangeRequest(String currentPassword, @NotBlank String newPassword) {}
 
     public record ProfileUpdateRequest(String name, String email, String phone) {}
 
@@ -253,8 +253,12 @@ public class AuthController {
     @Transactional
     public Map<String, String> changePassword(@Valid @RequestBody PasswordChangeRequest body) {
         AppUser user = store.get(AppUser.class, Auth.current().userId());
-        if (!encoder.matches(body.currentPassword(), user.getPasswordHash())) {
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "Current password is incorrect");
+        boolean student = Roles.STUDENT.equals(user.getRole());
+        boolean hasCurrent = body.currentPassword() != null && !body.currentPassword().isBlank();
+        if (!student || hasCurrent) {
+            if (!hasCurrent || !encoder.matches(body.currentPassword(), user.getPasswordHash())) {
+                throw new ApiException(HttpStatus.UNAUTHORIZED, "Current password is incorrect");
+            }
         }
         PasswordPolicy.validate(body.newPassword());
         user.setPasswordHash(encoder.encode(body.newPassword()));

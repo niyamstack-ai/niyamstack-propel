@@ -114,14 +114,16 @@ export function MyStudentRecord() {
         )}
       </Card>
       <Card title="Change password">
-        <p className="mb-3 text-xs text-slate-500">At least 10 characters, with upper, lower, a digit, and a special character.</p>
+        <p className="mb-3 text-xs text-slate-500">
+          At least 10 characters, with upper, lower, a digit, and a special character. If you signed in with OTP, leave current password blank.
+        </p>
         <FormGrid>
-          <Field label="Current password" value={currentPassword} onChange={setCurrentPassword} type="password" />
+          <Field label="Current password (if you have one)" value={currentPassword} onChange={setCurrentPassword} type="password" />
           <Field label="New password" value={newPassword} onChange={setNewPassword} type="password" />
           <Field label="Confirm new password" value={confirm} onChange={setConfirm} type="password" />
         </FormGrid>
         <div className="mt-3">
-          <PrimaryButton disabled={busy || !currentPassword || !newPassword} onClick={() => void savePassword()}>
+          <PrimaryButton disabled={busy || !newPassword} onClick={() => void savePassword()}>
             Update password
           </PrimaryButton>
         </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { api, fileSrc, getToken } from "../api";
 import { createRecord, deleteRecord, updateRecord, uploadContentFile } from "../ops";
@@ -910,17 +911,20 @@ function PreviewModal({ item, onClose }: { item: ContentRow; onClose: () => void
   const type = (item.contentType || "").toUpperCase();
   const isVideo = type === "VIDEO" || type.includes("VIDEO");
   const isImage = type === "IMAGE" || type.includes("IMAGE") || type === "PNG" || type === "JPG" || type === "JPEG";
-  const isZip = type === "ZIP" || type.includes("ZIP") || type.includes("PACKAGE");
-  const isDoc = !isVideo && !isImage && !isZip && !!src;
+  const isZip = type === "ZIP" || type.includes("ZIP") || type.includes("PACKAGE") || type.includes("SCORM");
+  const remote = /^https?:\/\//i.test(item.url || "");
+  const isPdf = !remote && (type === "PDF" || /\.pdf($|\?)/i.test(item.url || ""));
+  const external = remote && !isVideo && !isImage;
+  const isDoc = (type === "DOCUMENT" || isPdf) && !!src && !remote && !isZip;
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/50 p-4" onClick={onClose}>
       <div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-2xl bg-white p-4" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between gap-3">
           <h3 className="font-semibold text-navy">{item.title}</h3>
           <div className="flex items-center gap-3">
             {src && (
-              <a className="text-sm font-medium text-brand" href={src} download target="_blank" rel="noreferrer">
-                Download
+              <a className="text-sm font-medium text-brand" href={src} download={!external} target="_blank" rel="noreferrer">
+                {external ? "Open link" : "Download"}
               </a>
             )}
             <button type="button" aria-label="Close preview" onClick={onClose}>
@@ -930,11 +934,17 @@ function PreviewModal({ item, onClose }: { item: ContentRow; onClose: () => void
         </div>
         {isVideo && src && <video src={src} controls className="w-full rounded-lg bg-black" />}
         {isImage && src && <img src={src} alt={item.title} className="max-h-[70vh] w-full object-contain" />}
-        {isDoc && <iframe title={item.title} src={src} className="h-[70vh] w-full rounded-lg border" />}
+        {isPdf && src && !external && <iframe title={item.title} src={src} className="h-[70vh] w-full rounded-lg border" />}
+        {isDoc && !isPdf && <iframe title={item.title} src={src} className="h-[70vh] w-full rounded-lg border" />}
         {isZip && (
           <p className="text-sm text-slate-500">
-            Zip file. Use Download to save it
+            This is a downloadable package. Use Download to save it
             {src ? "." : " — no file is attached."}
+          </p>
+        )}
+        {external && !isZip && (
+          <p className="text-sm text-slate-500">
+            This item is an external link. Use Open link to view it in a new tab.
           </p>
         )}
         {!src && <p className="text-sm text-slate-500">No file attached.</p>}
@@ -943,7 +953,7 @@ function PreviewModal({ item, onClose }: { item: ContentRow; onClose: () => void
   );
 }
 
-export function StudentCourseLibrary({ courseId }: { courseId: string }) {
+export function StudentCourseLibrary({ courseId, allowDownload = true }: { courseId: string; allowDownload?: boolean }) {
   const [params, setParams] = useSearchParams();
   const folderId = params.get("folder");
   const content = useApi<ContentRow[]>("/api/content");
@@ -1051,7 +1061,7 @@ export function StudentCourseLibrary({ courseId }: { courseId: string }) {
                     </span>
                   </span>
                 </button>
-                {row.url && (
+                {allowDownload && row.url && (
                   <a className="shrink-0 text-sm font-medium text-brand" href={fileSrc(row.url)} download target="_blank" rel="noreferrer">
                     Download
                   </a>
@@ -1163,7 +1173,7 @@ function TakeQuiz({
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const remaining = exam.maxAttempts && exam.maxAttempts > 0 ? Math.max(0, exam.maxAttempts - used) : null;
-  const tabLock = (exam.kind || "").toUpperCase() !== "PRACTICE";
+  const tabLock = exam.proctoring === true || (exam.kind || "").toUpperCase() !== "PRACTICE";
   const answersRef = useRef(answers);
   const attemptRef = useRef(attemptId);
   const resultRef = useRef(result);
@@ -1323,8 +1333,8 @@ function TakeQuiz({
   const clockUrgent = secondsLeft != null && secondsLeft <= 60;
   const timed = exam.durationMinutes && exam.durationMinutes > 0;
 
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
+  return createPortal(
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/50 p-4">
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1440,7 +1450,8 @@ function TakeQuiz({
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

@@ -3,7 +3,7 @@ import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from "rea
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { UserMenu } from "../UserMenu";
-import { StudentLms } from "./LmsPage";
+import { StudentLms, type StudySection } from "./LmsPage";
 import { StudentCourseLibrary } from "./courseContent";
 import { MyStudentRecord } from "./StudentsPage";
 import { FeesPage } from "./FeesPage";
@@ -161,13 +161,29 @@ function StudentGate({ children }: { children: React.ReactNode }) {
 
 function StorefrontShell() {
   const slug = useSlug();
+  const location = useLocation();
   const { site, error } = useSite(slug);
   const { user, token } = useAuth();
   const accent = site?.brandPrimary || "#0078f0";
 
   useEffect(() => {
-    if (site?.name) document.title = `${site.name} · Courses`;
-  }, [site?.name]);
+    if (!site?.name) return;
+    const path = location.pathname;
+    const page = path.includes("/profile")
+      ? "Profile"
+      : path.includes("/fees")
+        ? "Fees"
+        : path.includes("/jobs")
+          ? "Jobs"
+          : path.includes("/notices")
+            ? "Notices"
+            : path.includes("/learn")
+              ? "My learning"
+              : path.includes("/login")
+                ? "Login"
+                : "Courses";
+    document.title = `${site.name} · ${page}`;
+  }, [site?.name, location.pathname]);
 
   if (error) {
     return (
@@ -215,6 +231,7 @@ function StorefrontShell() {
                 <UserMenu
                   signOutTo={`/s/${slug}`}
                   profileTo={`/s/${slug}/profile`}
+                  showName
                   extraLinks={[
                     { label: "Fees", to: `/s/${slug}/fees` },
                     { label: "Jobs", to: `/s/${slug}/jobs` },
@@ -582,11 +599,19 @@ function StudentLoginPage() {
       )}
       {mode === "otp" && sent && (
         <form className="mt-4 space-y-3" onSubmit={verify}>
-          <input className="w-full rounded-lg border border-line px-3 py-2 tracking-[0.3em]" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value)} />
+          <input className="w-full rounded-lg border border-line px-3 py-2 tracking-[0.3em]" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="OTP" />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
             {busy ? "Signing in…" : "Login"}
           </button>
+          <div className="flex justify-between text-xs">
+            <button type="button" className="text-brand" onClick={() => { setSent(null); setOtp(""); }}>
+              Change number
+            </button>
+            <button type="button" className="text-brand" disabled={busy} onClick={() => void sendOtp({ preventDefault() {} } as FormEvent)}>
+              Resend OTP
+            </button>
+          </div>
         </form>
       )}
       {mode === "email" && (
@@ -597,6 +622,11 @@ function StudentLoginPage() {
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
             {busy ? "Signing in…" : "Login"}
           </button>
+          <p className="text-center text-xs">
+            <Link className="text-brand" to="/forgot">
+              Forgot password
+            </Link>
+          </p>
         </form>
       )}
     </div>
@@ -636,11 +666,13 @@ function MyLearningPage() {
           <Link key={row.course.id} to={`/s/${slug}/learn/${row.course.id}`} className="rounded-2xl border border-line bg-white p-5 hover:border-brand">
             <p className="font-semibold text-navy">{row.course.name}</p>
             <p className="mt-1 text-sm text-slate-500">
-              {row.progressPct ? `${row.progressPct}% complete` : "Continue studying"}
+              {row.progressPct ? `${row.progressPct}% complete` : "Open to study"}
             </p>
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-mist">
-              <div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(100, row.progressPct || 0)}%` }} />
-            </div>
+            {row.progressPct ? (
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-mist">
+                <div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(100, row.progressPct)}%` }} />
+              </div>
+            ) : null}
           </Link>
         ))}
       </div>
@@ -652,13 +684,46 @@ function StudyPage() {
   const slug = useSlug();
   const { courseId } = useParams();
   const [course, setCourse] = useState<PublicCourse | null>(null);
+  const [enrolled, setEnrolled] = useState<boolean | null>(null);
+  const [tab, setTab] = useState<StudySection>("contents");
 
   useEffect(() => {
-    api<MyCourse[]>("/api/actions/my-courses").then((rows) => {
-      const match = rows.find((r) => r.course.id === courseId);
-      setCourse(match?.course || null);
-    });
+    api<MyCourse[]>("/api/actions/my-courses")
+      .then((rows) => {
+        const match = rows.find((r) => r.course.id === courseId);
+        setCourse(match?.course || null);
+        setEnrolled(!!match);
+      })
+      .catch(() => {
+        setEnrolled(false);
+      });
   }, [courseId]);
+
+  const nav: { id: StudySection; label: string }[] = [
+    { id: "contents", label: "Contents" },
+    { id: "live", label: "Live class" },
+    { id: "recordings", label: "Recordings" },
+    { id: "timetable", label: "Timetable" },
+    { id: "assignments", label: "Assignments" },
+    { id: "doubts", label: "Doubts" },
+  ];
+
+  if (enrolled === false) {
+    return (
+      <div className="space-y-3">
+        <Link to={`/s/${slug}/learn`} className="text-sm text-brand hover:underline">
+          ← My learning
+        </Link>
+        <h1 className="text-2xl font-bold text-navy">Course not in your library</h1>
+        <p className="text-sm text-slate-500">
+          You are not enrolled in this course.{" "}
+          <Link className="text-brand" to={`/s/${slug}`}>
+            Browse catalog
+          </Link>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -666,8 +731,28 @@ function StudyPage() {
         ← My learning
       </Link>
       <h1 className="text-2xl font-bold text-navy">{course?.name || "Course"}</h1>
-      {courseId && <StudentCourseLibrary courseId={courseId} />}
-      <StudentLms courseId={courseId} embedded />
+      <div className="grid items-start gap-6 lg:grid-cols-[12.5rem_minmax(0,1fr)]">
+        <nav className="flex gap-1 overflow-x-auto lg:sticky lg:top-20 lg:flex-col lg:overflow-visible">
+          {nav.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm font-medium ${
+                tab === item.id ? "bg-navy text-white" : "text-navy hover:bg-mist"
+              }`}
+              onClick={() => setTab(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+        <div className="min-w-0">
+          {courseId && tab === "contents" && (
+            <StudentCourseLibrary courseId={courseId} allowDownload={course?.allowOffline !== false} />
+          )}
+          {courseId && tab !== "contents" && <StudentLms courseId={courseId} embedded section={tab} />}
+        </div>
+      </div>
     </div>
   );
 }

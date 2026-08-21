@@ -30,12 +30,14 @@ function StudentJobs() {
         {(drives.data ?? []).length === 0 && <p className="mb-3 text-sm text-slate-500">No open drives right now.</p>}
         <Table
           columns={["Drive", "Package", "Locations", ""]}
-          rows={(drives.data ?? []).map((d) => [
+          rows={(drives.data ?? []).map((d) => {
+            const applied = (apps.data ?? []).some((a) => a.driveId === d.id);
+            return [
             d.title,
             `${d.packageLpa} LPA`,
             d.locations,
             <PrimaryButton
-              disabled={!studentId}
+              disabled={!studentId || applied}
               onClick={async () => {
                 setError(null);
                 try {
@@ -46,9 +48,10 @@ function StudentJobs() {
                 }
               }}
             >
-              Apply
+              {applied ? "Applied" : "Apply"}
             </PrimaryButton>,
-          ])}
+          ];
+          })}
         />
       </Card>
       <Card title="My applications">

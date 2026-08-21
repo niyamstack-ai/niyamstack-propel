@@ -397,9 +397,12 @@ public class ResourceController {
 
     private <T extends TenantEntity> T create(T body, String area) {
         Access.requireTenant(Auth.current());
-        Access.requireWrite(Auth.current(), area);
-        if (Roles.STUDENT.equals(Auth.current().role()) && !"LMS".equals(area) && !"PLACEMENT".equals(area)) {
-            Access.requireAny(Auth.current(), Roles.OWNER);
+        boolean studentDoubt = body instanceof DoubtTicket && Roles.STUDENT.equals(Auth.current().role());
+        if (!studentDoubt) {
+            Access.requireWrite(Auth.current(), area);
+            if (Roles.STUDENT.equals(Auth.current().role())) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Students cannot create this record");
+            }
         }
         body.setId(null);
         body.setOrganizationId(Auth.current().organizationId());
@@ -415,6 +418,9 @@ public class ResourceController {
     private <T extends TenantEntity> T update(Class<T> type, UUID id, T body, String area) {
         Access.requireTenant(Auth.current());
         Access.requireWrite(Auth.current(), area);
+        if (Roles.STUDENT.equals(Auth.current().role())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Students cannot edit this record");
+        }
         T existing = store.getOwned(type, id, Auth.current().organizationId());
         body.setId(id);
         body.setOrganizationId(existing.getOrganizationId());
