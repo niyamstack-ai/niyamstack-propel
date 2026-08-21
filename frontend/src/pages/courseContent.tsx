@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, fileSrc } from "../api";
+import { useSearchParams } from "react-router-dom";
+import { api, fileSrc, getToken } from "../api";
 import { createRecord, deleteRecord, updateRecord, uploadContentFile } from "../ops";
 import { ErrorText, useApi } from "../ui";
 
@@ -29,6 +30,7 @@ export type AssessmentRow = {
   passingScore?: number;
   totalMarks?: number;
   maxAttempts?: number | null;
+  proctoring?: boolean;
   sortOrder?: number;
   createdAt?: string;
 };
@@ -921,7 +923,7 @@ function PreviewModal({ item, onClose }: { item: ContentRow; onClose: () => void
                 Download
               </a>
             )}
-            <button type="button" onClick={onClose}>
+            <button type="button" aria-label="Close preview" onClick={onClose}>
               Close
             </button>
           </div>
@@ -942,11 +944,11 @@ function PreviewModal({ item, onClose }: { item: ContentRow; onClose: () => void
 }
 
 export function StudentCourseLibrary({ courseId }: { courseId: string }) {
+  const [params, setParams] = useSearchParams();
+  const folderId = params.get("folder");
   const content = useApi<ContentRow[]>("/api/content");
   const exams = useApi<AssessmentRow[]>("/api/assessments");
   const attempts = useApi<AttemptRow[]>("/api/exam-attempts");
-  const [folderId, setFolderId] = useState<string | null>(null);
-  const [trail, setTrail] = useState<ContentRow[]>([]);
   const [preview, setPreview] = useState<ContentRow | null>(null);
   const [quiz, setQuiz] = useState<AssessmentRow | null>(null);
   const [reviewId, setReviewId] = useState<string | null>(null);
@@ -954,17 +956,37 @@ export function StudentCourseLibrary({ courseId }: { courseId: string }) {
   const courseContent = (content.data ?? []).filter((row) => sameId(row.courseId, courseId) && row.published !== false);
   const courseExams = (exams.data ?? []).filter((row) => sameId(row.courseId, courseId) && row.published !== false);
   const items = itemsInFolder(courseContent, courseExams, folderId);
+  const trail = useMemo(() => {
+    if (!folderId) return [];
+    const byId = new Map(courseContent.map((row) => [row.id, row]));
+    const out: ContentRow[] = [];
+    let cur: string | null = folderId;
+    const seen = new Set<string>();
+    while (cur && !seen.has(cur)) {
+      seen.add(cur);
+      const row = byId.get(cur);
+      if (!row) break;
+      out.unshift(row);
+      cur = row.parentFolderId || null;
+    }
+    return out;
+  }, [courseContent, folderId]);
+
+  function setFolder(id: string | null) {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (id) next.set("folder", id);
+      else next.delete("folder");
+      return next;
+    }, { replace: true });
+  }
 
   function openFolder(folder: ContentRow) {
-    setTrail((t) => [...t, folder]);
-    setFolderId(folder.id);
+    setFolder(folder.id);
   }
 
   function goBack() {
-    if (trail.length === 0) return;
-    const next = trail.slice(0, -1);
-    setTrail(next);
-    setFolderId(next[next.length - 1]?.id ?? null);
+    setFolder(trail.length > 1 ? trail[trail.length - 2].id : null);
   }
 
   function submittedFor(id: string) {
@@ -984,20 +1006,16 @@ export function StudentCourseLibrary({ courseId }: { courseId: string }) {
         )}
       </div>
       <nav className="mt-2 flex flex-wrap items-center gap-1 text-sm text-navy">
-        <button type="button" className="font-medium text-brand hover:underline" onClick={() => { setTrail([]); setFolderId(null); }}>
+        <button type="button" className="font-medium text-brand hover:underline" onClick={() => setFolder(null)}>
           All content
         </button>
-        {trail.map((folder, i) => (
+        {trail.map((folder) => (
           <span key={folder.id} className="flex items-center gap-1 text-slate-500">
             /
             <button
               type="button"
               className="text-navy hover:text-brand hover:underline"
-              onClick={() => {
-                const next = trail.slice(0, i + 1);
-                setTrail(next);
-                setFolderId(next[next.length - 1]?.id ?? null);
-              }}
+              onClick={() => setFolder(folder.id)}
             >
               {folder.title}
             </button>
@@ -1023,15 +1041,22 @@ export function StudentCourseLibrary({ courseId }: { courseId: string }) {
           if (item.content) {
             const row = item.content;
             return (
-              <button key={item.key} type="button" className="flex w-full items-center gap-3 py-3 text-left" onClick={() => setPreview(row)}>
-                {fileIcon(row.contentType)}
-                <span>
-                  <span className="block font-medium text-navy">{row.title}</span>
-                  <span className="text-xs text-slate-500">
-                    {row.contentType === "VIDEO" ? "Play video" : row.contentType === "DOCUMENT" ? "Open PDF" : "Open / download"}
+              <div key={item.key} className="flex w-full items-center justify-between gap-3 py-3">
+                <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => setPreview(row)}>
+                  {fileIcon(row.contentType)}
+                  <span>
+                    <span className="block font-medium text-navy">{row.title}</span>
+                    <span className="text-xs text-slate-500">
+                      {row.contentType === "VIDEO" ? "Play video" : row.contentType === "DOCUMENT" ? "Open PDF" : "Open / download"}
+                    </span>
                   </span>
-                </span>
-              </button>
+                </button>
+                {row.url && (
+                  <a className="shrink-0 text-sm font-medium text-brand" href={fileSrc(row.url)} download target="_blank" rel="noreferrer">
+                    Download
+                  </a>
+                )}
+              </div>
             );
           }
           const row = item.test!;
@@ -1158,6 +1183,12 @@ function TakeQuiz({
     if (submitting.current || resultRef.current) return;
     const id = attemptRef.current;
     if (!id) return;
+    if (!reason) {
+      const blank = questions.filter((q) => !(answersRef.current[q.id] || "").trim()).length;
+      if (blank > 0 && !window.confirm(`You left ${blank} question(s) unanswered. Submit anyway?`)) {
+        return;
+      }
+    }
     submitting.current = true;
     setBusy(true);
     setError(null);
@@ -1250,6 +1281,33 @@ function TakeQuiz({
     }, 800);
     return () => window.clearTimeout(id);
   }, [answers, attemptId, result]);
+
+  useEffect(() => {
+    if (!attemptId || result) return;
+    function flush() {
+      const id = attemptRef.current;
+      if (!id || resultRef.current) return;
+      const token = getToken();
+      void fetch(`/api/actions/attempts/${id}/draft`, {
+        method: "POST",
+        keepalive: true,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(answersRef.current),
+      });
+    }
+    function onHide() {
+      if (document.visibilityState === "hidden") flush();
+    }
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onHide);
+    };
+  }, [attemptId, result]);
 
   async function saveAndClose() {
     if (attemptId && !result) {

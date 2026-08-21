@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "../api";
 import { createRecord, updateRecord } from "../ops";
 import { useAuth } from "../auth";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
@@ -24,30 +25,134 @@ export function StudentsPage() {
 }
 
 export function MyStudentRecord() {
-  const { user } = useAuth();
+  const { user, applySession } = useAuth();
   const students = useApi<Student[]>("/api/students");
   const guardians = useApi<{ fullName: string; relation: string }[]>("/api/guardians");
+  const attendance = useApi<{ sessionDate: string; status: string }[]>("/api/attendance");
+  const certs = useApi<{ title: string; issuedOn?: string }[]>("/api/certificates");
   const record = students.data?.[0];
+  const [name, setName] = useState(user?.name || "");
+  const [email, setEmail] = useState(user?.email || "");
+  const [phone, setPhone] = useState(user?.phone || record?.phone || "");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setName(user?.name || record?.fullName || "");
+    setEmail(user?.email || record?.email || "");
+    setPhone(user?.phone || record?.phone || "");
+  }, [user?.name, user?.email, user?.phone, record?.fullName, record?.email, record?.phone]);
+
+  const present = (attendance.data ?? []).filter((a) => a.status === "PRESENT").length;
+  const attTotal = (attendance.data ?? []).length;
+
+  async function saveProfile() {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await api<{ token: string; user: { id: string; name: string; email: string; phone?: string; role: string; organizationId: string; packageTier: string } }>(
+        "/api/auth/profile",
+        { method: "PATCH", body: JSON.stringify({ name, email, phone }) }
+      );
+      applySession(res);
+      students.reload();
+      setNotice("Profile saved.");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function savePassword() {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      if (newPassword !== confirm) throw new Error("New passwords do not match");
+      await api("/api/auth/password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirm("");
+      setNotice("Password updated.");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-navy">My profile</h1>
-      <Card title="Signed in as">
-        <ul className="text-sm">
-          <li>Name: {user?.name || record?.fullName || "—"}</li>
-          <li>Email: {user?.email || record?.email || "—"}</li>
-          {user?.phone ? <li>Phone: {user.phone}</li> : record?.phone ? <li>Phone: {record.phone}</li> : null}
-          <li>Role: Student</li>
-        </ul>
+      <ErrorText error={error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <Card title="Account">
+        <FormGrid>
+          <Field label="Name" value={name} onChange={setName} />
+          <Field label="Email" value={email} onChange={setEmail} type="email" />
+          <Field label="Mobile" value={phone} onChange={setPhone} />
+        </FormGrid>
+        <div className="mt-3">
+          <PrimaryButton disabled={busy || !name} onClick={() => void saveProfile()}>
+            {busy ? "Saving…" : "Save profile"}
+          </PrimaryButton>
+        </div>
+        {record && (
+          <p className="mt-3 text-xs text-slate-400">
+            {record.studentCode} · {record.status}
+            {record.enrollmentDate ? ` · enrolled ${record.enrollmentDate}` : ""}
+          </p>
+        )}
       </Card>
-      <Card title="Student record">
+      <Card title="Change password">
+        <p className="mb-3 text-xs text-slate-500">At least 10 characters, with upper, lower, a digit, and a special character.</p>
+        <FormGrid>
+          <Field label="Current password" value={currentPassword} onChange={setCurrentPassword} type="password" />
+          <Field label="New password" value={newPassword} onChange={setNewPassword} type="password" />
+          <Field label="Confirm new password" value={confirm} onChange={setConfirm} type="password" />
+        </FormGrid>
+        <div className="mt-3">
+          <PrimaryButton disabled={busy || !currentPassword || !newPassword} onClick={() => void savePassword()}>
+            Update password
+          </PrimaryButton>
+        </div>
+      </Card>
+      <Card title="Attendance">
+        {attTotal === 0 ? (
+          <p className="text-sm text-slate-500">No attendance marked yet.</p>
+        ) : (
+          <>
+            <p className="mb-2 text-sm text-navy">
+              {present}/{attTotal} present ({Math.round((present * 100) / attTotal)}%)
+            </p>
+            <ul className="text-sm">
+              {(attendance.data ?? []).slice(0, 20).map((a, i) => (
+                <li key={i}>
+                  {a.sessionDate} — {a.status}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </Card>
+      <Card title="Certificates">
+        {(certs.data ?? []).length === 0 && <p className="text-sm text-slate-500">No certificates issued yet.</p>}
         <ul className="text-sm">
-          {record ? (
-            <li>
-              {record.studentCode} · {record.fullName} · {record.status} · {record.email}
+          {(certs.data ?? []).map((c, i) => (
+            <li key={i}>
+              {c.title}
+              {c.issuedOn ? ` · ${c.issuedOn}` : ""}
             </li>
-          ) : (
-            <li>No student record is linked to this login yet.</li>
-          )}
+          ))}
         </ul>
       </Card>
       <Card title="Guardians">

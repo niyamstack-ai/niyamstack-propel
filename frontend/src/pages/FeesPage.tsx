@@ -19,13 +19,49 @@ export function FeesPage() {
 function MyFees() {
   const invoices = useApi<Invoice[]>("/api/invoices");
   const payments = useApi<Payment[]>("/api/payments");
+  const receipts = useApi<{ id: string; receiptNo: string; amount: number; issuedAt?: string }[]>("/api/receipts");
   const [error, setError] = useState<string | null>(null);
+
+  async function openReceipt(id: string) {
+    setError(null);
+    try {
+      const rec = await api<{
+        receiptNo: string;
+        amount: number;
+        gstin?: string;
+        issuedAt?: string;
+        invoiceNo?: string;
+        instituteName?: string;
+      }>(`/api/actions/receipts/${id}`);
+      const win = window.open("", "_blank");
+      if (!win) {
+        setError("Allow pop-ups to print the receipt.");
+        return;
+      }
+      win.document.write(`<!doctype html><html><head><title>${rec.receiptNo}</title>
+        <style>body{font-family:sans-serif;padding:32px;color:#071a33}h1{margin:0 0 8px}p{margin:4px 0}</style></head>
+        <body>
+          <h1>${rec.instituteName || "Receipt"}</h1>
+          <p>Receipt ${rec.receiptNo}</p>
+          <p>Invoice ${rec.invoiceNo || "—"}</p>
+          <p>Amount ₹${rec.amount}</p>
+          ${rec.gstin ? `<p>GSTIN ${rec.gstin}</p>` : ""}
+          <p>${rec.issuedAt ? new Date(rec.issuedAt).toLocaleString() : ""}</p>
+          <script>window.print()<\/script>
+        </body></html>`);
+      win.document.close();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-navy">My fees</h1>
-      <p className="text-sm text-slate-500">Pay dues and download receipt numbers. This is not the institute accounts desk.</p>
+      <p className="text-sm text-slate-500">Pay dues and download receipts. This is not the institute accounts desk.</p>
       <ErrorText error={error} />
       <Card title="Invoices">
+        {(invoices.data ?? []).length === 0 && <p className="text-sm text-slate-500">No invoices yet.</p>}
         <Table
           columns={["Invoice", "Amount", "Status", ""]}
           rows={(invoices.data ?? []).map((inv) => [
@@ -42,6 +78,7 @@ function MyFees() {
                     await api(`/api/actions/invoices/${inv.id}/collect`, { method: "POST", body: JSON.stringify({ method: "UPI" }) });
                     invoices.reload();
                     payments.reload();
+                    receipts.reload();
                   } catch (e) {
                     setError((e as Error).message);
                   }
@@ -54,10 +91,18 @@ function MyFees() {
         />
       </Card>
       <Card title="Receipts">
-        <ul className="text-sm">
-          {(payments.data ?? []).map((p) => (
-            <li key={p.id}>
-              {p.receiptNo || p.gatewayRef} — ₹{p.amount}
+        {(receipts.data ?? []).length === 0 && (payments.data ?? []).length === 0 && (
+          <p className="text-sm text-slate-500">No receipts yet.</p>
+        )}
+        <ul className="space-y-2 text-sm">
+          {(receipts.data ?? []).map((r) => (
+            <li key={r.id} className="flex items-center justify-between gap-2">
+              <span>
+                {r.receiptNo} — ₹{r.amount}
+              </span>
+              <button type="button" className="text-sm font-medium text-brand" onClick={() => void openReceipt(r.id)}>
+                Download / print
+              </button>
             </li>
           ))}
         </ul>

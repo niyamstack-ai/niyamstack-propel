@@ -4,7 +4,10 @@ import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.AppUser;
 import com.niyamstack.propel.domain.Model.Assessment;
+import com.niyamstack.propel.domain.Model.Assignment;
 import com.niyamstack.propel.domain.Model.ContentItem;
+import com.niyamstack.propel.domain.Model.ExamAttempt;
+import com.niyamstack.propel.domain.Model.Submission;
 import com.niyamstack.propel.domain.Model.Coupon;
 import com.niyamstack.propel.domain.Model.Course;
 import com.niyamstack.propel.domain.Model.CourseEnrollment;
@@ -29,7 +32,9 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class StorefrontService {
@@ -222,10 +227,22 @@ public class StorefrontService {
         if (student == null) {
             return List.of();
         }
+        Set<UUID> submittedExams = store.listBy(ExamAttempt.class, orgId, "studentId", student.getId()).stream()
+                .filter(a -> "SUBMITTED".equals(a.getStatus()))
+                .map(ExamAttempt::getAssessmentId)
+                .collect(Collectors.toSet());
+        Set<UUID> submittedAsg = store.listBy(Submission.class, orgId, "studentId", student.getId()).stream()
+                .map(Submission::getAssignmentId)
+                .collect(Collectors.toSet());
         List<CourseEnrollment> rows = store.listBy(CourseEnrollment.class, orgId, "studentId", student.getId());
         if (rows.isEmpty() && student.getCourseId() != null) {
             Course course = store.getOwned(Course.class, student.getCourseId(), orgId);
-            return List.of(Map.of("course", publicCourse(course), "status", "ACTIVE", "source", "BATCH"));
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("course", publicCourse(course));
+            row.put("status", "ACTIVE");
+            row.put("source", "BATCH");
+            row.put("progressPct", courseProgressPct(orgId, course.getId(), submittedExams, submittedAsg));
+            return List.of(row);
         }
         return rows.stream()
                 .filter(e -> !"CANCELLED".equals(e.getStatus()))
@@ -236,9 +253,24 @@ public class StorefrontService {
                     row.put("status", e.getStatus());
                     row.put("source", e.getSource());
                     row.put("course", publicCourse(course));
+                    row.put("progressPct", courseProgressPct(orgId, course.getId(), submittedExams, submittedAsg));
                     return row;
                 })
                 .toList();
+    }
+
+    private int courseProgressPct(UUID orgId, UUID courseId, Set<UUID> submittedExams, Set<UUID> submittedAsg) {
+        List<Assessment> exams = store.listBy(Assessment.class, orgId, "courseId", courseId).stream()
+                .filter(Assessment::isPublished).toList();
+        List<Assignment> homework = store.listBy(Assignment.class, orgId, "courseId", courseId).stream()
+                .filter(Assignment::isPublished).toList();
+        int total = exams.size() + homework.size();
+        if (total == 0) {
+            return 0;
+        }
+        long done = exams.stream().filter(a -> submittedExams.contains(a.getId())).count()
+                + homework.stream().filter(a -> submittedAsg.contains(a.getId())).count();
+        return (int) Math.min(100, done * 100 / total);
     }
 
     public Map<String, Object> publicCourse(Course course) {

@@ -34,7 +34,7 @@ import { CampaignsPage } from "./pages/CampaignsPage";
 import { PeoplePage } from "./pages/PeoplePage";
 import { SelfServicePage } from "./pages/SelfServicePage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
-import { StorefrontAppPage, StorefrontCatalogPage, StorefrontCoursePage, StorefrontFeesPage, StorefrontJobsPage, StorefrontLayout, StorefrontLearnPage, StorefrontLoginPage, StorefrontProfilePage, StorefrontStudyPage } from "./pages/Storefront";
+import { StorefrontAppPage, StorefrontCatalogPage, StorefrontCoursePage, StorefrontFeesPage, StorefrontJobsPage, StorefrontLayout, StorefrontLearnPage, StorefrontLoginPage, StorefrontNoticesPage, StorefrontProfilePage, StorefrontStudyPage } from "./pages/Storefront";
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { token, ready } = useAuth();
@@ -82,6 +82,7 @@ export default function App() {
         <Route path="profile" element={<StorefrontProfilePage />} />
         <Route path="fees" element={<StorefrontFeesPage />} />
         <Route path="jobs" element={<StorefrontJobsPage />} />
+        <Route path="notices" element={<StorefrontNoticesPage />} />
       </Route>
       <Route path="/platform/login" element={<PlatformLoginPage />} />
       <Route

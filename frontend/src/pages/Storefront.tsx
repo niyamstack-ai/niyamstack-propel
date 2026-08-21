@@ -8,6 +8,7 @@ import { StudentCourseLibrary } from "./courseContent";
 import { MyStudentRecord } from "./StudentsPage";
 import { FeesPage } from "./FeesPage";
 import { PlacementPage } from "./PlacementPage";
+import { Card, useApi } from "../ui";
 
 type Site = {
   id: string;
@@ -47,7 +48,7 @@ type OutlineItem = {
   sortOrder?: number;
 };
 
-type MyCourse = { id?: string; status?: string; source?: string; course: PublicCourse };
+type MyCourse = { id?: string; status?: string; source?: string; progressPct?: number; course: PublicCourse };
 
 function useSlug() {
   const { slug } = useParams();
@@ -137,6 +138,14 @@ export function StorefrontJobsPage() {
   );
 }
 
+export function StorefrontNoticesPage() {
+  return (
+    <StudentGate>
+      <StudentNotices />
+    </StudentGate>
+  );
+}
+
 function StudentGate({ children }: { children: React.ReactNode }) {
   const { token, user } = useAuth();
   const slug = useSlug();
@@ -209,6 +218,7 @@ function StorefrontShell() {
                   extraLinks={[
                     { label: "Fees", to: `/s/${slug}/fees` },
                     { label: "Jobs", to: `/s/${slug}/jobs` },
+                    { label: "Notices", to: `/s/${slug}/notices` },
                   ]}
                 />
               </>
@@ -389,8 +399,8 @@ function CoursePage() {
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 {course.allowOffline !== false && (
                   <p className="text-sm text-slate-700">
-                    <span className="font-medium">Offline download</span>
-                    <span className="block text-slate-500">Learn at your convenience.</span>
+                    <span className="font-medium">Download notes and videos</span>
+                    <span className="block text-slate-500">Save files from My learning after you enroll.</span>
                   </p>
                 )}
                 <p className="text-sm text-slate-700">
@@ -553,9 +563,6 @@ function StudentLoginPage() {
     <div className="mx-auto max-w-md rounded-2xl border border-line bg-white p-6">
       <h1 className="text-xl font-bold text-navy">Student login</h1>
       <p className="mt-1 text-sm text-slate-500">Use the mobile you purchased with.</p>
-      {import.meta.env.DEV && (
-        <p className="mt-1 text-xs text-slate-400">Demo student: 9876500002, OTP 123456.</p>
-      )}
       <div className="mt-4 flex gap-2">
         <button type="button" className={`rounded-full px-3 py-1 text-sm ${mode === "otp" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => setMode("otp")}>
           Mobile OTP
@@ -575,7 +582,6 @@ function StudentLoginPage() {
       )}
       {mode === "otp" && sent && (
         <form className="mt-4 space-y-3" onSubmit={verify}>
-          {sent.devOtp && <p className="text-xs text-slate-400">Dev OTP: {sent.devOtp}</p>}
           <input className="w-full rounded-lg border border-line px-3 py-2 tracking-[0.3em]" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value)} />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
@@ -629,7 +635,12 @@ function MyLearningPage() {
         {rows.map((row) => (
           <Link key={row.course.id} to={`/s/${slug}/learn/${row.course.id}`} className="rounded-2xl border border-line bg-white p-5 hover:border-brand">
             <p className="font-semibold text-navy">{row.course.name}</p>
-            <p className="mt-1 text-sm text-slate-500">Continue studying</p>
+            <p className="mt-1 text-sm text-slate-500">
+              {row.progressPct ? `${row.progressPct}% complete` : "Continue studying"}
+            </p>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-mist">
+              <div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(100, row.progressPct || 0)}%` }} />
+            </div>
           </Link>
         ))}
       </div>
@@ -657,6 +668,41 @@ function StudyPage() {
       <h1 className="text-2xl font-bold text-navy">{course?.name || "Course"}</h1>
       {courseId && <StudentCourseLibrary courseId={courseId} />}
       <StudentLms courseId={courseId} embedded />
+    </div>
+  );
+}
+
+function StudentNotices() {
+  const anns = useApi<{ title: string; body: string }[]>("/api/announcements");
+  const notes = useApi<{ title: string; body: string; status?: string }[]>("/api/notifications");
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-navy">Notices</h1>
+        <p className="text-sm text-slate-500">Announcements and messages from your institute.</p>
+      </div>
+      <Card title="Announcements">
+        {(anns.data ?? []).length === 0 && <p className="text-sm text-slate-500">No announcements yet.</p>}
+        <ul className="space-y-3 text-sm">
+          {(anns.data ?? []).map((a, i) => (
+            <li key={i}>
+              <p className="font-medium text-navy">{a.title}</p>
+              {a.body && <p className="mt-1 text-slate-600">{a.body}</p>}
+            </li>
+          ))}
+        </ul>
+      </Card>
+      <Card title="Messages">
+        {(notes.data ?? []).length === 0 && <p className="text-sm text-slate-500">No messages yet.</p>}
+        <ul className="space-y-3 text-sm">
+          {(notes.data ?? []).map((n, i) => (
+            <li key={i}>
+              <p className="font-medium text-navy">{n.title}</p>
+              {n.body && <p className="mt-1 text-slate-600">{n.body}</p>}
+            </li>
+          ))}
+        </ul>
+      </Card>
     </div>
   );
 }

@@ -188,6 +188,9 @@ public class LmsService {
         if (file == null || file.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Choose a file to upload");
         }
+        if (file.getSize() > 25L * 1024 * 1024) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "File must be 25 MB or smaller");
+        }
         try {
             var stored = storage.put(user.organizationId(), file.getOriginalFilename(), file.getContentType(),
                     file.getInputStream(), file.getSize());
@@ -339,10 +342,11 @@ public class LmsService {
         requireAttemptOwner(user, attempt);
         Assessment exam = store.getOwned(Assessment.class, attempt.getAssessmentId(), user.organizationId());
         Map<String, String> given = answers == null ? Map.of() : answers;
+        String safeReason = sanitizeSubmitReason(exam, attempt, reason);
         if ("SUBMITTED".equals(attempt.getStatus())) {
-            return buildResult(attempt, exam, parseAnswers(attempt.getAnswersJson()), reason);
+            return buildResult(attempt, exam, parseAnswers(attempt.getAnswersJson()), safeReason);
         }
-        return buildResult(scoreAndSave(attempt, exam, given, reason), exam, given, reason);
+        return buildResult(scoreAndSave(attempt, exam, given, safeReason), exam, given, safeReason);
     }
 
     public Map<String, Object> progress(UUID studentId) {
@@ -634,6 +638,16 @@ public class LmsService {
         if (!student.getId().equals(attempt.getStudentId())) {
             throw new ApiException(HttpStatus.FORBIDDEN, "Not your attempt");
         }
+    }
+
+    private static String sanitizeSubmitReason(Assessment exam, ExamAttempt attempt, String reason) {
+        if (timedOut(exam, attempt)) {
+            return "TIME";
+        }
+        if ("TAB".equalsIgnoreCase(reason) && exam.getKind() != null && !"PRACTICE".equalsIgnoreCase(exam.getKind())) {
+            return "TAB";
+        }
+        return null;
     }
 
     private static boolean timedOut(Assessment exam, ExamAttempt attempt) {

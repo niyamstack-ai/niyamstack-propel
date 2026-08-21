@@ -78,6 +78,8 @@ public class AuthController {
 
     public record PasswordChangeRequest(@NotBlank String currentPassword, @NotBlank String newPassword) {}
 
+    public record ProfileUpdateRequest(String name, String email, String phone) {}
+
     @PostMapping("/login")
     @Transactional
     public Map<String, Object> login(@Valid @RequestBody LoginRequest body, jakarta.servlet.http.HttpServletRequest request) {
@@ -206,6 +208,45 @@ public class AuthController {
         store.save(user);
         audit.log("PASSWORD_RESET", "AppUser", user.getId(), user.getEmail());
         return Map.of("status", "updated");
+    }
+
+    @PatchMapping("/profile")
+    @Transactional
+    public Map<String, Object> updateProfile(@RequestBody ProfileUpdateRequest body) {
+        AppUser user = store.get(AppUser.class, Auth.current().userId());
+        if (body != null && body.name() != null && !body.name().isBlank()) {
+            user.setFullName(body.name().trim());
+        }
+        if (body != null && body.email() != null && !body.email().isBlank()) {
+            String email = body.email().trim().toLowerCase();
+            if (!email.contains("@")) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a valid email");
+            }
+            AppUser other = store.findUserByEmail(email);
+            if (other != null && !other.getId().equals(user.getId())) {
+                throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+            }
+            user.setEmail(email);
+        }
+        if (body != null && body.phone() != null && !body.phone().isBlank()) {
+            String phone = requireMobile(body.phone());
+            AppUser other = store.findUserByPhone(phone);
+            if (other != null && !other.getId().equals(user.getId())) {
+                throw new ApiException(HttpStatus.CONFLICT, "An account with this mobile already exists");
+            }
+            user.setPhone(phone);
+        }
+        store.save(user);
+        if (user.getOrganizationId() != null) {
+            for (var student : store.listBy(com.niyamstack.propel.domain.Model.Student.class, user.getOrganizationId(), "userId", user.getId())) {
+                student.setFullName(user.getFullName());
+                student.setEmail(user.getEmail());
+                student.setPhone(user.getPhone());
+                store.save(student);
+            }
+        }
+        audit.log("PROFILE_UPDATE", "AppUser", user.getId(), user.getEmail());
+        return sessions.issue(user);
     }
 
     @PostMapping("/password")

@@ -19,6 +19,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -203,6 +204,30 @@ public class FeeService {
 
     private static BigDecimal nvl(BigDecimal v) {
         return v == null ? BigDecimal.ZERO : v;
+    }
+
+    public Map<String, Object> receipt(UUID receiptId) {
+        PropelUser user = Auth.current();
+        Receipt rec = store.getOwned(Receipt.class, receiptId, user.organizationId());
+        Invoice invoice = store.getOwned(Invoice.class, rec.getInvoiceId(), user.organizationId());
+        if (Roles.STUDENT.equals(user.role())) {
+            List<Student> mine = store.listBy(Student.class, user.organizationId(), "userId", user.userId());
+            UUID studentId = mine.isEmpty() ? null : mine.getFirst().getId();
+            if (studentId == null || !studentId.equals(invoice.getStudentId())) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Not your receipt");
+            }
+        }
+        Organization org = store.get(Organization.class, user.organizationId());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", rec.getId());
+        out.put("receiptNo", rec.getReceiptNo());
+        out.put("amount", rec.getAmount());
+        out.put("gstin", rec.getGstin());
+        out.put("issuedAt", rec.getIssuedAt());
+        out.put("invoiceNo", invoice.getInvoiceNo());
+        out.put("invoiceStatus", invoice.getStatus());
+        out.put("instituteName", org.getName());
+        return out;
     }
 
     public Map<String, Object> gatewayNote() {

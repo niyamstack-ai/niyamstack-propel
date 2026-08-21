@@ -5,7 +5,7 @@ import { useAuth } from "../auth";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
 
 type Drive = { id: string; title: string; packageLpa: number; status: string; locations: string; minAttendancePct?: number; companyId?: string };
-type Application = { id: string; status: string; eligibilityPassed?: boolean; currentRound?: string };
+type Application = { id: string; driveId?: string; status: string; eligibilityPassed?: boolean; currentRound?: string };
 type Student = { id: string; fullName: string };
 type Company = { id: string; name: string; industry: string };
 
@@ -27,6 +27,7 @@ function StudentJobs() {
       <p className="text-sm text-slate-500">Apply to campus drives. You will not see institute setup or accounts.</p>
       <ErrorText error={error} />
       <Card title="Open drives">
+        {(drives.data ?? []).length === 0 && <p className="mb-3 text-sm text-slate-500">No open drives right now.</p>}
         <Table
           columns={["Drive", "Package", "Locations", ""]}
           rows={(drives.data ?? []).map((d) => [
@@ -51,12 +52,17 @@ function StudentJobs() {
         />
       </Card>
       <Card title="My applications">
+        {(apps.data ?? []).length === 0 && <p className="text-sm text-slate-500">You have not applied yet.</p>}
         <ul className="text-sm">
-          {(apps.data ?? []).map((a) => (
-            <li key={a.id}>
-              {a.status} {a.currentRound ? `· ${a.currentRound}` : ""} {a.eligibilityPassed === false ? "· not eligible" : ""}
-            </li>
-          ))}
+          {(apps.data ?? []).map((a) => {
+            const drive = (drives.data ?? []).find((d) => d.id === a.driveId);
+            return (
+              <li key={a.id}>
+                {drive?.title || "Drive"} — {a.status}
+                {a.currentRound ? ` · ${a.currentRound}` : ""} {a.eligibilityPassed === false ? "· not eligible" : ""}
+              </li>
+            );
+          })}
         </ul>
       </Card>
     </div>

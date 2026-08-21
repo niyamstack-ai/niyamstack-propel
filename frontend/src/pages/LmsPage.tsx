@@ -5,7 +5,7 @@ import { useAuth } from "../auth";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
 
 type Content = { id: string; title: string; contentType: string; scormStandard?: string; published?: boolean; courseId?: string };
-type Assignment = { id: string; title: string; instructions: string; courseId?: string; dueAt?: string };
+type Assignment = { id: string; title: string; instructions: string; courseId?: string; dueAt?: string; maxScore?: number };
 type Submission = { id: string; assignmentId?: string; grade?: string; status?: string; content?: string; fileUrl?: string; feedback?: string; submittedAt?: string };
 type Assessment = { id: string; title: string; kind: string; proctoring: boolean; published: boolean; courseId?: string };
 type Attempt = { id: string; score?: number; status: string };
@@ -36,6 +36,7 @@ export function StudentLms({ courseId, embedded }: { courseId?: string; embedded
   const me = useApi<Student[]>("/api/students");
   const slots = useApi<{ subject: string; dayOfWeek: number; startTime: string }[]>("/api/timetable");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [doubtSub, setDoubtSub] = useState("");
   const [doubtBody, setDoubtBody] = useState("");
   const [openAsg, setOpenAsg] = useState<Assignment | null>(null);
@@ -68,40 +69,54 @@ export function StudentLms({ courseId, embedded }: { courseId?: string; embedded
         </div>
       )}
       <ErrorText error={error} />
-      {!embedded && (
-        <Card title="Timetable">
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <Card title="Timetable">
+        {(slots.data ?? []).length === 0 ? (
+          <p className="text-sm text-slate-500">No timetable published yet.</p>
+        ) : (
           <Table columns={["Subject", "Day", "Start"]} rows={(slots.data ?? []).map((s) => [s.subject, String(s.dayOfWeek), s.startTime])} />
-        </Card>
-      )}
-      {embedded ? null : (
-        <>
-      <Card title="PDFs, videos & notes">
-        <ul className="text-sm">
-          {materials.map((c) => (
-            <li key={c.id}>{c.title} · {c.contentType}</li>
-          ))}
-        </ul>
+        )}
       </Card>
       <Card title="Live class">
-        <ul className="text-sm">
+        {(live.data ?? []).length === 0 && <p className="text-sm text-slate-500">No live class scheduled.</p>}
+        <ul className="space-y-2 text-sm">
           {(live.data ?? []).map((l, i) => (
             <li key={i}>
               {l.title}{" "}
-              <a className="text-brand" href={l.meetingUrl} target="_blank" rel="noreferrer">
-                Join
-              </a>
+              {l.meetingUrl ? (
+                <a className="text-brand" href={l.meetingUrl} target="_blank" rel="noreferrer">
+                  Join
+                </a>
+              ) : (
+                <span className="text-slate-400">Link not added yet</span>
+              )}
             </li>
           ))}
         </ul>
       </Card>
       <Card title="Recordings">
-        <ul className="text-sm">
+        {(recs.data ?? []).length === 0 && <p className="text-sm text-slate-500">No recordings yet.</p>}
+        <ul className="space-y-3 text-sm">
           {(recs.data ?? []).map((r, i) => (
-            <li key={i}>{r.title}</li>
+            <li key={i}>
+              <p className="font-medium text-navy">{r.title}</p>
+              {r.videoUrl ? (
+                <video className="mt-2 w-full max-w-xl rounded-lg bg-black" src={fileSrc(r.videoUrl)} controls />
+              ) : (
+                <p className="text-xs text-slate-400">No video attached.</p>
+              )}
+            </li>
           ))}
         </ul>
       </Card>
-        </>
+      {embedded ? null : (
+        <Card title="PDFs, videos & notes">
+          <ul className="text-sm">
+            {materials.map((c) => (
+              <li key={c.id}>{c.title} · {c.contentType}</li>
+            ))}
+          </ul>
+        </Card>
       )}
       <Card title="Assignments">
         {homework.length === 0 && <p className="text-sm text-slate-500">No assignments in this course yet.</p>}
@@ -114,6 +129,7 @@ export function StudentLms({ courseId, embedded }: { courseId?: string; embedded
                   <span className="block font-medium text-navy">{a.title}</span>
                   {a.instructions && <span className="mt-0.5 block text-slate-500">{a.instructions}</span>}
                   {a.dueAt && <span className="mt-0.5 block text-xs text-slate-400">Due {new Date(a.dueAt).toLocaleString()}</span>}
+                  {a.maxScore != null && <span className="mt-0.5 block text-xs text-slate-400">Max score {a.maxScore}</span>}
                   {last && (
                     <span className="mt-0.5 block text-xs text-slate-500">
                       {last.status === "GRADED" ? `Graded ${last.grade || ""}` : "Submitted"}
@@ -161,6 +177,7 @@ export function StudentLms({ courseId, embedded }: { courseId?: string; embedded
                 });
                 setDoubtSub("");
                 setDoubtBody("");
+                setNotice("Doubt sent to your faculty.");
                 doubts.reload();
               })
             }
@@ -212,6 +229,10 @@ function AssignmentSubmitModal({
 
   async function onFile(file: File | undefined) {
     if (!file) return;
+    if (file.size > 25 * 1024 * 1024) {
+      setError("File must be 25 MB or smaller");
+      return;
+    }
     setError(null);
     setBusy(true);
     try {
@@ -242,17 +263,18 @@ function AssignmentSubmitModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
       <div className="w-full max-w-lg rounded-2xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold text-navy">{assignment.title}</h3>
         {assignment.instructions && <p className="mt-2 text-sm text-slate-600">{assignment.instructions}</p>}
         {assignment.dueAt && <p className="mt-1 text-xs text-slate-400">Due {new Date(assignment.dueAt).toLocaleString()}</p>}
+        {assignment.maxScore != null && <p className="mt-1 text-xs text-slate-400">Max score {assignment.maxScore}</p>}
         <label className="mt-4 block text-sm">
           <span className="text-slate-600">Your work (text or link)</span>
           <textarea className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm" rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste a GitHub link or write your answer" />
         </label>
         <label className="mt-3 block text-sm">
-          <span className="text-slate-600">Or attach a file</span>
+          <span className="text-slate-600">Or attach a file (PDF, Word, image, or zip · max 25 MB)</span>
           <input className="mt-1 block w-full text-sm" type="file" onChange={(e) => void onFile(e.target.files?.[0])} />
           {fileName && <span className="mt-1 block text-xs text-slate-500">Attached: {fileName}</span>}
           {fileUrl && !fileName && (
@@ -297,6 +319,8 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
   const [batchId, setBatchId] = useState("");
   const [asgTitle, setAsgTitle] = useState("");
   const [asgInst, setAsgInst] = useState("");
+  const [asgDue, setAsgDue] = useState("");
+  const [asgMax, setAsgMax] = useState("");
   const [examTitle, setExamTitle] = useState("");
   const [attStudent, setAttStudent] = useState("");
   const [attStatus, setAttStatus] = useState("PRESENT");
@@ -379,15 +403,27 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
             <FormGrid>
               <Field label="Title" value={asgTitle} onChange={setAsgTitle} />
               <Field label="Instructions" value={asgInst} onChange={setAsgInst} />
+              <Field label="Due date" value={asgDue} onChange={setAsgDue} type="datetime-local" />
+              <Field label="Max score" value={asgMax} onChange={setAsgMax} />
               <Select label="Batch" value={batchId} onChange={setBatchId} options={(batches.data ?? []).map((b) => ({ value: b.id, label: b.name }))} />
               <div className="flex items-end">
                 <PrimaryButton
                   disabled={!asgTitle}
                   onClick={() =>
                     run(async () => {
-                      await createRecord("/api/assignments", { title: asgTitle, instructions: asgInst, batchId: batchId || null, courseId: courseId || null, published: true });
+                      await createRecord("/api/assignments", {
+                        title: asgTitle,
+                        instructions: asgInst,
+                        batchId: batchId || null,
+                        courseId: courseId || null,
+                        published: true,
+                        dueAt: asgDue ? new Date(asgDue).toISOString() : null,
+                        maxScore: asgMax ? Number(asgMax) : null,
+                      });
                       setAsgTitle("");
                       setAsgInst("");
+                      setAsgDue("");
+                      setAsgMax("");
                       asg.reload();
                     })
                   }

@@ -194,6 +194,11 @@ public class ActionsController {
         return lms.progress(studentId);
     }
 
+    @GetMapping("/receipts/{id}")
+    public Map<String, Object> receipt(@PathVariable UUID id) {
+        return fees.receipt(id);
+    }
+
     @GetMapping("/eligibility/{driveId}/{studentId}")
     public Map<String, Object> eligibility(@PathVariable UUID driveId, @PathVariable UUID studentId) {
         return placement.eligibility(driveId, studentId);
