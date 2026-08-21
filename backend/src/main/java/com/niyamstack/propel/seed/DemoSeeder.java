@@ -63,7 +63,7 @@ public class DemoSeeder implements CommandLineRunner {
         Center pune = center(oid, "Pune Center", "PNQ", "Baner", "Pune");
         Center hyd = center(oid, "Hyderabad Center", "HYD", "HITEC City", "Hyderabad");
 
-        AppUser owner = user(oid, pune.getId(), "Ananya Deshmukh", "owner@aarohan.demo", "OWNER", "9876500001");
+        AppUser owner = user(oid, pune.getId(), "Ananya Deshmukh", "deepak@yopmail.com", "OWNER", "9876500001");
         user(oid, pune.getId(), "Rohan Kulkarni", "placement@aarohan.demo", "PLACEMENT_HEAD", "9876500005");
         AppUser faculty = user(oid, pune.getId(), "Meera Iyer", "faculty@aarohan.demo", "FACULTY", "9876500003");
         user(oid, pune.getId(), "Sahil Khan", "counselor@aarohan.demo", "COUNSELOR", "9876500007");
@@ -553,7 +553,14 @@ public class DemoSeeder implements CommandLineRunner {
     }
 
     private void backfillPortalLogins() {
-        AppUser owner = store.findUserByEmail("owner@aarohan.demo");
+        AppUser owner = store.findUserByEmail("deepak@yopmail.com");
+        if (owner == null) {
+            owner = store.findUserByEmail("owner@aarohan.demo");
+            if (owner != null) {
+                owner.setEmail("deepak@yopmail.com");
+                store.save(owner);
+            }
+        }
         if (owner == null || owner.getOrganizationId() == null) {
             return;
         }
@@ -595,7 +602,7 @@ public class DemoSeeder implements CommandLineRunner {
                 }
             }
         }
-        phone("owner@aarohan.demo", "9876500001");
+        phone("deepak@yopmail.com", "9876500001");
         phone("student@aarohan.demo", "9876500002");
         phone("faculty@aarohan.demo", "9876500003");
         phone("parent@aarohan.demo", "9876500004");

@@ -1,6 +1,5 @@
 package com.niyamstack.propel.integration;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -12,20 +11,20 @@ public class IntegrationStatusService {
     private final MessagingGateway messaging;
     private final MeetingGateway meetings;
     private final ObjectStorage storage;
-    private final String mailProvider;
+    private final MailService mail;
 
     public IntegrationStatusService(
             PaymentGateway payments,
             MessagingGateway messaging,
             MeetingGateway meetings,
             ObjectStorage storage,
-            @Value("${app.integrations.mail.provider:demo}") String mailProvider
+            MailService mail
     ) {
         this.payments = payments;
         this.messaging = messaging;
         this.meetings = meetings;
         this.storage = storage;
-        this.mailProvider = mailProvider;
+        this.mail = mail;
     }
 
     public Map<String, Object> status() {
@@ -34,7 +33,7 @@ public class IntegrationStatusService {
         out.put("whatsapp", Map.of("provider", messaging.provider(), "live", messaging.live()));
         out.put("meetings", Map.of("provider", meetings.provider(), "live", meetings.live()));
         out.put("storage", Map.of("provider", storage.provider(), "live", !"local".equals(storage.provider())));
-        out.put("mail", Map.of("provider", mailProvider, "live", !"demo".equalsIgnoreCase(mailProvider)));
+        out.put("mail", Map.of("provider", mail.provider(), "live", mail.live()));
         out.put("note", "Live is true only when vendor credentials are configured. Demo adapters never claim a live send.");
         return out;
     }

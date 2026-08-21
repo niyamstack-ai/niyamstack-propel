@@ -5,6 +5,7 @@ import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.AppUser;
 import com.niyamstack.propel.domain.Model.Organization;
+import com.niyamstack.propel.integration.MailService;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.OtpService;
 import com.niyamstack.propel.security.PasswordPolicy;
@@ -35,6 +36,7 @@ public class AuthController {
     private final OtpService otp;
     private final ResetTokenService resets;
     private final SessionService sessions;
+    private final MailService mail;
     private final ConcurrentHashMap<String, Integer> ipFailures = new ConcurrentHashMap<>();
 
     public AuthController(
@@ -43,7 +45,8 @@ public class AuthController {
             AuditService audit,
             OtpService otp,
             ResetTokenService resets,
-            SessionService sessions
+            SessionService sessions,
+            MailService mail
     ) {
         this.store = store;
         this.encoder = encoder;
@@ -51,6 +54,7 @@ public class AuthController {
         this.otp = otp;
         this.resets = resets;
         this.sessions = sessions;
+        this.mail = mail;
     }
 
     public record LoginRequest(
@@ -102,7 +106,9 @@ public class AuthController {
     public Map<String, Object> requestLoginOtp(@Valid @RequestBody PhoneRequest body) {
         AppUser user = requirePhoneUser(body.phone());
         ensureActive(user);
-        return otp.publicIssue(otp.issue(user.getPhone(), OtpService.LOGIN));
+        var issued = otp.issue(user.getPhone(), OtpService.LOGIN);
+        emailOtp(user, OtpService.LOGIN, issued.code());
+        return otp.publicIssue(issued);
     }
 
     @PostMapping("/otp/verify")
@@ -154,7 +160,12 @@ public class AuthController {
         user.setPasswordChangedAt(Instant.now());
         store.save(user);
         audit.log("SIGNUP", "Organization", org.getId(), email);
-        return otp.publicIssue(otp.issue(phone, OtpService.LOGIN));
+        var issued = otp.issue(phone, OtpService.LOGIN);
+        emailOtp(user, OtpService.LOGIN, issued.code());
+        if (mail.live() && mail.canDeliver(email)) {
+            mail.sendWelcome(email, user.getFullName());
+        }
+        return otp.publicIssue(issued);
     }
 
     @PostMapping("/forgot/otp")
@@ -162,7 +173,9 @@ public class AuthController {
     public Map<String, Object> forgotOtp(@Valid @RequestBody PhoneRequest body) {
         AppUser user = requirePhoneUser(body.phone());
         ensureActive(user);
-        return otp.publicIssue(otp.issue(user.getPhone(), OtpService.RESET));
+        var issued = otp.issue(user.getPhone(), OtpService.RESET);
+        emailOtp(user, OtpService.RESET, issued.code());
+        return otp.publicIssue(issued);
     }
 
     @PostMapping("/reset/otp")
@@ -189,6 +202,9 @@ public class AuthController {
         }
         String token = resets.issue(user.getId());
         audit.log("PASSWORD_RESET_EMAIL", "AppUser", user.getId(), user.getEmail());
+        if (mail.live() && mail.canDeliver(user.getEmail())) {
+            mail.sendPasswordReset(user.getEmail(), token);
+        }
         if (otp.reveal()) {
             return Map.of("status", "sent", "resetToken", token);
         }
@@ -266,6 +282,13 @@ public class AuthController {
         store.save(user);
         audit.log("PASSWORD_CHANGE", "AppUser", user.getId(), null);
         return Map.of("status", "updated");
+    }
+
+    private void emailOtp(AppUser user, String purpose, String code) {
+        if (user == null || !mail.live() || !mail.canDeliver(user.getEmail())) {
+            return;
+        }
+        mail.sendOtp(user.getEmail(), purpose, code);
     }
 
     private boolean passwordOk(AppUser user, String password, String ip, String email) {

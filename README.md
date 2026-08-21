@@ -69,7 +69,7 @@ Password: `Propel@123`
 
 | Email | Role |
 |---|---|
-| owner@aarohan.demo | Institute owner |
+| deepak@yopmail.com | Institute owner |
 | placement@aarohan.demo | Placement head |
 | faculty@aarohan.demo | Faculty |
 | counselor@aarohan.demo | Counselor |

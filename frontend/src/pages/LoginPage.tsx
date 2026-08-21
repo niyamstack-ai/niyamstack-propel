@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -313,6 +313,7 @@ function SignupView() {
 }
 
 function ForgotView() {
+  const [params] = useSearchParams();
   const [method, setMethod] = useState<"otp" | "email">("otp");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -324,6 +325,14 @@ function ForgotView() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const fromLink = params.get("token");
+    if (!fromLink) return;
+    setMethod("email");
+    setToken(fromLink);
+    setSent({ status: "sent" });
+  }, [params]);
 
   async function requestReset(e: FormEvent) {
     e.preventDefault();
@@ -472,7 +481,7 @@ function DevHint() {
   if (!import.meta.env.DEV) return null;
   return (
     <p className="mt-6 text-center text-[11px] leading-relaxed text-slate-400">
-      Developer: owner mobile 9876500001, email owner@aarohan.demo, password Propel@123, OTP 123456.
+      Developer: owner mobile 9876500001, email deepak@yopmail.com, password Propel@123, OTP 123456.
     </p>
   );
 }

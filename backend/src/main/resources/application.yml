@@ -65,6 +65,12 @@ app:
       zoom-client-secret: ${ZOOM_CLIENT_SECRET:}
     mail:
       provider: ${PROPEL_MAIL_PROVIDER:demo}
+      host: ${PROPEL_MAIL_HOST:smtp.gmail.com}
+      port: ${PROPEL_MAIL_PORT:587}
+      username: ${PROPEL_MAIL_USER:}
+      password: ${PROPEL_MAIL_PASSWORD:}
+      from: ${PROPEL_MAIL_FROM:}
+      public-url: ${PROPEL_PUBLIC_URL:http://localhost:5173}
     storage:
       provider: ${PROPEL_STORAGE_PROVIDER:local}
       minio-endpoint: ${MINIO_ENDPOINT:http://localhost:9000}

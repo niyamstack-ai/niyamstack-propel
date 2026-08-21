@@ -32,7 +32,7 @@ public class OtpService {
     public Issued issue(String phone, String purpose) {
         Challenge challenge = new Challenge(devCode, purpose, Instant.now().plusSeconds(300), 0);
         challenges.put(key(phone, purpose), challenge);
-        return new Issued(phone, reveal, reveal ? devCode : null);
+        return new Issued(phone, reveal, devCode);
     }
 
     public void verify(String phone, String purpose, String otp) {
