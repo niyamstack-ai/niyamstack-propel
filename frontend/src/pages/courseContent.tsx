@@ -86,6 +86,14 @@ function formatClock(total: number) {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
+function enterExamLock() {
+  void document.documentElement.requestFullscreen?.().catch(() => undefined);
+}
+
+function leaveExamLock() {
+  if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined);
+}
+
 const ADD_ITEMS = [
   { id: "FOLDER", label: "Folder" },
   { id: "VIDEO", label: "Video" },
@@ -962,6 +970,13 @@ export function StudentCourseLibrary({ courseId, allowDownload = true }: { cours
   const [preview, setPreview] = useState<ContentRow | null>(null);
   const [quiz, setQuiz] = useState<AssessmentRow | null>(null);
   const [reviewId, setReviewId] = useState<string | null>(null);
+  const viewed = useApi<{ contentItemId?: string }[]>("/api/content-progress");
+  const seen = new Set((viewed.data ?? []).map((row) => row.contentItemId).filter(Boolean));
+
+  function openPreview(row: ContentRow) {
+    setPreview(row);
+    void api(`/api/actions/content/${row.id}/view`, { method: "POST", body: "{}" }).then(() => viewed.reload()).catch(() => undefined);
+  }
 
   const courseContent = (content.data ?? []).filter((row) => sameId(row.courseId, courseId) && row.published !== false);
   const courseExams = (exams.data ?? []).filter((row) => sameId(row.courseId, courseId) && row.published !== false);
@@ -1052,11 +1067,12 @@ export function StudentCourseLibrary({ courseId, allowDownload = true }: { cours
             const row = item.content;
             return (
               <div key={item.key} className="flex w-full items-center justify-between gap-3 py-3">
-                <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => setPreview(row)}>
+                <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => openPreview(row)}>
                   {fileIcon(row.contentType)}
                   <span>
                     <span className="block font-medium text-navy">{row.title}</span>
                     <span className="text-xs text-slate-500">
+                      {seen.has(row.id) ? "Opened · " : ""}
                       {row.contentType === "VIDEO" ? "Play video" : row.contentType === "DOCUMENT" ? "Open PDF" : "Open / download"}
                     </span>
                   </span>
@@ -1084,6 +1100,7 @@ export function StudentCourseLibrary({ courseId, allowDownload = true }: { cours
                 onClick={() => {
                   if (canStart) {
                     setReviewId(null);
+                    enterExamLock();
                     setQuiz(row);
                   } else if (last) {
                     setReviewId(last.id);
@@ -1119,6 +1136,7 @@ export function StudentCourseLibrary({ courseId, allowDownload = true }: { cours
                     className="text-sm font-medium text-brand"
                     onClick={() => {
                       setReviewId(null);
+                      enterExamLock();
                       setQuiz(row);
                     }}
                   >
@@ -1137,6 +1155,7 @@ export function StudentCourseLibrary({ courseId, allowDownload = true }: { cours
           used={submittedFor(quiz.id).length}
           reviewAttemptId={reviewId}
           onClose={() => {
+            leaveExamLock();
             setQuiz(null);
             setReviewId(null);
           }}
@@ -1273,6 +1292,28 @@ function TakeQuiz({
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
   }, [endsAt, result]);
+
+  useEffect(() => {
+    window.dispatchEvent(new Event("propel:exam-lock"));
+    return () => window.dispatchEvent(new Event("propel:exam-unlock"));
+  }, []);
+
+  useEffect(() => {
+    if (!tabLock || result || reviewAttemptId) return;
+    function block(e: Event) {
+      e.preventDefault();
+    }
+    document.addEventListener("copy", block);
+    document.addEventListener("cut", block);
+    document.addEventListener("paste", block);
+    document.addEventListener("contextmenu", block);
+    return () => {
+      document.removeEventListener("copy", block);
+      document.removeEventListener("cut", block);
+      document.removeEventListener("paste", block);
+      document.removeEventListener("contextmenu", block);
+    };
+  }, [tabLock, result, reviewAttemptId]);
 
   useEffect(() => {
     if (!tabLock || result || !attemptId) return;

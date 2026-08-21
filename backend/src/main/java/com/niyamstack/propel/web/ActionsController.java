@@ -194,6 +194,11 @@ public class ActionsController {
         return lms.progress(studentId);
     }
 
+    @PostMapping("/content/{id}/view")
+    public Map<String, Object> markContentViewed(@PathVariable UUID id) {
+        return lms.markContentViewed(id);
+    }
+
     @GetMapping("/receipts/{id}")
     public Map<String, Object> receipt(@PathVariable UUID id) {
         return fees.receipt(id);

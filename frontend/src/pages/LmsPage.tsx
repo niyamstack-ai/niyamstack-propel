@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, fileSrc } from "../api";
 import { createRecord, uploadSubmissionFile } from "../ops";
 import { useAuth } from "../auth";
@@ -69,6 +69,7 @@ export function StudentLms({
   const [doubtSub, setDoubtSub] = useState("");
   const [doubtBody, setDoubtBody] = useState("");
   const [openAsg, setOpenAsg] = useState<Assignment | null>(null);
+  const [newDoubtId, setNewDoubtId] = useState<string | null>(null);
 
   async function run(fn: () => Promise<void>) {
     setError(null);
@@ -99,6 +100,12 @@ export function StudentLms({
   const recRows = (recs.data ?? []).filter((row) => matchesCourse(row.batchId));
   const slotRows = (slots.data ?? []).filter((row) => matchesCourse(row.batchId));
   const show = (id: StudySection) => !embedded || !section || section === id;
+  const waiting = embedded && batches.data == null && !batches.error;
+
+  useEffect(() => {
+    if (!newDoubtId) return;
+    document.getElementById(`doubt-${newDoubtId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [newDoubtId, courseDoubts.length]);
 
   function latestSub(assignmentId: string) {
     return (subs.data ?? [])
@@ -118,7 +125,9 @@ export function StudentLms({
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       {show("timetable") && (
         <Card title="Timetable">
-          {slotRows.length === 0 ? (
+          {waiting ? (
+            <p className="text-sm text-slate-500">Loading timetable…</p>
+          ) : slotRows.length === 0 ? (
             <p className="text-sm text-slate-500">No timetable published for this course yet.</p>
           ) : (
             <Table columns={["Subject", "Day", "Start"]} rows={slotRows.map((s) => [s.subject, weekdayName(s.dayOfWeek), clockTime(s.startTime)])} />
@@ -127,38 +136,49 @@ export function StudentLms({
       )}
       {show("live") && (
         <Card title="Live class">
-          {liveRows.length === 0 && <p className="text-sm text-slate-500">No live class scheduled for this course.</p>}
-          <ul className="space-y-2 text-sm">
-            {liveRows.map((l, i) => (
-              <li key={i}>
-                {l.title}{" "}
-                {l.meetingUrl ? (
-                  <a className="text-brand" href={l.meetingUrl} target="_blank" rel="noreferrer">
-                    Join
-                  </a>
-                ) : (
-                  <span className="text-slate-400">Link not added yet</span>
-                )}
-              </li>
-            ))}
-          </ul>
+          {waiting ? (
+            <p className="text-sm text-slate-500">Loading live classes…</p>
+          ) : (
+            <>
+              {liveRows.length === 0 && <p className="text-sm text-slate-500">No live class scheduled for this course.</p>}
+              <ul className="space-y-2 text-sm">
+                {liveRows.map((l, i) => (
+                  <li key={i}>
+                    {l.title}{" "}
+                    {l.meetingUrl ? (
+                      <a className="text-brand" href={l.meetingUrl} target="_blank" rel="noreferrer">
+                        Join
+                      </a>
+                    ) : (
+                      <span className="text-slate-400">Link not added yet</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </Card>
       )}
       {show("recordings") && (
         <Card title="Recordings">
-          {recRows.length === 0 && <p className="text-sm text-slate-500">No recordings for this course yet.</p>}
-          <ul className="space-y-3 text-sm">
-            {recRows.map((r, i) => (
-              <li key={i}>
-                <p className="font-medium text-navy">{r.title}</p>
-                {r.videoUrl ? (
-                  <video className="mt-2 w-full max-w-xl rounded-lg bg-black" src={fileSrc(r.videoUrl)} controls />
-                ) : (
-                  <p className="text-xs text-slate-400">No video attached.</p>
-                )}
-              </li>
-            ))}
-          </ul>
+          {waiting ? (
+            <p className="text-sm text-slate-500">Loading recordings…</p>
+          ) : recRows.length === 0 ? (
+            <p className="text-sm text-slate-500">No recordings for this course yet.</p>
+          ) : (
+            <ul className="space-y-3 text-sm">
+              {recRows.map((r, i) => (
+                <li key={i}>
+                  <p className="font-medium text-navy">{r.title}</p>
+                  {r.videoUrl ? (
+                    <video className="mt-2 w-full max-w-xl rounded-lg bg-black" src={fileSrc(r.videoUrl)} controls />
+                  ) : (
+                    <p className="text-xs text-slate-400">No video attached.</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       )}
       {embedded ? null : (
@@ -172,29 +192,34 @@ export function StudentLms({
       )}
       {show("assignments") && (
         <Card title="Assignments">
-          {homework.length === 0 && <p className="text-sm text-slate-500">No assignments in this course yet.</p>}
-          <ul className="space-y-3 text-sm">
-            {homework.map((a) => {
-              const last = latestSub(a.id);
-              return (
-                <li key={a.id} className="flex flex-wrap items-start justify-between gap-2">
-                  <span>
-                    <span className="block font-medium text-navy">{a.title}</span>
-                    {a.instructions && <span className="mt-0.5 block text-slate-500">{a.instructions}</span>}
-                    {a.dueAt && <span className="mt-0.5 block text-xs text-slate-400">Due {new Date(a.dueAt).toLocaleString()}</span>}
-                    {a.maxScore != null && <span className="mt-0.5 block text-xs text-slate-400">Max score {a.maxScore}</span>}
-                    {last && (
-                      <span className="mt-0.5 block text-xs text-slate-500">
-                        {last.status === "GRADED" ? `Graded ${last.grade || ""}` : "Submitted"}
-                        {last.feedback ? ` · ${last.feedback}` : ""}
-                      </span>
-                    )}
-                  </span>
-                  <PrimaryButton onClick={() => setOpenAsg(a)}>{last ? "Resubmit" : "Submit"}</PrimaryButton>
-                </li>
-              );
-            })}
-          </ul>
+          {waiting ? (
+            <p className="text-sm text-slate-500">Loading assignments…</p>
+          ) : homework.length === 0 ? (
+            <p className="text-sm text-slate-500">No assignments in this course yet.</p>
+          ) : (
+            <ul className="space-y-3 text-sm">
+              {homework.map((a) => {
+                const last = latestSub(a.id);
+                return (
+                  <li key={a.id} className="flex flex-wrap items-start justify-between gap-2">
+                    <span>
+                      <span className="block font-medium text-navy">{a.title}</span>
+                      {a.instructions && <span className="mt-0.5 block text-slate-500">{a.instructions}</span>}
+                      {a.dueAt && <span className="mt-0.5 block text-xs text-slate-400">Due {new Date(a.dueAt).toLocaleString()}</span>}
+                      {a.maxScore != null && <span className="mt-0.5 block text-xs text-slate-400">Max score {a.maxScore}</span>}
+                      {last && (
+                        <span className="mt-0.5 block text-xs text-slate-500">
+                          {last.status === "GRADED" ? `Graded ${last.grade || ""}` : "Submitted"}
+                          {last.feedback ? ` · ${last.feedback}` : ""}
+                        </span>
+                      )}
+                    </span>
+                    <PrimaryButton onClick={() => setOpenAsg(a)}>{last ? "Resubmit" : "Submit"}</PrimaryButton>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </Card>
       )}
       {!embedded && (
@@ -223,7 +248,7 @@ export function StudentLms({
               disabled={!doubtSub || !doubtBody}
               onClick={() =>
                 run(async () => {
-                  await createRecord("/api/doubts", {
+                  const ticket = await createRecord<Doubt>("/api/doubts", {
                     subject: doubtSub,
                     body: doubtBody,
                     status: "OPEN",
@@ -232,7 +257,8 @@ export function StudentLms({
                   });
                   setDoubtSub("");
                   setDoubtBody("");
-                  setNotice("Doubt sent to your faculty.");
+                  setNewDoubtId(ticket.id || null);
+                  setNotice("Doubt sent to your faculty. It is highlighted in the list below.");
                   doubts.reload();
                 })
               }
@@ -243,7 +269,11 @@ export function StudentLms({
           <ul className="mt-4 space-y-2 text-sm">
             {courseDoubts.length === 0 && <li className="text-slate-500">No doubts in this course yet.</li>}
             {courseDoubts.map((d, i) => (
-              <li key={d.id || i} className="rounded-lg border border-line px-3 py-2">
+              <li
+                id={d.id ? `doubt-${d.id}` : undefined}
+                key={d.id || i}
+                className={`rounded-lg border px-3 py-2 ${d.id && d.id === newDoubtId ? "border-brand bg-sky-50" : "border-line"}`}
+              >
                 <span className="font-medium">{d.subject}</span> — {d.status}
                 {d.body ? <span className="mt-0.5 block text-slate-500">{d.body}</span> : null}
                 {d.facultyReply ? <span className="mt-0.5 block text-navy">Reply: {d.facultyReply}</span> : null}

@@ -314,6 +314,13 @@ public final class Model {
         private Integer sortOrder = 0;
     }
 
+    @Entity(name = "ContentProgress") @Table(name = "content_progress") @Getter @Setter
+    public static class ContentProgress extends TenantEntity {
+        private UUID studentId;
+        private UUID contentItemId;
+        private Instant viewedAt;
+    }
+
     @Entity(name = "LiveSession") @Table(name = "live_sessions") @Getter @Setter
     public static class LiveSession extends TenantEntity {
         private UUID batchId;

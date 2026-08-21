@@ -126,6 +126,17 @@ public class SchemaPatch {
                     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     updated_at TIMESTAMP WITH TIME ZONE NOT NULL
                 )
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS content_progress (
+                    id UUID PRIMARY KEY,
+                    organization_id UUID NOT NULL,
+                    student_id UUID NOT NULL,
+                    content_item_id UUID NOT NULL,
+                    viewed_at TIMESTAMP WITH TIME ZONE,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+                )
                 """
         );
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {

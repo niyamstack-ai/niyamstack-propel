@@ -21,7 +21,7 @@ export function useApi<T>(path: string) {
     };
   }, [path, tick]);
 
-  return { data, error, reload: () => setTick((n) => n + 1) };
+  return { data, error, loading: data === null && !error, reload: () => setTick((n) => n + 1) };
 }
 
 export function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {

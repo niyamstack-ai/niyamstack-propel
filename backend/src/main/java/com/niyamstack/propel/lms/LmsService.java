@@ -372,6 +372,28 @@ public class LmsService {
         return out;
     }
 
+    @Transactional
+    public Map<String, Object> markContentViewed(UUID contentId) {
+        PropelUser user = Auth.current();
+        Student student = requireCurrentStudent(user);
+        ContentItem item = store.getOwned(ContentItem.class, contentId, user.organizationId());
+        if ("FOLDER".equalsIgnoreCase(item.getContentType())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Folders are not study items");
+        }
+        requireEnrolled(student, item.getCourseId(), item.getBatchId());
+        boolean already = store.listBy(ContentProgress.class, user.organizationId(), "studentId", student.getId()).stream()
+                .anyMatch(p -> contentId.equals(p.getContentItemId()));
+        if (!already) {
+            ContentProgress row = new ContentProgress();
+            row.setOrganizationId(user.organizationId());
+            row.setStudentId(student.getId());
+            row.setContentItemId(contentId);
+            row.setViewedAt(Instant.now());
+            store.save(row);
+        }
+        return Map.of("status", "ok");
+    }
+
     private Student requireCurrentStudent(PropelUser user) {
         if (!Roles.STUDENT.equals(user.role()) && !Roles.OWNER.equals(user.role()) && !Roles.FACULTY.equals(user.role())) {
             throw new ApiException(HttpStatus.FORBIDDEN, "Student context required");

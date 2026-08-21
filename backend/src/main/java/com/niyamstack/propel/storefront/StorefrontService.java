@@ -6,6 +6,7 @@ import com.niyamstack.propel.domain.Model.AppUser;
 import com.niyamstack.propel.domain.Model.Assessment;
 import com.niyamstack.propel.domain.Model.Assignment;
 import com.niyamstack.propel.domain.Model.ContentItem;
+import com.niyamstack.propel.domain.Model.ContentProgress;
 import com.niyamstack.propel.domain.Model.ExamAttempt;
 import com.niyamstack.propel.domain.Model.Submission;
 import com.niyamstack.propel.domain.Model.Coupon;
@@ -234,6 +235,9 @@ public class StorefrontService {
         Set<UUID> submittedAsg = store.listBy(Submission.class, orgId, "studentId", student.getId()).stream()
                 .map(Submission::getAssignmentId)
                 .collect(Collectors.toSet());
+        Set<UUID> viewedContent = store.listBy(ContentProgress.class, orgId, "studentId", student.getId()).stream()
+                .map(ContentProgress::getContentItemId)
+                .collect(Collectors.toSet());
         List<CourseEnrollment> rows = store.listBy(CourseEnrollment.class, orgId, "studentId", student.getId());
         if (rows.isEmpty() && student.getCourseId() != null) {
             Course course = store.getOwned(Course.class, student.getCourseId(), orgId);
@@ -241,7 +245,7 @@ public class StorefrontService {
             row.put("course", publicCourse(course));
             row.put("status", "ACTIVE");
             row.put("source", "BATCH");
-            row.put("progressPct", courseProgressPct(orgId, course.getId(), submittedExams, submittedAsg));
+            row.put("progressPct", courseProgressPct(orgId, course.getId(), submittedExams, submittedAsg, viewedContent));
             return List.of(row);
         }
         return rows.stream()
@@ -253,23 +257,27 @@ public class StorefrontService {
                     row.put("status", e.getStatus());
                     row.put("source", e.getSource());
                     row.put("course", publicCourse(course));
-                    row.put("progressPct", courseProgressPct(orgId, course.getId(), submittedExams, submittedAsg));
+                    row.put("progressPct", courseProgressPct(orgId, course.getId(), submittedExams, submittedAsg, viewedContent));
                     return row;
                 })
                 .toList();
     }
 
-    private int courseProgressPct(UUID orgId, UUID courseId, Set<UUID> submittedExams, Set<UUID> submittedAsg) {
+    private int courseProgressPct(UUID orgId, UUID courseId, Set<UUID> submittedExams, Set<UUID> submittedAsg, Set<UUID> viewedContent) {
         List<Assessment> exams = store.listBy(Assessment.class, orgId, "courseId", courseId).stream()
                 .filter(Assessment::isPublished).toList();
         List<Assignment> homework = store.listBy(Assignment.class, orgId, "courseId", courseId).stream()
                 .filter(Assignment::isPublished).toList();
-        int total = exams.size() + homework.size();
+        List<ContentItem> materials = store.listBy(ContentItem.class, orgId, "courseId", courseId).stream()
+                .filter(c -> c.isPublished() && !"FOLDER".equalsIgnoreCase(c.getContentType()))
+                .toList();
+        int total = exams.size() + homework.size() + materials.size();
         if (total == 0) {
             return 0;
         }
         long done = exams.stream().filter(a -> submittedExams.contains(a.getId())).count()
-                + homework.stream().filter(a -> submittedAsg.contains(a.getId())).count();
+                + homework.stream().filter(a -> submittedAsg.contains(a.getId())).count()
+                + materials.stream().filter(c -> viewedContent.contains(c.getId())).count();
         return (int) Math.min(100, done * 100 / total);
     }
 

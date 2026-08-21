@@ -320,6 +320,8 @@ public class ResourceController {
     @GetMapping("/chat-messages") public List<ChatMessage> chatMessages() { return list(ChatMessage.class); }
     @PostMapping("/chat-messages") public ChatMessage createChatMessage(@RequestBody ChatMessage body) { return create(body, "COMMS"); }
 
+    @GetMapping("/content-progress") public List<ContentProgress> contentProgress() { return list(ContentProgress.class); }
+
     @GetMapping("/one-to-one-sessions") public List<OneToOneSession> oneToOneSessions() { return list(OneToOneSession.class); }
     @PostMapping("/one-to-one-sessions") public OneToOneSession createOneToOne(@RequestBody OneToOneSession body) { return create(body, "GROWTH"); }
     @PutMapping("/one-to-one-sessions/{id}") public OneToOneSession updateOneToOne(@PathVariable UUID id, @RequestBody OneToOneSession body) { return update(OneToOneSession.class, id, body, "GROWTH"); }
@@ -397,19 +399,41 @@ public class ResourceController {
 
     private <T extends TenantEntity> T create(T body, String area) {
         Access.requireTenant(Auth.current());
-        boolean studentDoubt = body instanceof DoubtTicket && Roles.STUDENT.equals(Auth.current().role());
-        if (!studentDoubt) {
+        boolean student = Roles.STUDENT.equals(Auth.current().role());
+        boolean studentWrite = student && (body instanceof DoubtTicket || body instanceof ChatThread || body instanceof ChatMessage);
+        if (!studentWrite) {
             Access.requireWrite(Auth.current(), area);
-            if (Roles.STUDENT.equals(Auth.current().role())) {
+            if (student) {
                 throw new ApiException(HttpStatus.FORBIDDEN, "Students cannot create this record");
             }
         }
         body.setId(null);
         body.setOrganizationId(Auth.current().organizationId());
-        if (body instanceof DoubtTicket ticket && Roles.STUDENT.equals(Auth.current().role())) {
+        if (student) {
             var me = scope.studentFor(Auth.current());
-            if (me != null) {
+            if (me != null && body instanceof DoubtTicket ticket) {
                 ticket.setStudentId(me.getId());
+            }
+            if (me != null && body instanceof ChatThread thread) {
+                thread.setStudentId(me.getId());
+                thread.setStudentName(me.getFullName());
+                if (thread.getStatus() == null || thread.getStatus().isBlank()) {
+                    thread.setStatus("OPEN");
+                }
+                thread.setLastMessageAt(java.time.Instant.now());
+            }
+            if (me != null && body instanceof ChatMessage message) {
+                if (message.getThreadId() == null) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "Pick a conversation first");
+                }
+                ChatThread thread = store.getOwned(ChatThread.class, message.getThreadId(), Auth.current().organizationId());
+                if (!me.getId().equals(thread.getStudentId())) {
+                    throw new ApiException(HttpStatus.FORBIDDEN, "That chat is not yours");
+                }
+                message.setSenderRole(Roles.STUDENT);
+                message.setSenderName(Auth.current().name());
+                thread.setLastMessageAt(java.time.Instant.now());
+                store.save(thread);
             }
         }
         return store.save(body);

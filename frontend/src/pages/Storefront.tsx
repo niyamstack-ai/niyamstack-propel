@@ -8,7 +8,8 @@ import { StudentCourseLibrary } from "./courseContent";
 import { MyStudentRecord } from "./StudentsPage";
 import { FeesPage } from "./FeesPage";
 import { PlacementPage } from "./PlacementPage";
-import { Card, useApi } from "../ui";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, useApi } from "../ui";
+import { createRecord } from "../ops";
 
 type Site = {
   id: string;
@@ -146,6 +147,18 @@ export function StorefrontNoticesPage() {
   );
 }
 
+export function StorefrontChatsPage() {
+  return (
+    <StudentGate>
+      <StudentChats />
+    </StudentGate>
+  );
+}
+
+export function StorefrontForgotPage() {
+  return <StudentForgotPage />;
+}
+
 function StudentGate({ children }: { children: React.ReactNode }) {
   const { token, user } = useAuth();
   const slug = useSlug();
@@ -165,6 +178,18 @@ function StorefrontShell() {
   const { site, error } = useSite(slug);
   const { user, token } = useAuth();
   const accent = site?.brandPrimary || "#0078f0";
+  const [examLock, setExamLock] = useState(false);
+
+  useEffect(() => {
+    const on = () => setExamLock(true);
+    const off = () => setExamLock(false);
+    window.addEventListener("propel:exam-lock", on);
+    window.addEventListener("propel:exam-unlock", off);
+    return () => {
+      window.removeEventListener("propel:exam-lock", on);
+      window.removeEventListener("propel:exam-unlock", off);
+    };
+  }, []);
 
   useEffect(() => {
     if (!site?.name) return;
@@ -175,9 +200,13 @@ function StorefrontShell() {
         ? "Fees"
         : path.includes("/jobs")
           ? "Jobs"
-          : path.includes("/notices")
-            ? "Notices"
-            : path.includes("/learn")
+            : path.includes("/notices")
+              ? "Notices"
+              : path.includes("/chats")
+                ? "Chat"
+                : path.includes("/forgot")
+                  ? "Forgot password"
+                  : path.includes("/learn")
               ? "My learning"
               : path.includes("/login")
                 ? "Login"
@@ -216,16 +245,16 @@ function StorefrontShell() {
               <p className="text-[10px] uppercase tracking-wide text-slate-400">Student website</p>
             </div>
           </Link>
-          <nav className="flex items-center gap-2 text-sm">
-            <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`/s/${slug}`}>
+          <nav className={`flex items-center gap-2 text-sm ${examLock ? "pointer-events-none opacity-40" : ""}`} aria-hidden={examLock}>
+            <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`/s/${slug}`} tabIndex={examLock ? -1 : 0}>
               Courses
             </Link>
-            <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`/s/${slug}/app`}>
+            <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`/s/${slug}/app`} tabIndex={examLock ? -1 : 0}>
               App
             </Link>
             {student ? (
               <>
-                <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`/s/${slug}/learn`}>
+                <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`/s/${slug}/learn`} tabIndex={examLock ? -1 : 0}>
                   My learning
                 </Link>
                 <UserMenu
@@ -236,6 +265,7 @@ function StorefrontShell() {
                     { label: "Fees", to: `/s/${slug}/fees` },
                     { label: "Jobs", to: `/s/${slug}/jobs` },
                     { label: "Notices", to: `/s/${slug}/notices` },
+                    { label: "Chat", to: `/s/${slug}/chats` },
                   ]}
                 />
               </>
@@ -623,7 +653,7 @@ function StudentLoginPage() {
             {busy ? "Signing in…" : "Login"}
           </button>
           <p className="text-center text-xs">
-            <Link className="text-brand" to="/forgot">
+            <Link className="text-brand" to={`/s/${slug}/forgot`}>
               Forgot password
             </Link>
           </p>
@@ -788,6 +818,224 @@ function StudentNotices() {
           ))}
         </ul>
       </Card>
+    </div>
+  );
+}
+
+function StudentChats() {
+  const { user } = useAuth();
+  const threads = useApi<{ id: string; subject?: string; status: string }[]>("/api/chat-threads");
+  const messages = useApi<{ id: string; threadId: string; senderName?: string; senderRole?: string; body: string }[]>("/api/chat-messages");
+  const [active, setActive] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const mine = (messages.data ?? []).filter((m) => m.threadId === active);
+
+  async function startThread() {
+    setError(null);
+    try {
+      const thread = await createRecord<{ id: string }>("/api/chat-threads", {
+        subject: subject || "Help",
+        status: "OPEN",
+      });
+      setActive(thread.id);
+      setSubject("");
+      threads.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function send() {
+    if (!active || !body) return;
+    setError(null);
+    try {
+      await createRecord("/api/chat-messages", {
+        threadId: active,
+        senderRole: user?.role || "STUDENT",
+        senderName: user?.name || "Student",
+        body,
+      });
+      setBody("");
+      messages.reload();
+      threads.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-navy">Chat</h1>
+        <p className="text-sm text-slate-500">Message your institute. Faculty reply in the same thread.</p>
+      </div>
+      <ErrorText error={error} />
+      <div className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
+        <Card title="Conversations">
+          <FormGrid>
+            <Field label="New topic" value={subject} onChange={setSubject} />
+          </FormGrid>
+          <div className="mt-3">
+            <PrimaryButton onClick={() => void startThread()}>Start chat</PrimaryButton>
+          </div>
+          <ul className="mt-4 space-y-2 text-sm">
+            {(threads.data ?? []).length === 0 && <li className="text-slate-500">No chats yet.</li>}
+            {(threads.data ?? []).map((t) => (
+              <li key={t.id}>
+                <button
+                  type="button"
+                  className={`w-full rounded-lg px-3 py-2 text-left ${active === t.id ? "bg-navy text-white" : "bg-mist"}`}
+                  onClick={() => setActive(t.id)}
+                >
+                  {t.subject || "Conversation"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+        <Card title="Messages">
+          {!active && <p className="text-sm text-slate-500">Start a chat or pick one on the left.</p>}
+          {active && (
+            <>
+              <div className="mb-4 max-h-80 space-y-2 overflow-y-auto">
+                {mine.map((m) => (
+                  <div key={m.id} className="rounded-lg bg-mist px-3 py-2 text-sm">
+                    <p className="text-xs text-slate-500">{m.senderName || m.senderRole}</p>
+                    <p>{m.body}</p>
+                  </div>
+                ))}
+                {mine.length === 0 && <p className="text-sm text-slate-500">No messages yet. Write the first one.</p>}
+              </div>
+              <FormGrid>
+                <Field label="Message" value={body} onChange={setBody} />
+              </FormGrid>
+              <div className="mt-3">
+                <PrimaryButton disabled={!body} onClick={() => void send()}>
+                  Send
+                </PrimaryButton>
+              </div>
+            </>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function StudentForgotPage() {
+  const slug = useSlug();
+  const [method, setMethod] = useState<"otp" | "email">("otp");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [token, setToken] = useState("");
+  const [sent, setSent] = useState<{ phone?: string; devOtp?: string; resetToken?: string } | null>(null);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function requestReset(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      if (method === "otp") {
+        const res = await api<{ phone?: string; devOtp?: string }>("/api/auth/forgot/otp", { method: "POST", body: JSON.stringify({ phone }) });
+        setSent(res);
+      } else {
+        const res = await api<{ resetToken?: string }>("/api/auth/forgot/email", { method: "POST", body: JSON.stringify({ email }) });
+        setSent(res);
+        if (res.resetToken) setToken(res.resetToken);
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function savePassword(e: FormEvent) {
+    e.preventDefault();
+    if (password !== confirm) {
+      setError("Passwords do not match");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      if (method === "otp") {
+        await api("/api/auth/reset/otp", { method: "POST", body: JSON.stringify({ phone, otp, newPassword: password }) });
+      } else {
+        await api("/api/auth/reset/email", { method: "POST", body: JSON.stringify({ token, newPassword: password }) });
+      }
+      setDone(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-md rounded-2xl border border-line bg-white p-6">
+      <h1 className="text-xl font-bold text-navy">{done ? "Password updated" : "Forgot password"}</h1>
+      {done ? (
+        <>
+          <p className="mt-2 text-sm text-slate-500">Sign in with your new password or mobile OTP.</p>
+          <Link className="mt-4 inline-block text-sm font-medium text-brand" to={`/s/${slug}/login`}>
+            Back to login
+          </Link>
+        </>
+      ) : (
+        <>
+          <p className="mt-1 text-sm text-slate-500">Reset with the mobile or email on your purchase.</p>
+          <div className="mt-4 flex gap-2">
+            <button type="button" className={`rounded-full px-3 py-1 text-sm ${method === "otp" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => { setMethod("otp"); setSent(null); }}>
+              Mobile OTP
+            </button>
+            <button type="button" className={`rounded-full px-3 py-1 text-sm ${method === "email" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => { setMethod("email"); setSent(null); }}>
+              Email
+            </button>
+          </div>
+          {!sent ? (
+            <form className="mt-4 space-y-3" onSubmit={requestReset}>
+              {method === "otp" ? (
+                <input className="w-full rounded-lg border border-line px-3 py-2" placeholder="Mobile" value={phone} onChange={(e) => setPhone(e.target.value)} />
+              ) : (
+                <input className="w-full rounded-lg border border-line px-3 py-2" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              )}
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
+                {busy ? "Sending…" : "Send reset"}
+              </button>
+            </form>
+          ) : (
+            <form className="mt-4 space-y-3" onSubmit={savePassword}>
+              {method === "otp" && (
+                <input className="w-full rounded-lg border border-line px-3 py-2 tracking-[0.3em]" maxLength={6} placeholder="OTP" value={otp} onChange={(e) => setOtp(e.target.value)} />
+              )}
+              {method === "email" && !token && (
+                <input className="w-full rounded-lg border border-line px-3 py-2" placeholder="Reset token from email" value={token} onChange={(e) => setToken(e.target.value)} />
+              )}
+              <input className="w-full rounded-lg border border-line px-3 py-2" type="password" placeholder="New password" value={password} onChange={(e) => setPassword(e.target.value)} />
+              <input className="w-full rounded-lg border border-line px-3 py-2" type="password" placeholder="Confirm password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
+                {busy ? "Saving…" : "Set password"}
+              </button>
+            </form>
+          )}
+          <p className="mt-4 text-center text-xs">
+            <Link className="text-brand" to={`/s/${slug}/login`}>
+              Back to login
+            </Link>
+          </p>
+        </>
+      )}
     </div>
   );
 }

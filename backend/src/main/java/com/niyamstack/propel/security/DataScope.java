@@ -176,6 +176,20 @@ public class DataScope {
             return store.listBy(ExamAttempt.class, me.getOrganizationId(), "assessmentId", exam.getId()).stream()
                     .anyMatch(a -> me.getId().equals(a.getStudentId()) && "IN_PROGRESS".equals(a.getStatus()));
         }
+        if (e instanceof ChatThread t) {
+            return me.getId().equals(t.getStudentId());
+        }
+        if (e instanceof ChatMessage m) {
+            if (m.getThreadId() == null) {
+                return false;
+            }
+            try {
+                ChatThread thread = store.get(ChatThread.class, m.getThreadId());
+                return me.getId().equals(thread.getStudentId());
+            } catch (ApiException ex) {
+                return false;
+            }
+        }
         if (e instanceof Drive || e instanceof MessageTemplate || e instanceof Classroom
                 || e instanceof Batch || e instanceof AcademicYear || e instanceof Term
                 || e instanceof Center) {
@@ -208,6 +222,8 @@ public class DataScope {
         if (e instanceof Certificate c) return c.getStudentId();
         if (e instanceof Internship i) return i.getStudentId();
         if (e instanceof CourseEnrollment en) return en.getStudentId();
+        if (e instanceof ContentProgress p) return p.getStudentId();
+        if (e instanceof ChatThread t) return t.getStudentId();
         return null;
     }
 
