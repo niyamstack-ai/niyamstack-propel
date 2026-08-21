@@ -3,12 +3,16 @@ package com.niyamstack.propel.integration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 import jakarta.mail.internet.MimeMessage;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Base64;
 import java.util.Properties;
 
 @Service
@@ -22,6 +26,7 @@ public class MailService {
     private final String password;
     private final String from;
     private final String publicUrl;
+    private final String logoTag;
 
     public MailService(
             @Value("${app.integrations.mail.provider:demo}") String provider,
@@ -39,6 +44,7 @@ public class MailService {
         this.password = password == null ? "" : password.trim();
         this.from = from == null || from.isBlank() ? this.username : from.trim();
         this.publicUrl = publicUrl == null || publicUrl.isBlank() ? "http://localhost:5173" : publicUrl.trim().replaceAll("/$", "");
+        this.logoTag = loadLogoTag();
     }
 
     public boolean live() {
@@ -123,7 +129,6 @@ public class MailService {
     }
 
     private String layout(String heading, String inner) {
-        String logo = publicUrl + "/brand/logo-icon.png";
         return """
                 <!DOCTYPE html>
                 <html><body style="margin:0;padding:0;background:#f1f5f9;">
@@ -132,7 +137,9 @@ public class MailService {
                     <table role="presentation" width="560" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
                       <tr><td style="background:#071a33;padding:22px 28px;">
                         <table role="presentation" cellspacing="0" cellpadding="0"><tr>
-                          <td><img src="%s" width="44" height="44" alt="Niyamstack" style="display:block;border-radius:10px;"/></td>
+                          <td width="44" height="44" valign="middle" style="width:44px;height:44px;">
+                            {{LOGO}}
+                          </td>
                           <td style="padding-left:12px;">
                             <div style="color:#ffffff;font-size:18px;font-weight:800;letter-spacing:-0.02em;">Niyamstack</div>
                             <div style="color:#7dd3fc;font-size:10px;font-weight:700;letter-spacing:0.28em;padding-top:3px;">TECHNOLOGIES</div>
@@ -150,7 +157,21 @@ public class MailService {
                   </td></tr>
                 </table>
                 </body></html>
-                """.formatted(esc(logo), esc(heading), inner);
+                """.formatted(esc(heading), inner).replace("{{LOGO}}", logoTag);
+    }
+
+    private static String loadLogoTag() {
+        ClassPathResource logo = new ClassPathResource("mail/logo-email.png");
+        if (!logo.exists()) {
+            return "";
+        }
+        try (InputStream in = logo.getInputStream()) {
+            String uri = "data:image/png;base64," + Base64.getEncoder().encodeToString(in.readAllBytes());
+            return "<img src=\"" + uri + "\" width=\"44\" height=\"44\" alt=\"\" style=\"display:block;border:0;outline:none;text-decoration:none;border-radius:10px;\"/>";
+        } catch (IOException e) {
+            log.warn("Could not load mail logo: {}", e.getMessage());
+            return "";
+        }
     }
 
     private JavaMailSenderImpl mailSender() {
