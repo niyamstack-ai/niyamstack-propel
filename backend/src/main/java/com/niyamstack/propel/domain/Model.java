@@ -390,6 +390,12 @@ public final class Model {
         private String answerKey;
         @Column(columnDefinition = "TEXT")
         private String explanation;
+        private String questionType = "MCQ";
+        private String language;
+        @Column(columnDefinition = "TEXT")
+        private String starterCode;
+        @Column(columnDefinition = "TEXT")
+        private String testsJson;
     }
 
     @Entity(name = "DoubtTicket") @Table(name = "doubt_tickets") @Getter @Setter

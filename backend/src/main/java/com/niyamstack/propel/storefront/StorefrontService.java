@@ -2,12 +2,16 @@ package com.niyamstack.propel.storefront;
 
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
+import com.niyamstack.propel.domain.Model.Announcement;
 import com.niyamstack.propel.domain.Model.AppUser;
 import com.niyamstack.propel.domain.Model.Assessment;
 import com.niyamstack.propel.domain.Model.Assignment;
+import com.niyamstack.propel.domain.Model.Batch;
+import com.niyamstack.propel.domain.Model.Classroom;
 import com.niyamstack.propel.domain.Model.ContentItem;
 import com.niyamstack.propel.domain.Model.ContentProgress;
 import com.niyamstack.propel.domain.Model.ExamAttempt;
+import com.niyamstack.propel.domain.Model.LiveSession;
 import com.niyamstack.propel.domain.Model.Submission;
 import com.niyamstack.propel.domain.Model.Coupon;
 import com.niyamstack.propel.domain.Model.Course;
@@ -17,6 +21,7 @@ import com.niyamstack.propel.domain.Model.Organization;
 import com.niyamstack.propel.domain.Model.Payment;
 import com.niyamstack.propel.domain.Model.Receipt;
 import com.niyamstack.propel.domain.Model.Student;
+import com.niyamstack.propel.domain.Model.TimetableSlot;
 import com.niyamstack.propel.integration.PaymentGateway;
 import com.niyamstack.propel.security.Phones;
 import com.niyamstack.propel.security.Roles;
@@ -30,6 +35,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -245,40 +253,244 @@ public class StorefrontService {
             row.put("course", publicCourse(course));
             row.put("status", "ACTIVE");
             row.put("source", "BATCH");
-            row.put("progressPct", courseProgressPct(orgId, course.getId(), submittedExams, submittedAsg, viewedContent));
+            Map<String, Object> stats = courseProgressPct(orgId, course.getId(), submittedExams, submittedAsg, viewedContent);
+            row.put("progressPct", stats.get("pct"));
+            row.put("progress", stats);
             return List.of(row);
         }
         return rows.stream()
                 .filter(e -> !"CANCELLED".equals(e.getStatus()))
                 .map(e -> {
                     Course course = store.getOwned(Course.class, e.getCourseId(), orgId);
+                    Map<String, Object> stats = courseProgressPct(orgId, course.getId(), submittedExams, submittedAsg, viewedContent);
                     Map<String, Object> row = new LinkedHashMap<>();
                     row.put("id", e.getId());
                     row.put("status", e.getStatus());
                     row.put("source", e.getSource());
                     row.put("course", publicCourse(course));
-                    row.put("progressPct", courseProgressPct(orgId, course.getId(), submittedExams, submittedAsg, viewedContent));
+                    row.put("progressPct", stats.get("pct"));
+                    row.put("progress", stats);
                     return row;
                 })
                 .toList();
     }
 
-    private int courseProgressPct(UUID orgId, UUID courseId, Set<UUID> submittedExams, Set<UUID> submittedAsg, Set<UUID> viewedContent) {
-        List<Assessment> exams = store.listBy(Assessment.class, orgId, "courseId", courseId).stream()
-                .filter(Assessment::isPublished).toList();
-        List<Assignment> homework = store.listBy(Assignment.class, orgId, "courseId", courseId).stream()
-                .filter(Assignment::isPublished).toList();
+    public Map<String, Object> studentHome(UUID orgId, UUID userId) {
+        Student student = store.listBy(Student.class, orgId, "userId", userId).stream().findFirst().orElse(null);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("courses", myCourses(orgId, userId));
+        if (student == null) {
+            out.put("today", Map.of());
+            return out;
+        }
+        Set<UUID> courseIds = myCourses(orgId, userId).stream()
+                .map(row -> {
+                    Object course = row.get("course");
+                    if (course instanceof Map<?, ?> map) {
+                        Object id = map.get("id");
+                        return id instanceof UUID u ? u : UUID.fromString(String.valueOf(id));
+                    }
+                    return null;
+                })
+                .filter(id -> id != null)
+                .collect(Collectors.toSet());
+        Set<UUID> batchIds = store.list(Batch.class, orgId).stream()
+                .filter(b -> b.getCourseId() != null && courseIds.contains(b.getCourseId()))
+                .map(Batch::getId)
+                .collect(Collectors.toSet());
+        if (student.getBatchId() != null) {
+            batchIds.add(student.getBatchId());
+        }
+
+        List<Map<String, Object>> live = new ArrayList<>();
+        for (LiveSession session : store.list(LiveSession.class, orgId)) {
+            if (session.getBatchId() == null || !batchIds.contains(session.getBatchId())) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("title", session.getTitle());
+            row.put("startsAt", session.getStartsAt());
+            row.put("meetingUrl", session.getMeetingUrl());
+            row.put("courseName", courseNameForBatch(orgId, session.getBatchId()));
+            live.add(row);
+        }
+        live.sort(Comparator.comparing(r -> r.get("startsAt") instanceof Instant i ? i : Instant.EPOCH, Comparator.reverseOrder()));
+
+        int weekday = LocalDate.now(ZoneId.systemDefault()).getDayOfWeek().getValue();
+        List<Map<String, Object>> classes = new ArrayList<>();
+        for (TimetableSlot slot : store.list(TimetableSlot.class, orgId)) {
+            if (slot.getBatchId() == null || !batchIds.contains(slot.getBatchId())) {
+                continue;
+            }
+            if (slot.getDayOfWeek() == null || slot.getDayOfWeek() != weekday) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("subject", slot.getSubject());
+            row.put("startTime", slot.getStartTime());
+            row.put("endTime", slot.getEndTime());
+            row.put("room", classroomName(orgId, slot.getClassroomId()));
+            row.put("faculty", facultyName(slot.getFacultyUserId()));
+            row.put("courseName", courseNameForBatch(orgId, slot.getBatchId()));
+            classes.add(row);
+        }
+
+        List<Map<String, Object>> due = new ArrayList<>();
+        for (Assignment asg : store.list(Assignment.class, orgId)) {
+            if (!asg.isPublished()) {
+                continue;
+            }
+            UUID cid = asg.getCourseId();
+            if (cid == null && asg.getBatchId() != null) {
+                try {
+                    cid = store.get(Batch.class, asg.getBatchId()).getCourseId();
+                } catch (Exception ignored) {
+                    continue;
+                }
+            }
+            if (cid == null || !courseIds.contains(cid)) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", asg.getId());
+            row.put("title", asg.getTitle());
+            row.put("dueAt", asg.getDueAt());
+            row.put("courseId", cid);
+            row.put("courseName", courseName(orgId, cid));
+            due.add(row);
+        }
+        due.sort(Comparator.comparing(r -> r.get("dueAt") instanceof Instant i ? i : Instant.MAX));
+
+        List<Map<String, Object>> tests = new ArrayList<>();
+        Set<UUID> submittedExams = store.listBy(ExamAttempt.class, orgId, "studentId", student.getId()).stream()
+                .filter(a -> "SUBMITTED".equals(a.getStatus()))
+                .map(ExamAttempt::getAssessmentId)
+                .collect(Collectors.toSet());
+        Map<UUID, Integer> lastScore = store.listBy(ExamAttempt.class, orgId, "studentId", student.getId()).stream()
+                .filter(a -> "SUBMITTED".equals(a.getStatus()) && a.getScore() != null)
+                .collect(Collectors.toMap(ExamAttempt::getAssessmentId, ExamAttempt::getScore, (a, b) -> b));
+        Map<UUID, Long> used = store.listBy(ExamAttempt.class, orgId, "studentId", student.getId()).stream()
+                .filter(a -> "SUBMITTED".equals(a.getStatus()))
+                .collect(Collectors.groupingBy(ExamAttempt::getAssessmentId, Collectors.counting()));
+        for (Assessment exam : store.list(Assessment.class, orgId)) {
+            if (!exam.isPublished() || "PRACTICE_LAB".equalsIgnoreCase(exam.getKind())) {
+                continue;
+            }
+            if (exam.getCourseId() == null || !courseIds.contains(exam.getCourseId())) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", exam.getId());
+            row.put("title", exam.getTitle());
+            row.put("courseId", exam.getCourseId());
+            row.put("courseName", courseName(orgId, exam.getCourseId()));
+            row.put("lastScore", lastScore.get(exam.getId()));
+            long taken = used.getOrDefault(exam.getId(), 0L);
+            Integer max = exam.getMaxAttempts();
+            row.put("attemptsLeft", max == null || max <= 0 ? null : Math.max(0, max - taken));
+            row.put("done", submittedExams.contains(exam.getId()));
+            tests.add(row);
+        }
+
+        List<Invoice> unpaid = store.listBy(Invoice.class, orgId, "studentId", student.getId()).stream()
+                .filter(i -> i.getStatus() != null && !"PAID".equalsIgnoreCase(i.getStatus()) && !"CANCELLED".equalsIgnoreCase(i.getStatus()))
+                .toList();
+        BigDecimal dueTotal = unpaid.stream().map(Invoice::getAmount).filter(a -> a != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+        Map<String, Object> fees = new LinkedHashMap<>();
+        fees.put("count", unpaid.size());
+        fees.put("total", dueTotal);
+        fees.put("invoiceNo", unpaid.isEmpty() ? null : unpaid.getFirst().getInvoiceNo());
+
+        Announcement notice = store.list(Announcement.class, orgId).stream().findFirst().orElse(null);
+        Map<String, Object> todayView = new LinkedHashMap<>();
+        todayView.put("live", live.stream().limit(3).toList());
+        todayView.put("classes", classes);
+        todayView.put("due", due.stream().limit(5).toList());
+        todayView.put("tests", tests);
+        todayView.put("fees", fees);
+        if (notice != null) {
+            todayView.put("notice", Map.of("title", notice.getTitle() == null ? "" : notice.getTitle(), "body", notice.getBody() == null ? "" : notice.getBody()));
+        }
+        out.put("today", todayView);
+        return out;
+    }
+
+    private String courseName(UUID orgId, UUID courseId) {
+        try {
+            return store.getOwned(Course.class, courseId, orgId).getName();
+        } catch (Exception e) {
+            return "Course";
+        }
+    }
+
+    private String courseNameForBatch(UUID orgId, UUID batchId) {
+        try {
+            Batch batch = store.getOwned(Batch.class, batchId, orgId);
+            return batch.getCourseId() == null ? "" : courseName(orgId, batch.getCourseId());
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private String classroomName(UUID orgId, UUID classroomId) {
+        if (classroomId == null) {
+            return "";
+        }
+        try {
+            return store.getOwned(Classroom.class, classroomId, orgId).getName();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private String facultyName(UUID userId) {
+        if (userId == null) {
+            return "";
+        }
+        try {
+            return store.get(AppUser.class, userId).getFullName();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private Map<String, Object> courseProgressPct(UUID orgId, UUID courseId, Set<UUID> submittedExams, Set<UUID> submittedAsg, Set<UUID> viewedContent) {
+        Set<UUID> batchIds = store.listBy(Batch.class, orgId, "courseId", courseId).stream().map(Batch::getId).collect(Collectors.toSet());
+        List<Assessment> exams = store.list(Assessment.class, orgId).stream()
+                .filter(Assessment::isPublished)
+                .filter(a -> !"PRACTICE_LAB".equalsIgnoreCase(a.getKind()))
+                .filter(a -> courseId.equals(a.getCourseId()) || (a.getBatchId() != null && batchIds.contains(a.getBatchId())))
+                .toList();
+        List<Assignment> homework = store.list(Assignment.class, orgId).stream()
+                .filter(Assignment::isPublished)
+                .filter(a -> courseId.equals(a.getCourseId()) || (a.getBatchId() != null && batchIds.contains(a.getBatchId())))
+                .toList();
         List<ContentItem> materials = store.listBy(ContentItem.class, orgId, "courseId", courseId).stream()
                 .filter(c -> c.isPublished() && !"FOLDER".equalsIgnoreCase(c.getContentType()))
                 .toList();
-        int total = exams.size() + homework.size() + materials.size();
-        if (total == 0) {
-            return 0;
-        }
-        long done = exams.stream().filter(a -> submittedExams.contains(a.getId())).count()
-                + homework.stream().filter(a -> submittedAsg.contains(a.getId())).count()
-                + materials.stream().filter(c -> viewedContent.contains(c.getId())).count();
-        return (int) Math.min(100, done * 100 / total);
+        int filesTotal = materials.size();
+        int filesDone = (int) materials.stream().filter(c -> viewedContent.contains(c.getId())).count();
+        int hwTotal = homework.size();
+        int hwDone = (int) homework.stream().filter(a -> submittedAsg.contains(a.getId())).count();
+        int testTotal = exams.size();
+        int testDone = (int) exams.stream().filter(a -> submittedExams.contains(a.getId())).count();
+        int total = filesTotal + hwTotal + testTotal;
+        int done = filesDone + hwDone + testDone;
+        int pct = total == 0 ? 0 : (int) Math.min(100, done * 100L / total);
+        String resume = materials.stream().filter(c -> !viewedContent.contains(c.getId())).map(ContentItem::getTitle).findFirst()
+                .or(() -> homework.stream().filter(a -> !submittedAsg.contains(a.getId())).map(Assignment::getTitle).findFirst())
+                .or(() -> exams.stream().filter(a -> !submittedExams.contains(a.getId())).map(Assessment::getTitle).findFirst())
+                .orElse(pct >= 100 ? "Completed" : "Open to study");
+        Map<String, Object> stats = new LinkedHashMap<>();
+        stats.put("pct", pct);
+        stats.put("filesDone", filesDone);
+        stats.put("filesTotal", filesTotal);
+        stats.put("homeworkDone", hwDone);
+        stats.put("homeworkTotal", hwTotal);
+        stats.put("testsDone", testDone);
+        stats.put("testsTotal", testTotal);
+        stats.put("resume", resume);
+        return stats;
     }
 
     public Map<String, Object> publicCourse(Course course) {

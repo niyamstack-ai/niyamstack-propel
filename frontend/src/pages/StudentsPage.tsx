@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { createRecord, updateRecord } from "../ops";
 import { useAuth } from "../auth";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatDay, useApi } from "../ui";
 
 type Student = {
   id: string;
@@ -109,9 +109,19 @@ export function MyStudentRecord() {
         {record && (
           <p className="mt-3 text-xs text-slate-400">
             {record.studentCode} · {record.status}
-            {record.enrollmentDate ? ` · enrolled ${record.enrollmentDate}` : ""}
+            {record.enrollmentDate ? ` · enrolled ${formatDay(record.enrollmentDate)}` : ""}
           </p>
         )}
+      </Card>
+      <Card title="Guardians">
+        <ul className="text-sm">
+          {(guardians.data ?? []).length === 0 && <li>No guardian linked.</li>}
+          {(guardians.data ?? []).map((g, i) => (
+            <li key={i}>
+              {g.fullName} ({g.relation})
+            </li>
+          ))}
+        </ul>
       </Card>
       <Card title="Change password">
         <p className="mb-3 text-xs text-slate-500">
@@ -139,7 +149,7 @@ export function MyStudentRecord() {
             <ul className="text-sm">
               {(attendance.data ?? []).slice(0, 20).map((a, i) => (
                 <li key={i}>
-                  {a.sessionDate} — {a.status}
+                  {formatDay(a.sessionDate) || a.sessionDate} — {a.status}
                 </li>
               ))}
             </ul>
@@ -147,22 +157,14 @@ export function MyStudentRecord() {
         )}
       </Card>
       <Card title="Certificates">
-        {(certs.data ?? []).length === 0 && <p className="text-sm text-slate-500">No certificates issued yet.</p>}
+        {(certs.data ?? []).length === 0 && (
+          <p className="text-sm text-slate-500">No certificates yet. Completing a course does not issue one until your institute publishes it.</p>
+        )}
         <ul className="text-sm">
           {(certs.data ?? []).map((c, i) => (
             <li key={i}>
               {c.title}
-              {c.issuedOn ? ` · ${c.issuedOn}` : ""}
-            </li>
-          ))}
-        </ul>
-      </Card>
-      <Card title="Guardians">
-        <ul className="text-sm">
-          {(guardians.data ?? []).length === 0 && <li>No guardian linked.</li>}
-          {(guardians.data ?? []).map((g, i) => (
-            <li key={i}>
-              {g.fullName} ({g.relation})
+              {c.issuedOn ? ` · ${formatDay(c.issuedOn)}` : ""}
             </li>
           ))}
         </ul>

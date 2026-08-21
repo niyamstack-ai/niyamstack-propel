@@ -1,5 +1,6 @@
 package com.niyamstack.propel.web;
 
+import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.*;
 import com.niyamstack.propel.fees.FeeService;
@@ -10,6 +11,7 @@ import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.Roles;
 import com.niyamstack.propel.storefront.StorefrontService;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -45,6 +47,12 @@ public class ActionsController {
     public List<Map<String, Object>> myCourses() {
         Access.requireAny(Auth.current(), Roles.STUDENT, Roles.OWNER, Roles.FACULTY);
         return storefront.myCourses(Auth.current().organizationId(), Auth.current().userId());
+    }
+
+    @GetMapping("/student-home")
+    public Map<String, Object> studentHome() {
+        Access.requireAny(Auth.current(), Roles.STUDENT);
+        return storefront.studentHome(Auth.current().organizationId(), Auth.current().userId());
     }
 
     @GetMapping("/integrations")
@@ -155,6 +163,34 @@ public class ActionsController {
     @PostMapping("/courses/{courseId}/quizzes")
     public Assessment saveCourseQuiz(@PathVariable UUID courseId, @RequestBody LmsService.CourseQuizInput body) {
         return lms.saveCourseQuiz(courseId, body);
+    }
+
+    @GetMapping("/code/languages")
+    public Map<String, Object> codeLanguages(@RequestParam(required = false) UUID courseId) {
+        return lms.codeLanguages(courseId);
+    }
+
+    @PostMapping("/code/run")
+    public Map<String, Object> runCode(@RequestBody Map<String, String> body) {
+        UUID questionId = body.get("questionId") == null ? null : UUID.fromString(body.get("questionId"));
+        if (questionId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "questionId is required");
+        }
+        return lms.runCode(questionId, body.get("source"), body.get("stdin"));
+    }
+
+    @GetMapping("/courses/{courseId}/practice")
+    public Map<String, Object> practiceLab(@PathVariable UUID courseId) {
+        return lms.practiceLab(courseId);
+    }
+
+    @PostMapping("/code/practice")
+    public Map<String, Object> runPractice(@RequestBody Map<String, String> body) {
+        UUID courseId = body.get("courseId") == null ? null : UUID.fromString(body.get("courseId"));
+        if (courseId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "courseId is required");
+        }
+        return lms.runPractice(courseId, body.get("language"), body.get("source"), body.get("stdin"));
     }
 
     @PostMapping("/courses/{courseId}/content/arrange")

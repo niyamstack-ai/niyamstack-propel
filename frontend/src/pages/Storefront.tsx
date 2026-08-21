@@ -8,7 +8,7 @@ import { StudentCourseLibrary } from "./courseContent";
 import { MyStudentRecord } from "./StudentsPage";
 import { FeesPage } from "./FeesPage";
 import { PlacementPage } from "./PlacementPage";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, useApi } from "../ui";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, formatDay, formatWhen, useApi } from "../ui";
 import { createRecord } from "../ops";
 
 type Site = {
@@ -49,7 +49,23 @@ type OutlineItem = {
   sortOrder?: number;
 };
 
-type MyCourse = { id?: string; status?: string; source?: string; progressPct?: number; course: PublicCourse };
+type MyCourse = {
+  id?: string;
+  status?: string;
+  source?: string;
+  progressPct?: number;
+  progress?: {
+    pct?: number;
+    filesDone?: number;
+    filesTotal?: number;
+    homeworkDone?: number;
+    homeworkTotal?: number;
+    testsDone?: number;
+    testsTotal?: number;
+    resume?: string;
+  };
+  course: PublicCourse;
+};
 
 function useSlug() {
   const { slug } = useParams();
@@ -230,9 +246,9 @@ function StorefrontShell() {
 
   return (
     <div className="min-h-svh bg-mist" style={{ ["--color-brand" as string]: accent }}>
-      <header className="sticky top-0 z-10 border-b border-line bg-white">
+      <header className={`sticky top-0 border-b border-line bg-white ${examLock ? "z-0 pointer-events-none" : "z-10"}`}>
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
-          <Link to={`/s/${slug}`} className="flex items-center gap-2">
+          <Link to={`/s/${slug}`} className={`flex items-center gap-2 ${examLock ? "pointer-events-none opacity-40" : ""}`} tabIndex={examLock ? -1 : 0} aria-hidden={examLock}>
             {site.logoUrl ? (
               <img src={site.logoUrl} alt="" className="h-9 w-9 rounded-lg object-cover" />
             ) : (
@@ -257,17 +273,31 @@ function StorefrontShell() {
                 <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`/s/${slug}/learn`} tabIndex={examLock ? -1 : 0}>
                   My learning
                 </Link>
-                <UserMenu
-                  signOutTo={`/s/${slug}`}
-                  profileTo={`/s/${slug}/profile`}
-                  showName
-                  extraLinks={[
-                    { label: "Fees", to: `/s/${slug}/fees` },
-                    { label: "Jobs", to: `/s/${slug}/jobs` },
-                    { label: "Notices", to: `/s/${slug}/notices` },
-                    { label: "Chat", to: `/s/${slug}/chats` },
-                  ]}
-                />
+                <Link className="hidden rounded-full px-3 py-1.5 hover:bg-mist sm:inline" to={`/s/${slug}/fees`} tabIndex={examLock ? -1 : 0}>
+                  Fees
+                </Link>
+                <Link className="hidden rounded-full px-3 py-1.5 hover:bg-mist sm:inline" to={`/s/${slug}/jobs`} tabIndex={examLock ? -1 : 0}>
+                  Jobs
+                </Link>
+                <Link className="hidden rounded-full px-3 py-1.5 hover:bg-mist md:inline" to={`/s/${slug}/notices`} tabIndex={examLock ? -1 : 0}>
+                  Notices
+                </Link>
+                <Link className="hidden rounded-full px-3 py-1.5 hover:bg-mist md:inline" to={`/s/${slug}/chats`} tabIndex={examLock ? -1 : 0}>
+                  Chat
+                </Link>
+                <span className={examLock ? "pointer-events-none opacity-40" : ""}>
+                  <UserMenu
+                    signOutTo={`/s/${slug}`}
+                    profileTo={`/s/${slug}/profile`}
+                    showName
+                    extraLinks={[
+                      { label: "Fees", to: `/s/${slug}/fees` },
+                      { label: "Jobs", to: `/s/${slug}/jobs` },
+                      { label: "Notices", to: `/s/${slug}/notices` },
+                      { label: "Chat", to: `/s/${slug}/chats` },
+                    ]}
+                  />
+                </span>
               </>
             ) : (
               <Link className="rounded-full bg-brand px-3 py-1.5 font-semibold text-white" to={`/s/${slug}/login`}>
@@ -286,7 +316,9 @@ function StorefrontShell() {
 
 function CatalogPage() {
   const slug = useSlug();
+  const { token, user } = useAuth();
   const [courses, setCourses] = useState<PublicCourse[] | null>(null);
+  const [owned, setOwned] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -295,6 +327,13 @@ function CatalogPage() {
       .then(setCourses)
       .catch((err: Error) => setError(err.message));
   }, [slug]);
+
+  useEffect(() => {
+    if (!token || user?.role !== "STUDENT") return;
+    api<MyCourse[]>("/api/actions/my-courses")
+      .then((rows) => setOwned(new Set(rows.map((r) => r.course.id))))
+      .catch(() => undefined);
+  }, [token, user?.role]);
 
   if (error) return <p className="text-sm text-red-600">{error}</p>;
   if (!courses) return <p className="text-sm text-slate-500">Loading courses…</p>;
@@ -313,8 +352,10 @@ function CatalogPage() {
             <div className="p-5">
               <p className="text-xs uppercase tracking-wide text-slate-400">{c.category || "Course"}</p>
               <h2 className="mt-1 text-lg font-semibold text-navy">{c.name}</h2>
-              <p className="mt-2 line-clamp-2 text-sm text-slate-500">{c.description || "Open for details."}</p>
-              <p className="mt-4 text-lg font-bold text-navy">{c.price === 0 ? "Free" : `₹${c.price}`}</p>
+              <p className="mt-2 line-clamp-2 text-sm text-slate-500">{c.description || "See what you will learn."}</p>
+              <p className="mt-4 text-lg font-bold text-navy">
+                {owned.has(c.id) ? "Continue learning" : c.price === 0 ? "Free" : `₹${c.price}`}
+              </p>
             </div>
           </Link>
         ))}
@@ -339,6 +380,7 @@ function CoursePage() {
   const [coupon, setCoupon] = useState("");
   const [price, setPrice] = useState<number | null>(null);
   const [couponOk, setCouponOk] = useState<string | null>(null);
+  const [owned, setOwned] = useState(false);
 
   useEffect(() => {
     if (!slug || !courseId) return;
@@ -351,7 +393,12 @@ function CoursePage() {
     api<OutlineItem[]>(`/api/public/sites/${slug}/courses/${courseId}/outline`)
       .then(setOutline)
       .catch(() => setOutline([]));
-  }, [slug, courseId]);
+    if (token && user?.role === "STUDENT") {
+      api<MyCourse[]>("/api/actions/my-courses")
+        .then((rows) => setOwned(rows.some((r) => r.course.id === courseId)))
+        .catch(() => setOwned(false));
+    }
+  }, [slug, courseId, token, user?.role]);
 
   async function applyCoupon() {
     if (!slug || !courseId || !coupon.trim()) return;
@@ -515,6 +562,15 @@ function CoursePage() {
           <p className="mt-1 text-xs text-sky-200">{course.category || "Course"}</p>
         </div>
         <div className="space-y-3 p-5">
+          {owned ? (
+            <>
+              <p className="text-sm text-slate-600">This course is already in your library.</p>
+              <Link className="block w-full rounded-lg bg-brand py-2.5 text-center font-semibold text-white" to={`/s/${slug}/learn/${course.id}`}>
+                Continue learning
+              </Link>
+            </>
+          ) : (
+            <>
           <p className="text-xl font-bold text-navy">{pay === 0 ? "Free" : `₹ ${pay}`}</p>
           {loggedStudent ? (
             <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy} onClick={() => buy()}>
@@ -536,6 +592,8 @@ function CoursePage() {
               Login
             </Link>
           </p>
+            </>
+          )}
         </div>
       </aside>
     </div>
@@ -665,24 +723,100 @@ function StudentLoginPage() {
 
 function MyLearningPage() {
   const slug = useSlug();
-  const [rows, setRows] = useState<MyCourse[] | null>(null);
+  const [home, setHome] = useState<{
+    courses: MyCourse[];
+    today?: {
+      live?: { title: string; startsAt?: string; meetingUrl?: string; courseName?: string }[];
+      classes?: { subject: string; startTime?: string; endTime?: string; room?: string; faculty?: string; courseName?: string }[];
+      due?: { title: string; dueAt?: string; courseId?: string; courseName?: string }[];
+      tests?: { title: string; courseId?: string; lastScore?: number; attemptsLeft?: number | null; done?: boolean }[];
+      fees?: { count: number; total: number; invoiceNo?: string };
+      notice?: { title: string; body: string };
+    };
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api<MyCourse[]>("/api/actions/my-courses")
-      .then(setRows)
+    api<NonNullable<typeof home>>("/api/actions/student-home")
+      .then(setHome)
       .catch((err: Error) => setError(err.message));
   }, []);
 
   if (error) return <p className="text-sm text-red-600">{error}</p>;
-  if (!rows) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (!home) return <p className="text-sm text-slate-500">Loading…</p>;
+  const rows = home.courses ?? [];
+  const today = home.today || {};
+  const resume = rows.find((r) => (r.progressPct || 0) < 100) || rows[0];
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-navy">My learning</h1>
-        <p className="text-sm text-slate-500">Courses you purchased. Open one to study — same on the Android app.</p>
+        <p className="text-sm text-slate-500">Pick up where you left off. Today’s class, homework, and dues are here.</p>
       </div>
+      {resume && (
+        <Link to={`/s/${slug}/learn/${resume.course.id}`} className="block rounded-2xl border border-brand bg-white p-5">
+          <p className="text-xs uppercase tracking-wide text-brand">Continue</p>
+          <p className="mt-1 text-lg font-semibold text-navy">{resume.course.name}</p>
+          <p className="mt-1 text-sm text-slate-500">{resume.progress?.resume || "Open to study"}</p>
+        </Link>
+      )}
+      {(today.classes?.length || today.live?.length || today.due?.length || today.tests?.length || (today.fees?.count ?? 0) > 0 || today.notice) && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {today.notice && (
+            <div className="rounded-2xl border border-line bg-white p-4 sm:col-span-2">
+              <p className="text-xs uppercase text-slate-400">Notice</p>
+              <p className="mt-1 font-medium text-navy">{today.notice.title}</p>
+              {today.notice.body && <p className="mt-1 text-sm text-slate-600">{today.notice.body}</p>}
+            </div>
+          )}
+          {(today.classes ?? []).map((c, i) => (
+            <div key={`c-${i}`} className="rounded-2xl border border-line bg-white p-4">
+              <p className="text-xs uppercase text-slate-400">Today’s class</p>
+              <p className="mt-1 font-medium text-navy">{c.subject}</p>
+              <p className="text-sm text-slate-500">
+                {(c.startTime || "").slice(0, 5)}
+                {c.endTime ? `–${String(c.endTime).slice(0, 5)}` : ""}
+                {c.room ? ` · ${c.room}` : ""}
+                {c.faculty ? ` · ${c.faculty}` : ""}
+              </p>
+            </div>
+          ))}
+          {(today.live ?? []).slice(0, 2).map((l, i) => (
+            <div key={`l-${i}`} className="rounded-2xl border border-line bg-white p-4">
+              <p className="text-xs uppercase text-slate-400">Live</p>
+              <p className="mt-1 font-medium text-navy">{l.title}</p>
+              <p className="text-sm text-slate-500">{l.startsAt ? formatWhen(l.startsAt) : "Join when your faculty starts"}</p>
+              {l.meetingUrl && (
+                <a className="mt-2 inline-block text-sm font-medium text-brand" href={l.meetingUrl} target="_blank" rel="noreferrer">
+                  Join class
+                </a>
+              )}
+            </div>
+          ))}
+          {(today.due ?? []).slice(0, 2).map((d, i) => (
+            <Link key={`d-${i}`} to={`/s/${slug}/learn/${d.courseId}`} className="rounded-2xl border border-line bg-white p-4">
+              <p className="text-xs uppercase text-slate-400">Homework due</p>
+              <p className="mt-1 font-medium text-navy">{d.title}</p>
+              <p className="text-sm text-slate-500">{d.dueAt ? formatWhen(d.dueAt) : d.courseName}</p>
+            </Link>
+          ))}
+          {(today.tests ?? []).filter((t) => !t.done).slice(0, 2).map((t, i) => (
+            <Link key={`t-${i}`} to={`/s/${slug}/learn/${t.courseId}`} className="rounded-2xl border border-line bg-white p-4">
+              <p className="text-xs uppercase text-slate-400">Test</p>
+              <p className="mt-1 font-medium text-navy">{t.title}</p>
+              <p className="text-sm text-slate-500">{t.attemptsLeft == null ? "Open" : `${t.attemptsLeft} attempt(s) left`}</p>
+            </Link>
+          ))}
+          {(today.fees?.count ?? 0) > 0 && (
+            <Link to={`/s/${slug}/fees`} className="rounded-2xl border border-line bg-white p-4">
+              <p className="text-xs uppercase text-slate-400">Fees</p>
+              <p className="mt-1 font-medium text-navy">₹{today.fees?.total} due</p>
+              <p className="text-sm text-slate-500">{today.fees?.invoiceNo} · Pay now</p>
+            </Link>
+          )}
+        </div>
+      )}
       {rows.length === 0 && (
         <p className="text-sm text-slate-500">
           No courses yet.{" "}
@@ -692,19 +826,24 @@ function MyLearningPage() {
         </p>
       )}
       <div className="grid gap-4 sm:grid-cols-2">
-        {rows.map((row) => (
-          <Link key={row.course.id} to={`/s/${slug}/learn/${row.course.id}`} className="rounded-2xl border border-line bg-white p-5 hover:border-brand">
-            <p className="font-semibold text-navy">{row.course.name}</p>
-            <p className="mt-1 text-sm text-slate-500">
-              {row.progressPct ? `${row.progressPct}% complete` : "Open to study"}
-            </p>
-            {row.progressPct ? (
+        {rows.map((row) => {
+          const p = row.progress;
+          const pct = Number(row.progressPct || p?.pct || 0);
+          return (
+            <Link key={row.course.id} to={`/s/${slug}/learn/${row.course.id}`} className="rounded-2xl border border-line bg-white p-5 hover:border-brand">
+              <p className="font-semibold text-navy">{row.course.name}</p>
+              <p className="mt-1 text-sm text-slate-500">
+                {pct >= 100 ? "Completed" : p?.resume ? `Next: ${p.resume}` : `${pct}% complete`}
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                {p ? `${p.filesDone}/${p.filesTotal} lessons · ${p.homeworkDone}/${p.homeworkTotal} homework · ${p.testsDone}/${p.testsTotal} tests` : ""}
+              </p>
               <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-mist">
-                <div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(100, row.progressPct)}%` }} />
+                <div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(100, pct)}%` }} />
               </div>
-            ) : null}
-          </Link>
-        ))}
+            </Link>
+          );
+        })}
       </div>
     </div>
   );
@@ -729,8 +868,16 @@ function StudyPage() {
       });
   }, [courseId]);
 
+  useEffect(() => {
+    if (!course?.name) return;
+    const site = document.title.split(" · ")[0];
+    document.title = `${site} · ${course.name}`;
+  }, [course?.name]);
+
   const nav: { id: StudySection; label: string }[] = [
     { id: "contents", label: "Contents" },
+    { id: "practice", label: "Practice" },
+    { id: "tests", label: "Tests" },
     { id: "live", label: "Live class" },
     { id: "recordings", label: "Recordings" },
     { id: "timetable", label: "Timetable" },
@@ -780,20 +927,120 @@ function StudyPage() {
           {courseId && tab === "contents" && (
             <StudentCourseLibrary courseId={courseId} allowDownload={course?.allowOffline !== false} />
           )}
-          {courseId && tab !== "contents" && <StudentLms courseId={courseId} embedded section={tab} />}
+          {courseId && tab === "tests" && (
+            <StudentCourseLibrary courseId={courseId} allowDownload={course?.allowOffline !== false} examsOnly />
+          )}
+          {courseId && tab === "practice" && <PracticeLab courseId={courseId} />}
+          {courseId && tab !== "contents" && tab !== "tests" && tab !== "practice" && <StudentLms courseId={courseId} embedded section={tab} />}
         </div>
       </div>
     </div>
   );
 }
 
+function PracticeLab({ courseId }: { courseId: string }) {
+  const [lab, setLab] = useState<{
+    language: string;
+    starter: string;
+    prompt: string;
+    questionId?: string;
+    languages?: { id: string; label: string; available?: boolean }[];
+  } | null>(null);
+  const [source, setSource] = useState("");
+  const [stdin, setStdin] = useState("");
+  const [language, setLanguage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [output, setOutput] = useState<string | null>(null);
+  const [ok, setOk] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api<NonNullable<typeof lab>>(`/api/actions/courses/${courseId}/practice`)
+      .then((row) => {
+        setLab(row);
+        setLanguage(row.language);
+        setSource(row.starter || "");
+      })
+      .catch((e: Error) => setError(e.message));
+  }, [courseId]);
+
+  async function run() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api<{ ok?: boolean; stdout?: string; stderr?: string; label?: string }>(
+        lab?.questionId ? "/api/actions/code/run" : "/api/actions/code/practice",
+        {
+          method: "POST",
+          body: JSON.stringify(
+            lab?.questionId ? { questionId: lab.questionId, source, stdin } : { courseId, language, source, stdin },
+          ),
+        },
+      );
+      setOk(res.ok ?? true);
+      setOutput([res.stdout, res.stderr].filter(Boolean).join("\n") || "Ran with no output.");
+    } catch (e) {
+      setOk(false);
+      setOutput((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (error && !lab) return <p className="text-sm text-red-600">{error}</p>;
+  if (!lab) return <p className="text-sm text-slate-500">Opening your runner…</p>;
+
+  return (
+    <div className="rounded-2xl border border-line bg-white p-5">
+      <h2 className="text-base font-semibold text-navy">{(language || lab.language).toUpperCase()} runner</h2>
+      <p className="mt-1 text-sm text-slate-500">{lab.prompt}</p>
+      {(lab.languages ?? []).length > 0 && (
+        <select
+          className="mt-3 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          value={language}
+          onChange={(e) => {
+            const next = e.target.value;
+            setLanguage(next);
+            const starter = lab.languages?.find((l) => l.id === next);
+            if (starter) setSource(lab.starter && next === lab.language ? lab.starter : source);
+          }}
+        >
+          {(lab.languages ?? []).map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+      )}
+      <textarea
+        className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm text-slate-100"
+        rows={14}
+        spellCheck={false}
+        value={source}
+        onChange={(e) => setSource(e.target.value)}
+      />
+      <label className="mt-2 block text-sm">
+        <span className="text-slate-600">Program input (stdin)</span>
+        <input className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm" value={stdin} onChange={(e) => setStdin(e.target.value)} />
+      </label>
+      <button type="button" disabled={busy} className="mt-3 rounded-lg bg-navy px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" onClick={() => void run()}>
+        {busy ? "Running…" : "Run"}
+      </button>
+      {output && (
+        <pre className={`mt-3 overflow-x-auto rounded-lg p-3 text-xs ${ok ? "bg-emerald-50 text-emerald-900" : "bg-red-50 text-red-800"}`}>{output}</pre>
+      )}
+    </div>
+  );
+}
+
 function StudentNotices() {
-  const anns = useApi<{ title: string; body: string }[]>("/api/announcements");
-  const notes = useApi<{ title: string; body: string; status?: string }[]>("/api/notifications");
+  const anns = useApi<{ title: string; body: string; createdAt?: string }[]>("/api/announcements");
+  const notes = useApi<{ title: string; body: string; status?: string; createdAt?: string }[]>("/api/notifications");
+  const unread = (notes.data ?? []).filter((n) => n.status && n.status !== "READ").length;
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-navy">Notices</h1>
+        <h1 className="text-2xl font-bold text-navy">Notices {unread > 0 ? <span className="text-sm font-medium text-brand">({unread} new)</span> : null}</h1>
         <p className="text-sm text-slate-500">Announcements and messages from your institute.</p>
       </div>
       <Card title="Announcements">
@@ -802,6 +1049,7 @@ function StudentNotices() {
           {(anns.data ?? []).map((a, i) => (
             <li key={i}>
               <p className="font-medium text-navy">{a.title}</p>
+              {a.createdAt && <p className="text-xs text-slate-400">{formatDay(a.createdAt)}</p>}
               {a.body && <p className="mt-1 text-slate-600">{a.body}</p>}
             </li>
           ))}
@@ -813,6 +1061,7 @@ function StudentNotices() {
           {(notes.data ?? []).map((n, i) => (
             <li key={i}>
               <p className="font-medium text-navy">{n.title}</p>
+              {n.createdAt && <p className="text-xs text-slate-400">{formatDay(n.createdAt)}</p>}
               {n.body && <p className="mt-1 text-slate-600">{n.body}</p>}
             </li>
           ))}
@@ -825,7 +1074,7 @@ function StudentNotices() {
 function StudentChats() {
   const { user } = useAuth();
   const threads = useApi<{ id: string; subject?: string; status: string }[]>("/api/chat-threads");
-  const messages = useApi<{ id: string; threadId: string; senderName?: string; senderRole?: string; body: string }[]>("/api/chat-messages");
+  const messages = useApi<{ id: string; threadId: string; senderName?: string; senderRole?: string; body: string; createdAt?: string }[]>("/api/chat-messages");
   const [active, setActive] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
@@ -902,7 +1151,10 @@ function StudentChats() {
               <div className="mb-4 max-h-80 space-y-2 overflow-y-auto">
                 {mine.map((m) => (
                   <div key={m.id} className="rounded-lg bg-mist px-3 py-2 text-sm">
-                    <p className="text-xs text-slate-500">{m.senderName || m.senderRole}</p>
+                    <p className="text-xs text-slate-500">
+                      {m.senderName || m.senderRole}
+                      {m.createdAt ? ` · ${formatWhen(m.createdAt)}` : ""}
+                    </p>
                     <p>{m.body}</p>
                   </div>
                 ))}
@@ -1056,7 +1308,7 @@ function AppInstallPage() {
           <li>Tap the menu, then Add to Home screen / Install app.</li>
           <li>Open {site?.name || "the institute"} from your home screen.</li>
         </ol>
-        <p className="mt-4 text-xs text-slate-400">Play Store listing can wrap this same student site later. Until then, install as an app from the browser.</p>
+        <p className="mt-4 text-xs text-slate-400">This is a home-screen shortcut to this website, not a Play Store app.</p>
       </div>
       <div className="flex justify-center">
         <div className="h-[420px] w-[220px] rounded-[2rem] border-4 border-navy bg-white p-3">

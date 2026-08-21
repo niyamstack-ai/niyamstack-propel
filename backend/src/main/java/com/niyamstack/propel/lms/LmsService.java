@@ -21,9 +21,11 @@ import org.springframework.web.multipart.MultipartFile;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -35,13 +37,15 @@ public class LmsService {
     private final MeetingGateway meetings;
     private final AuditService audit;
     private final ObjectMapper json;
+    private final CodeRunner runner;
 
-    public LmsService(Store store, ObjectStorage storage, MeetingGateway meetings, AuditService audit, ObjectMapper json) {
+    public LmsService(Store store, ObjectStorage storage, MeetingGateway meetings, AuditService audit, ObjectMapper json, CodeRunner runner) {
         this.store = store;
         this.storage = storage;
         this.meetings = meetings;
         this.audit = audit;
         this.json = json;
+        this.runner = runner;
     }
 
     @Transactional
@@ -310,18 +314,149 @@ public class LmsService {
         boolean keys = Access.canSeeAnswerKeys(user);
         List<Map<String, Object>> out = new ArrayList<>();
         for (Question q : store.listBy(Question.class, user.organizationId(), "assessmentId", exam.getId())) {
+            String type = questionType(q);
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("id", q.getId());
             row.put("assessmentId", q.getAssessmentId());
             row.put("prompt", q.getPrompt());
-            row.put("optionsJson", q.getOptionsJson());
+            row.put("questionType", type);
+            row.put("language", q.getLanguage());
+            row.put("starterCode", q.getStarterCode());
+            if ("MATCH".equals(type)) {
+                Map<String, List<String>> sides = matchSides(q);
+                List<String> right = new ArrayList<>(sides.getOrDefault("right", List.of()));
+                Collections.shuffle(right);
+                row.put("left", sides.getOrDefault("left", List.of()));
+                row.put("right", right);
+            } else if (!"CODE".equals(type)) {
+                row.put("optionsJson", q.getOptionsJson());
+            }
+            if ("CODE".equals(type)) {
+                row.put("publicTests", runner.publicCases(q.getTestsJson()).stream().map(c -> {
+                    Map<String, Object> t = new LinkedHashMap<>();
+                    t.put("stdin", c.stdin);
+                    t.put("stdout", c.stdout);
+                    return t;
+                }).toList());
+            }
             if (keys) {
                 row.put("answerKey", q.getAnswerKey());
                 row.put("explanation", q.getExplanation());
+                row.put("testsJson", q.getTestsJson());
             }
             out.add(row);
         }
         return out;
+    }
+
+    public Map<String, Object> codeLanguages(UUID courseId) {
+        PropelUser user = Auth.current();
+        Access.requireTenant(user);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("languages", runner.languages());
+        if (courseId != null) {
+            Course course = store.getOwned(Course.class, courseId, user.organizationId());
+            String inferred = CodeRunner.inferLanguage(course.getName(), course.getCategory());
+            out.put("suggested", inferred);
+            out.put("starter", CodeRunner.starter(inferred));
+            out.put("courseName", course.getName());
+        }
+        return out;
+    }
+
+    public Map<String, Object> runCode(UUID questionId, String source, String stdin) {
+        PropelUser user = Auth.current();
+        Question q = store.getOwned(Question.class, questionId, user.organizationId());
+        if (!"CODE".equals(questionType(q))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "This is not a coding question");
+        }
+        Assessment exam = store.getOwned(Assessment.class, q.getAssessmentId(), user.organizationId());
+        if (!Access.canSeeAnswerKeys(user)) {
+            requireEnrolled(requireCurrentStudent(user), exam.getCourseId(), exam.getBatchId());
+        }
+        String language = q.getLanguage() == null || q.getLanguage().isBlank()
+                ? CodeRunner.inferLanguage(null, null)
+                : q.getLanguage();
+        if (stdin != null && !stdin.isBlank()) {
+            return runner.run(language, source, stdin);
+        }
+        List<CodeRunner.Case> pub = runner.publicCases(q.getTestsJson());
+        if (pub.isEmpty()) {
+            return runner.run(language, source, "");
+        }
+        CodeRunner.GradeResult grade = runner.grade(language, source, jsonArrayOfPublic(q.getTestsJson()));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("language", language);
+        out.put("ok", grade.passed());
+        out.put("passedCount", grade.passedCount());
+        out.put("total", grade.total());
+        out.put("cases", grade.cases());
+        if (!grade.cases().isEmpty()) {
+            out.put("stdout", grade.cases().getFirst().get("stdout"));
+            out.put("stderr", grade.cases().getFirst().get("stderr"));
+        }
+        return out;
+    }
+
+    @Transactional
+    public Map<String, Object> practiceLab(UUID courseId) {
+        PropelUser user = Auth.current();
+        Course course = store.getOwned(Course.class, courseId, user.organizationId());
+        if (!Access.canSeeAnswerKeys(user)) {
+            requireEnrolled(requireCurrentStudent(user), courseId, null);
+        }
+        String language = CodeRunner.inferLanguage(course.getName(), course.getCategory());
+        Assessment lab = store.listBy(Assessment.class, user.organizationId(), "courseId", courseId).stream()
+                .filter(a -> "PRACTICE_LAB".equalsIgnoreCase(a.getKind()))
+                .findFirst()
+                .orElse(null);
+        if (lab == null) {
+            lab = new Assessment();
+            lab.setOrganizationId(user.organizationId());
+            lab.setCourseId(courseId);
+            lab.setTitle("Practice lab");
+            lab.setKind("PRACTICE_LAB");
+            lab.setPublished(true);
+            lab.setDurationMinutes(0);
+            lab.setMaxAttempts(0);
+            lab.setPassingScore(0);
+            lab.setTotalMarks(0);
+            lab = store.save(lab);
+            Question q = new Question();
+            q.setOrganizationId(user.organizationId());
+            q.setAssessmentId(lab.getId());
+            q.setQuestionType("CODE");
+            q.setLanguage(language);
+            q.setPrompt("Use the " + language + " runner. Print Hello, then read one line from stdin and print it back.");
+            q.setStarterCode(CodeRunner.starter(language));
+            q.setTestsJson("[{\"stdin\":\"world\",\"stdout\":\"Hello\\nworld\",\"hidden\":false}]");
+            q.setDifficulty("EASY");
+            q.setOptionsJson("[]");
+            q.setAnswerKey("");
+            store.save(q);
+        }
+        Question question = store.listBy(Question.class, user.organizationId(), "assessmentId", lab.getId()).stream().findFirst().orElse(null);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("courseId", courseId);
+        out.put("courseName", course.getName());
+        out.put("language", question != null && question.getLanguage() != null ? question.getLanguage() : language);
+        out.put("starter", question != null && question.getStarterCode() != null ? question.getStarterCode() : CodeRunner.starter(language));
+        out.put("prompt", question != null ? question.getPrompt() : "Write and run code.");
+        out.put("questionId", question == null ? null : question.getId());
+        out.put("languages", runner.languages());
+        return out;
+    }
+
+    public Map<String, Object> runPractice(UUID courseId, String language, String source, String stdin) {
+        PropelUser user = Auth.current();
+        Course course = store.getOwned(Course.class, courseId, user.organizationId());
+        if (!Access.canSeeAnswerKeys(user)) {
+            requireEnrolled(requireCurrentStudent(user), courseId, null);
+        }
+        String lang = language == null || language.isBlank()
+                ? CodeRunner.inferLanguage(course.getName(), course.getCategory())
+                : language;
+        return runner.run(lang, source, stdin == null ? "" : stdin);
     }
 
     public Map<String, Object> examResult(UUID attemptId) {
@@ -448,7 +583,15 @@ public class LmsService {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class QuizQuestionInput {
         public String prompt;
+        public String questionType;
+        public String language;
+        public String starterCode;
+        public String testsJson;
         public List<String> options;
+        public List<String> left;
+        public List<String> right;
+        public Map<String, String> matchAnswer;
+        public List<String> correctOptions;
         public String answerKey;
         public String explanation;
     }
@@ -499,13 +642,35 @@ public class LmsService {
             row.setOrganizationId(user.organizationId());
             row.setAssessmentId(exam.getId());
             row.setPrompt(q.prompt.trim());
-            List<String> options = q.options == null ? List.of() : q.options.stream()
-                    .filter(o -> o != null && !o.isBlank())
-                    .toList();
-            row.setOptionsJson(jsonArray(options));
-            row.setAnswerKey(q.answerKey == null ? "" : q.answerKey);
+            String type = q.questionType == null || q.questionType.isBlank() ? inferSavedType(exam, q) : q.questionType.trim().toUpperCase();
+            row.setQuestionType(type);
+            row.setLanguage(q.language);
+            row.setStarterCode(q.starterCode);
+            row.setTestsJson(q.testsJson);
             row.setExplanation(q.explanation == null ? "" : q.explanation.trim());
             row.setDifficulty("MEDIUM");
+            if ("MATCH".equals(type)) {
+                Map<String, Object> sides = new LinkedHashMap<>();
+                sides.put("left", q.left == null ? List.of() : q.left);
+                sides.put("right", q.right == null ? List.of() : q.right);
+                row.setOptionsJson(writeJson(sides));
+                row.setAnswerKey(q.matchAnswer == null ? "{}" : writeJson(q.matchAnswer));
+            } else if ("MULTI".equals(type)) {
+                List<String> options = q.options == null ? List.of() : q.options.stream().filter(o -> o != null && !o.isBlank()).toList();
+                row.setOptionsJson(jsonArray(options));
+                row.setAnswerKey(q.correctOptions == null ? "[]" : jsonArray(q.correctOptions));
+            } else {
+                List<String> options = q.options == null ? List.of() : q.options.stream().filter(o -> o != null && !o.isBlank()).toList();
+                row.setOptionsJson(jsonArray(options));
+                row.setAnswerKey(q.answerKey == null ? "" : q.answerKey);
+            }
+            if ("CODE".equals(type) && (row.getLanguage() == null || row.getLanguage().isBlank())) {
+                Course course = store.getOwned(Course.class, courseId, user.organizationId());
+                row.setLanguage(CodeRunner.inferLanguage(course.getName(), course.getCategory()));
+            }
+            if ("CODE".equals(type) && (row.getStarterCode() == null || row.getStarterCode().isBlank())) {
+                row.setStarterCode(CodeRunner.starter(row.getLanguage()));
+            }
             store.save(row);
         }
         audit.log("ASSESSMENT_SAVE", "Assessment", exam.getId(), exam.getTitle());
@@ -621,16 +786,23 @@ public class LmsService {
 
     private ExamAttempt scoreAndSave(ExamAttempt attempt, Assessment exam, Map<String, String> answers, String reason) {
         List<Question> questions = store.listBy(Question.class, attempt.getOrganizationId(), "assessmentId", exam.getId());
-        boolean subjective = "SUBJECTIVE".equalsIgnoreCase(exam.getKind());
+        int autoTotal = 0;
         int correct = 0;
+        boolean pending = false;
         for (Question q : questions) {
+            String type = questionType(q);
             String given = answers.getOrDefault(q.getId().toString(), "");
-            if (!subjective && q.getAnswerKey() != null && q.getAnswerKey().trim().equalsIgnoreCase(given.trim())) {
+            if ("LONG".equals(type)) {
+                pending = true;
+                continue;
+            }
+            autoTotal++;
+            if (answersCorrect(q, given)) {
                 correct++;
             }
         }
-        int max = Math.max(questions.size(), 1);
-        Integer score = subjective ? null : (questions.isEmpty() ? 0 : (int) Math.round(correct * 100.0 / max));
+        int max = Math.max(autoTotal, 1);
+        Integer score = autoTotal == 0 && pending ? null : (int) Math.round(correct * 100.0 / max);
         attempt.setAnswersJson(writeAnswers(answers));
         attempt.setScore(score);
         attempt.setMaxScore(100);
@@ -644,23 +816,43 @@ public class LmsService {
 
     private Map<String, Object> buildResult(ExamAttempt attempt, Assessment exam, Map<String, String> answers, String reason) {
         List<Question> questions = store.listBy(Question.class, attempt.getOrganizationId(), "assessmentId", exam.getId());
-        boolean subjective = "SUBJECTIVE".equalsIgnoreCase(exam.getKind());
         int correct = 0;
+        boolean pending = false;
         List<Map<String, Object>> breakdown = new ArrayList<>();
         for (Question q : questions) {
+            String type = questionType(q);
             String given = answers.getOrDefault(q.getId().toString(), "");
-            boolean ok = !subjective && q.getAnswerKey() != null && q.getAnswerKey().trim().equalsIgnoreCase(given.trim());
-            if (ok) {
+            boolean longForm = "LONG".equals(type);
+            boolean ok = !longForm && answersCorrect(q, given);
+            if (longForm) {
+                pending = true;
+            } else if (ok) {
                 correct++;
             }
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("questionId", q.getId());
             row.put("prompt", q.getPrompt());
+            row.put("questionType", type);
+            row.put("language", q.getLanguage());
             row.put("yourAnswer", given);
-            row.put("correctAnswer", q.getAnswerKey());
+            row.put("correctAnswer", "CODE".equals(type) ? (ok ? "All tests passed" : "Tests failed") : q.getAnswerKey());
             row.put("explanation", q.getExplanation() == null ? "" : q.getExplanation());
             row.put("correct", ok);
+            row.put("pendingReview", longForm);
             breakdown.add(row);
+        }
+        int autoTotal = (int) questions.stream().filter(q -> !"LONG".equals(questionType(q))).count();
+        boolean emptyAnswers = answers.values().stream().allMatch(s -> s == null || s.isBlank());
+        if (emptyAnswers && attempt.getScore() != null && autoTotal > 0) {
+            correct = (int) Math.round(attempt.getScore() * autoTotal / 100.0);
+            boolean allRight = attempt.getScore() >= 100;
+            for (Map<String, Object> row : breakdown) {
+                Object yours = row.get("yourAnswer");
+                if (yours == null || String.valueOf(yours).isBlank()) {
+                    row.put("yourAnswer", "Recorded on submit");
+                    row.put("correct", allRight);
+                }
+            }
         }
         int passing = exam.getPassingScore() == null ? 40 : exam.getPassingScore();
         Integer score = attempt.getScore();
@@ -670,10 +862,10 @@ public class LmsService {
         out.put("maxScore", 100);
         out.put("status", attempt.getStatus());
         out.put("correctCount", correct);
-        out.put("total", questions.size());
-        out.put("passed", !subjective && score != null && score >= passing);
+        out.put("total", Math.max(autoTotal, questions.size()));
+        out.put("passed", !pending && score != null && score >= passing);
         out.put("passingScore", passing);
-        out.put("pendingReview", subjective);
+        out.put("pendingReview", pending);
         out.put("reason", reason);
         out.put("startedAt", attempt.getStartedAt());
         out.put("submittedAt", attempt.getSubmittedAt());
@@ -739,5 +931,118 @@ public class LmsService {
             out.append('"').append(values.get(i).replace("\\", "\\\\").replace("\"", "\\\"")).append('"');
         }
         return out.append(']').toString();
+    }
+
+    private static String questionType(Question q) {
+        if (q.getQuestionType() != null && !q.getQuestionType().isBlank()) {
+            return q.getQuestionType().trim().toUpperCase(Locale.ROOT);
+        }
+        if (q.getOptionsJson() == null || q.getOptionsJson().isBlank() || "[]".equals(q.getOptionsJson().trim())) {
+            return "LONG";
+        }
+        return "MCQ";
+    }
+
+    private static String inferSavedType(Assessment exam, QuizQuestionInput q) {
+        if (q.options != null && q.options.stream().anyMatch(o -> o != null && !o.isBlank())) {
+            return "MCQ";
+        }
+        if (q.left != null && !q.left.isEmpty()) {
+            return "MATCH";
+        }
+        if (q.language != null && !q.language.isBlank()) {
+            return "CODE";
+        }
+        return "SUBJECTIVE".equalsIgnoreCase(exam.getKind()) ? "LONG" : "SHORT";
+    }
+
+    private boolean answersCorrect(Question q, String given) {
+        String type = questionType(q);
+        String expected = q.getAnswerKey() == null ? "" : q.getAnswerKey().trim();
+        String actual = given == null ? "" : given.trim();
+        return switch (type) {
+            case "MCQ", "SHORT" -> !expected.isBlank() && expected.equalsIgnoreCase(actual);
+            case "MULTI" -> sameJsonList(expected, actual);
+            case "MATCH" -> sameJsonMap(expected, actual);
+            case "CODE" -> {
+                if (actual.isBlank()) {
+                    yield false;
+                }
+                try {
+                    String language = q.getLanguage() == null || q.getLanguage().isBlank() ? "python" : q.getLanguage();
+                    yield runner.grade(language, actual, q.getTestsJson()).passed();
+                } catch (Exception e) {
+                    yield false;
+                }
+            }
+            default -> false;
+        };
+    }
+
+    private Map<String, List<String>> matchSides(Question q) {
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        out.put("left", List.of());
+        out.put("right", List.of());
+        if (q.getOptionsJson() == null || q.getOptionsJson().isBlank()) {
+            return out;
+        }
+        try {
+            Map<String, List<String>> parsed = json.readValue(q.getOptionsJson(), new TypeReference<>() {});
+            if (parsed != null) {
+                return parsed;
+            }
+        } catch (Exception ignored) {
+            /* old rows */
+        }
+        return out;
+    }
+
+    private String jsonArrayOfPublic(String testsJson) {
+        try {
+            return json.writeValueAsString(runner.publicCases(testsJson));
+        } catch (Exception e) {
+            return "[]";
+        }
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return json.writeValueAsString(value);
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
+    private boolean sameJsonList(String a, String b) {
+        try {
+            List<String> left = json.readValue(a == null || a.isBlank() ? "[]" : a, new TypeReference<>() {});
+            List<String> right = json.readValue(b == null || b.isBlank() ? "[]" : b, new TypeReference<>() {});
+            if (left == null || right == null || left.size() != right.size()) {
+                return false;
+            }
+            List<String> la = left.stream().map(s -> s.trim().toLowerCase(Locale.ROOT)).sorted().toList();
+            List<String> ra = right.stream().map(s -> s.trim().toLowerCase(Locale.ROOT)).sorted().toList();
+            return la.equals(ra);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean sameJsonMap(String a, String b) {
+        try {
+            Map<String, String> left = json.readValue(a == null || a.isBlank() ? "{}" : a, new TypeReference<>() {});
+            Map<String, String> right = json.readValue(b == null || b.isBlank() ? "{}" : b, new TypeReference<>() {});
+            if (left == null || right == null || left.size() != right.size()) {
+                return false;
+            }
+            for (Map.Entry<String, String> e : left.entrySet()) {
+                if (!e.getValue().equalsIgnoreCase(right.getOrDefault(e.getKey(), ""))) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

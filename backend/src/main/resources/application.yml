@@ -71,3 +71,6 @@ app:
       minio-access-key: ${MINIO_ACCESS_KEY:propel}
       minio-secret-key: ${MINIO_SECRET_KEY:propelpropel}
       bucket: ${PROPEL_STORAGE_BUCKET:propel}
+  code:
+    piston-url: ${PROPEL_PISTON_URL:}
+    timeout-seconds: ${PROPEL_CODE_TIMEOUT:8}

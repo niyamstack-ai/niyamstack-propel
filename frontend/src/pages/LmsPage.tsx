@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, fileSrc } from "../api";
 import { createRecord, uploadSubmissionFile } from "../ops";
 import { useAuth } from "../auth";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatWhen, useApi } from "../ui";
 
 type Content = { id: string; title: string; contentType: string; scormStandard?: string; published?: boolean; courseId?: string };
 type Assignment = { id: string; title: string; instructions: string; courseId?: string; batchId?: string; dueAt?: string; maxScore?: number };
@@ -14,11 +14,11 @@ type Named = { id: string; name: string };
 type Student = { id: string; fullName: string; courseId?: string };
 type Doubt = { id?: string; subject: string; body?: string; status: string; facultyReply?: string; courseId?: string };
 type Batch = { id: string; courseId?: string };
-type LiveRow = { title: string; meetingUrl?: string; batchId?: string };
+type LiveRow = { title: string; meetingUrl?: string; batchId?: string; startsAt?: string };
 type RecRow = { title: string; videoUrl?: string; batchId?: string };
-type SlotRow = { subject: string; dayOfWeek: number; startTime: string; batchId?: string };
+type SlotRow = { subject: string; dayOfWeek: number; startTime: string; endTime?: string; batchId?: string; classroomId?: string };
 
-export type StudySection = "contents" | "live" | "recordings" | "timetable" | "assignments" | "doubts";
+export type StudySection = "contents" | "practice" | "tests" | "live" | "recordings" | "timetable" | "assignments" | "doubts";
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -70,6 +70,8 @@ export function StudentLms({
   const [doubtBody, setDoubtBody] = useState("");
   const [openAsg, setOpenAsg] = useState<Assignment | null>(null);
   const [newDoubtId, setNewDoubtId] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [shot, setShot] = useState("");
 
   async function run(fn: () => Promise<void>) {
     setError(null);
@@ -130,7 +132,7 @@ export function StudentLms({
           ) : slotRows.length === 0 ? (
             <p className="text-sm text-slate-500">No timetable published for this course yet.</p>
           ) : (
-            <Table columns={["Subject", "Day", "Start"]} rows={slotRows.map((s) => [s.subject, weekdayName(s.dayOfWeek), clockTime(s.startTime)])} />
+            <Table columns={["Subject", "Day", "Time"]} rows={slotRows.map((s) => [s.subject, weekdayName(s.dayOfWeek), `${clockTime(s.startTime)}${s.endTime ? `–${clockTime(s.endTime)}` : ""}`])} />
           )}
         </Card>
       )}
@@ -143,14 +145,15 @@ export function StudentLms({
               {liveRows.length === 0 && <p className="text-sm text-slate-500">No live class scheduled for this course.</p>}
               <ul className="space-y-2 text-sm">
                 {liveRows.map((l, i) => (
-                  <li key={i}>
-                    {l.title}{" "}
+                  <li key={i} className="rounded-lg border border-line px-3 py-2">
+                    <p className="font-medium text-navy">{l.title}</p>
+                    <p className="text-xs text-slate-500">{l.startsAt ? formatWhen(l.startsAt) : "Time not published yet"}</p>
                     {l.meetingUrl ? (
-                      <a className="text-brand" href={l.meetingUrl} target="_blank" rel="noreferrer">
-                        Join
+                      <a className="text-sm font-medium text-brand" href={l.meetingUrl} target="_blank" rel="noreferrer">
+                        Join class
                       </a>
                     ) : (
-                      <span className="text-slate-400">Link not added yet</span>
+                      <span className="text-xs text-slate-400">Link not added yet</span>
                     )}
                   </li>
                 ))}
@@ -205,11 +208,13 @@ export function StudentLms({
                     <span>
                       <span className="block font-medium text-navy">{a.title}</span>
                       {a.instructions && <span className="mt-0.5 block text-slate-500">{a.instructions}</span>}
-                      {a.dueAt && <span className="mt-0.5 block text-xs text-slate-400">Due {new Date(a.dueAt).toLocaleString()}</span>}
+                      {a.dueAt && <span className="mt-0.5 block text-xs text-slate-400">Due {formatWhen(a.dueAt)}</span>}
                       {a.maxScore != null && <span className="mt-0.5 block text-xs text-slate-400">Max score {a.maxScore}</span>}
                       {last && (
                         <span className="mt-0.5 block text-xs text-slate-500">
-                          {last.status === "GRADED" ? `Graded ${last.grade || ""}` : "Submitted"}
+                          {last.status === "GRADED"
+                            ? `Graded ${last.grade || ""}${a.maxScore != null ? ` / ${a.maxScore}` : ""}`
+                            : "Submitted · waiting for marks"}
                           {last.feedback ? ` · ${last.feedback}` : ""}
                         </span>
                       )}
@@ -242,6 +247,11 @@ export function StudentLms({
               <span className="text-slate-600">Question</span>
               <textarea className="mt-1 w-full rounded-lg border border-line px-3 py-2" rows={4} value={doubtBody} onChange={(e) => setDoubtBody(e.target.value)} />
             </label>
+            <label className="block text-sm">
+              <span className="text-slate-600">Code (optional)</span>
+              <textarea className="mt-1 w-full rounded-lg border border-line px-3 py-2 font-mono text-sm" rows={4} value={code} onChange={(e) => setCode(e.target.value)} />
+            </label>
+            <Field label="Screenshot or file link (optional)" value={shot} onChange={setShot} placeholder="Paste a URL" />
           </FormGrid>
           <div className="mt-3">
             <PrimaryButton
@@ -250,13 +260,15 @@ export function StudentLms({
                 run(async () => {
                   const ticket = await createRecord<Doubt>("/api/doubts", {
                     subject: doubtSub,
-                    body: doubtBody,
+                    body: [doubtBody, code.trim() ? `\n\nCode:\n${code.trim()}` : "", shot.trim() ? `\n\nAttachment: ${shot.trim()}` : ""].join(""),
                     status: "OPEN",
                     courseId: courseId || null,
                     studentId: me.data?.[0]?.id || null,
                   });
                   setDoubtSub("");
                   setDoubtBody("");
+                  setCode("");
+                  setShot("");
                   setNewDoubtId(ticket.id || null);
                   setNotice("Doubt sent to your faculty. It is highlighted in the list below.");
                   doubts.reload();
@@ -276,7 +288,7 @@ export function StudentLms({
               >
                 <span className="font-medium">{d.subject}</span> — {d.status}
                 {d.body ? <span className="mt-0.5 block text-slate-500">{d.body}</span> : null}
-                {d.facultyReply ? <span className="mt-0.5 block text-navy">Reply: {d.facultyReply}</span> : null}
+                {d.facultyReply ? <span className="mt-0.5 block text-navy">Faculty: {d.facultyReply}</span> : <span className="mt-0.5 block text-xs text-slate-400">Waiting for faculty.</span>}
               </li>
             ))}
           </ul>

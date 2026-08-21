@@ -2,9 +2,9 @@ import { useState } from "react";
 import { api } from "../api";
 import { createRecord } from "../ops";
 import { useAuth } from "../auth";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatDay, useApi } from "../ui";
 
-type Invoice = { id: string; invoiceNo: string; amount: number; paidAmount?: number; status: string; cgst?: number; sgst?: number };
+type Invoice = { id: string; invoiceNo: string; amount: number; paidAmount?: number; status: string; cgst?: number; sgst?: number; dueDate?: string; feePlanId?: string };
 type Payment = { id: string; gatewayRef: string; method: string; amount: number; receiptNo?: string };
 type Refund = { id: string; amount: number; status: string; reason?: string };
 type Student = { id: string; fullName: string };
@@ -28,7 +28,10 @@ function MyFees() {
   const invoices = useApi<Invoice[]>("/api/invoices");
   const payments = useApi<Payment[]>("/api/payments");
   const receipts = useApi<{ id: string; receiptNo: string; amount: number; issuedAt?: string }[]>("/api/receipts");
+  const plans = useApi<Plan[]>("/api/fee-plans");
   const [error, setError] = useState<string | null>(null);
+  const unpaid = (invoices.data ?? []).filter((inv) => inv.status !== "PAID" && inv.status !== "CANCELLED");
+  const dueTotal = unpaid.reduce((sum, inv) => sum + Number(inv.amount || 0) - Number(inv.paidAmount || 0), 0);
 
   async function openReceipt(id: string) {
     setError(null);
@@ -66,15 +69,18 @@ function MyFees() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-navy">My fees</h1>
-      <p className="text-sm text-slate-500">Pay dues and download receipts. This is not the institute accounts desk.</p>
+      <p className="text-sm text-slate-500">Pay dues and download receipts for this student account.</p>
+      {dueTotal > 0 && <p className="text-sm font-medium text-navy">Total due ₹{dueTotal}</p>}
       <ErrorText error={error} />
       <Card title="Invoices">
         {(invoices.data ?? []).length === 0 && <p className="text-sm text-slate-500">No invoices yet.</p>}
         <Table
-          columns={["Invoice", "Amount", "Status", ""]}
+          columns={["Invoice", "For", "Amount", "Due", "Status", ""]}
           rows={(invoices.data ?? []).map((inv) => [
             inv.invoiceNo,
+            (plans.data ?? []).find((p) => p.id === inv.feePlanId)?.name || "Course fees",
             `₹${inv.amount}`,
+            formatDay(inv.dueDate) || "—",
             inv.status,
             inv.status === "PAID" ? (
               "Paid"

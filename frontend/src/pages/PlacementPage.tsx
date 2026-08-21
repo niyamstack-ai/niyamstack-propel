@@ -2,9 +2,9 @@ import { useState } from "react";
 import { api } from "../api";
 import { createRecord } from "../ops";
 import { useAuth } from "../auth";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatDay, useApi } from "../ui";
 
-type Drive = { id: string; title: string; packageLpa: number; status: string; locations: string; minAttendancePct?: number; companyId?: string };
+type Drive = { id: string; title: string; packageLpa: number; status: string; locations: string; minAttendancePct?: number; companyId?: string; jobDescription?: string; deadline?: string };
 type Application = { id: string; driveId?: string; status: string; eligibilityPassed?: boolean; currentRound?: string };
 type Student = { id: string; fullName: string };
 type Company = { id: string; name: string; industry: string };
@@ -24,7 +24,7 @@ function StudentJobs() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-navy">Jobs & drives</h1>
-      <p className="text-sm text-slate-500">Apply to campus drives. You will not see institute setup or accounts.</p>
+      <p className="text-sm text-slate-500">Campus drives open to you. Apply from this list.</p>
       <ErrorText error={error} />
       <Card title="Open drives">
         {(drives.data ?? []).length === 0 && <p className="mb-3 text-sm text-slate-500">No open drives right now.</p>}
@@ -35,7 +35,9 @@ function StudentJobs() {
             return [
             d.title,
             `${d.packageLpa} LPA`,
-            d.locations,
+            `${d.locations}${d.deadline ? ` · apply by ${formatDay(d.deadline)}` : ""}`,
+            <div key={d.id} className="space-y-1">
+              {d.jobDescription && <p className="max-w-xs text-xs text-slate-500">{d.jobDescription}</p>}
             <PrimaryButton
               disabled={!studentId || applied}
               onClick={async () => {
@@ -49,7 +51,8 @@ function StudentJobs() {
               }}
             >
               {applied ? "Applied" : "Apply"}
-            </PrimaryButton>,
+            </PrimaryButton>
+            </div>,
           ];
           })}
         />

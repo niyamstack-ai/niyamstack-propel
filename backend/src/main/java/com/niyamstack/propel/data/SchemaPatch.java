@@ -137,7 +137,14 @@ public class SchemaPatch {
                     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     updated_at TIMESTAMP WITH TIME ZONE NOT NULL
                 )
-                """
+                """,
+                "ALTER TABLE questions ADD COLUMN IF NOT EXISTS question_type VARCHAR(20)",
+                "ALTER TABLE questions ADD COLUMN IF NOT EXISTS language VARCHAR(40)",
+                "ALTER TABLE questions ADD COLUMN IF NOT EXISTS starter_code TEXT",
+                "ALTER TABLE questions ADD COLUMN IF NOT EXISTS tests_json TEXT",
+                "UPDATE courses SET description = 'IPC theory and consultancy practice for working professionals.' WHERE description = 'dkjagskjdk'",
+                "UPDATE assessments SET title = 'IPC basics check' WHERE title = 'abc'",
+                "UPDATE questions SET prompt = 'Choose the correct option.' WHERE prompt = 'fff'"
         );
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
             for (String sql : statements) {

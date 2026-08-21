@@ -43,6 +43,10 @@ type QuestionRow = {
   optionsJson?: string;
   answerKey?: string;
   explanation?: string;
+  questionType?: string;
+  language?: string;
+  starterCode?: string;
+  testsJson?: string;
 };
 
 type AttemptRow = {
@@ -68,14 +72,46 @@ type QuizResult = {
   breakdown: {
     questionId: string;
     prompt: string;
+    questionType?: string;
+    language?: string;
     yourAnswer: string;
     correctAnswer: string;
     explanation?: string;
     correct: boolean;
+    pendingReview?: boolean;
   }[];
 };
 
-type PaperQuestion = { id: string; prompt: string; optionsJson?: string };
+type PaperQuestion = {
+  id: string;
+  prompt: string;
+  optionsJson?: string;
+  questionType?: string;
+  language?: string;
+  starterCode?: string;
+  left?: string[];
+  right?: string[];
+  publicTests?: { stdin?: string; stdout?: string }[];
+};
+
+type QType = "MCQ" | "MULTI" | "SHORT" | "LONG" | "MATCH" | "CODE";
+
+type LangInfo = { id: string; label: string; available: boolean; hint: string; starter?: string };
+
+type DraftQuestion = {
+  prompt: string;
+  questionType: QType;
+  options: string[];
+  correct: number;
+  selected: boolean[];
+  textAnswer: string;
+  explanation: string;
+  language: string;
+  starterCode: string;
+  tests: { stdin: string; stdout: string; hidden: boolean; setup: string }[];
+  left: string[];
+  right: string[];
+};
 
 function formatClock(total: number) {
   const s = Math.max(0, Math.floor(total));
@@ -191,6 +227,39 @@ function parseOptions(raw?: string): string[] {
     /* ignore */
   }
   return raw.split("\n").map((s) => s.trim()).filter(Boolean);
+}
+
+function parseMatchSides(raw?: string): { left: string[]; right: string[] } {
+  try {
+    const parsed = JSON.parse(raw || "{}") as { left?: unknown[]; right?: unknown[] };
+    if (parsed && Array.isArray(parsed.left)) {
+      return { left: parsed.left.map(String), right: (parsed.right || []).map(String) };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { left: ["", ""], right: ["", ""] };
+}
+
+function blankQuestion(type: QType, language = "java", starter = ""): DraftQuestion {
+  return {
+    prompt: "",
+    questionType: type,
+    options: ["", "", "", ""],
+    correct: 0,
+    selected: [true, false, false, false],
+    textAnswer: "",
+    explanation: "",
+    language,
+    starterCode: starter,
+    tests: [{ stdin: "", stdout: "", hidden: false, setup: "" }],
+    left: ["", ""],
+    right: ["", ""],
+  };
+}
+
+function languageLabel(id?: string, langs?: LangInfo[]) {
+  return langs?.find((l) => l.id === id)?.label || (id ? id.toUpperCase() : "Code");
 }
 
 export function CourseContentPanel({ courseId }: { courseId: string }) {
@@ -733,7 +802,12 @@ function QuizBuilder({
   onSaved: () => void;
 }) {
   const questionsApi = useApi<QuestionRow[]>("/api/questions");
-  const mcq = (existing?.kind || kind) !== "SUBJECTIVE";
+  const langsApi = useApi<{ languages: LangInfo[]; suggested?: string; starter?: string; courseName?: string }>(
+    `/api/actions/code/languages?courseId=${courseId}`,
+  );
+  const langs = langsApi.data?.languages ?? [];
+  const suggested = langsApi.data?.suggested || "java";
+  const defaultType: QType = kind === "SUBJECTIVE" ? "LONG" : "MCQ";
   const defaultTitle = kind === "SUBJECTIVE" ? "Subjective Test" : kind === "PRACTICE" ? "Practice Test" : "Online Test";
   const [title, setTitle] = useState(existing?.title || defaultTitle);
   const [attempts, setAttempts] = useState(String(existing?.maxAttempts ?? (kind === "PRACTICE" ? 0 : 3)));
@@ -745,20 +819,61 @@ function QuizBuilder({
     () => (questionsApi.data ?? []).filter((q) => q.assessmentId === existing?.id),
     [questionsApi.data, existing?.id],
   );
-  const [questions, setQuestions] = useState<{ prompt: string; options: string[]; correct: number; textAnswer: string; explanation: string }[]>([
-    { prompt: "", options: ["", "", "", ""], correct: 0, textAnswer: "", explanation: "" },
-  ]);
+  const [questions, setQuestions] = useState<DraftQuestion[]>([blankQuestion(defaultType, suggested, langsApi.data?.starter || "")]);
+
+  useEffect(() => {
+    if (existing || !langsApi.data) return;
+    setQuestions((rows) =>
+      rows.map((row) =>
+        row.questionType === "CODE" && !row.starterCode
+          ? { ...row, language: langsApi.data!.suggested || row.language, starterCode: langsApi.data!.starter || row.starterCode }
+          : row,
+      ),
+    );
+  }, [existing, langsApi.data]);
 
   useEffect(() => {
     if (!existing || loaded.length === 0) return;
     setQuestions(
       loaded.map((q) => {
+        const type = ((q.questionType || (parseOptions(q.optionsJson).length ? "MCQ" : "LONG")).toUpperCase() as QType) || "MCQ";
         const options = parseOptions(q.optionsJson);
-        const idx = Math.max(0, options.findIndex((o) => o === q.answerKey));
-        return { prompt: q.prompt, options: options.length ? options : ["", "", "", ""], correct: idx, textAnswer: q.answerKey || "", explanation: q.explanation || "" };
+        const match = parseMatchSides(q.optionsJson);
+        let selected = [false, false, false, false];
+        try {
+          const keys = JSON.parse(q.answerKey || "[]") as string[];
+          selected = options.map((o) => keys.includes(o));
+        } catch {
+          selected = options.map((o) => o === q.answerKey);
+        }
+        let tests: DraftQuestion["tests"] = [{ stdin: "", stdout: "", hidden: false, setup: "" }];
+        try {
+          const parsed = JSON.parse(q.testsJson || "[]") as DraftQuestion["tests"];
+          if (Array.isArray(parsed) && parsed.length) tests = parsed;
+        } catch {
+          /* ignore */
+        }
+        return {
+          ...blankQuestion(type, q.language || suggested, q.starterCode || ""),
+          prompt: q.prompt,
+          options: options.length ? options : ["", "", "", ""],
+          correct: Math.max(0, options.findIndex((o) => o === q.answerKey)),
+          selected: selected.length ? selected : [true, false, false, false],
+          textAnswer: q.answerKey || "",
+          explanation: q.explanation || "",
+          language: q.language || suggested,
+          starterCode: q.starterCode || "",
+          tests,
+          left: match.left.length ? match.left : ["", ""],
+          right: match.right.length ? match.right : ["", ""],
+        };
       }),
     );
-  }, [existing, loaded]);
+  }, [existing, loaded, suggested]);
+
+  function patch(i: number, next: Partial<DraftQuestion>) {
+    setQuestions((rows) => rows.map((row, j) => (j === i ? { ...row, ...next } : row)));
+  }
 
   async function save() {
     if (!title.trim()) {
@@ -770,12 +885,10 @@ function QuizBuilder({
       setError("Type a question, then click Save test.");
       return;
     }
-    if (mcq) {
-      const incomplete = ready.find((q) => q.options.filter((o) => o.trim()).length < 2);
-      if (incomplete) {
-        setError("Each question needs at least two options and one marked Correct.");
-        return;
-      }
+    const badMcq = ready.find((q) => (q.questionType === "MCQ" || q.questionType === "MULTI") && q.options.filter((o) => o.trim()).length < 2);
+    if (badMcq) {
+      setError("Choice questions need at least two options.");
+      return;
     }
     setError(null);
     setBusy(true);
@@ -792,8 +905,16 @@ function QuizBuilder({
           maxAttempts: Number(attempts) || 0,
           questions: ready.map((q) => ({
             prompt: q.prompt.trim(),
-            options: mcq ? q.options.map((o) => o.trim()).filter(Boolean) : [],
-            answerKey: mcq ? q.options[q.correct] : q.textAnswer,
+            questionType: q.questionType,
+            language: q.language,
+            starterCode: q.starterCode,
+            testsJson: JSON.stringify(q.tests.filter((t) => (t.stdout || t.stdin || t.setup).trim())),
+            options: q.options.map((o) => o.trim()).filter(Boolean),
+            left: q.left.map((o) => o.trim()).filter(Boolean),
+            right: q.right.map((o) => o.trim()).filter(Boolean),
+            matchAnswer: Object.fromEntries(q.left.map((left, idx) => [left.trim(), (q.right[idx] || "").trim()]).filter(([a, b]) => a && b)),
+            correctOptions: q.options.filter((o, idx) => q.selected[idx] && o.trim()),
+            answerKey: q.questionType === "MCQ" ? q.options[q.correct] : q.textAnswer,
             explanation: q.explanation?.trim() || "",
           })),
         }),
@@ -808,9 +929,12 @@ function QuizBuilder({
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={busy ? undefined : onClose}>
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold text-navy">{existing ? "Edit test" : "Create test"}</h3>
-        <p className="mt-1 text-sm text-slate-500">Students see a live timer. Changing tab submits the test. Add an explanation if you want it shown after they submit.</p>
+        <p className="mt-1 text-sm text-slate-500">
+          Mix MCQ, written, matching, and coding in one test. Coding questions open the {languageLabel(suggested, langs)} runner for this course
+          {langsApi.data?.courseName ? ` (${langsApi.data.courseName})` : ""}.
+        </p>
         <ErrorText error={error} />
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="block text-sm sm:col-span-2">
@@ -833,53 +957,169 @@ function QuizBuilder({
         <div className="mt-5 space-y-4">
           {questions.map((q, i) => (
             <div key={i} className="rounded-xl border border-line p-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-semibold text-navy">Question {i + 1}</p>
-                {questions.length > 1 && (
-                  <button type="button" className="text-xs text-red-600" onClick={() => setQuestions((rows) => rows.filter((_, j) => j !== i))}>
-                    Remove
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  <select
+                    className="rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                    value={q.questionType}
+                    onChange={(e) => {
+                      const questionType = e.target.value as QType;
+                      const next: Partial<DraftQuestion> = { questionType };
+                      if (questionType === "CODE") {
+                        next.language = q.language || suggested;
+                        next.starterCode = q.starterCode || langsApi.data?.starter || "";
+                      }
+                      patch(i, next);
+                    }}
+                  >
+                    <option value="MCQ">MCQ</option>
+                    <option value="MULTI">Multiple correct</option>
+                    <option value="SHORT">Short answer</option>
+                    <option value="LONG">Long answer</option>
+                    <option value="MATCH">Match the following</option>
+                    <option value="CODE">Coding</option>
+                  </select>
+                  {questions.length > 1 && (
+                    <button type="button" className="text-xs text-red-600" onClick={() => setQuestions((rows) => rows.filter((_, j) => j !== i))}>
+                      Remove
+                    </button>
+                  )}
+                </div>
               </div>
               <textarea
                 className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 placeholder="Type the question"
                 value={q.prompt}
-                onChange={(e) => setQuestions((rows) => rows.map((row, j) => (j === i ? { ...row, prompt: e.target.value } : row)))}
+                onChange={(e) => patch(i, { prompt: e.target.value })}
               />
-              {mcq ? (
+              {(q.questionType === "MCQ" || q.questionType === "MULTI") && (
                 <div className="mt-3 space-y-2">
                   {q.options.map((opt, oi) => (
                     <label key={oi} className="flex items-center gap-2 text-sm">
                       <input
-                        type="radio"
+                        type={q.questionType === "MULTI" ? "checkbox" : "radio"}
                         name={`correct-${i}`}
-                        checked={q.correct === oi}
-                        onChange={() => setQuestions((rows) => rows.map((row, j) => (j === i ? { ...row, correct: oi } : row)))}
+                        checked={q.questionType === "MULTI" ? !!q.selected[oi] : q.correct === oi}
+                        onChange={() =>
+                          q.questionType === "MULTI"
+                            ? patch(i, { selected: q.selected.map((v, k) => (k === oi ? !v : v)) })
+                            : patch(i, { correct: oi })
+                        }
                       />
                       <input
                         className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5"
                         placeholder={`Option ${oi + 1}`}
                         value={opt}
-                        onChange={(e) =>
-                          setQuestions((rows) =>
-                            rows.map((row, j) => (j === i ? { ...row, options: row.options.map((o, k) => (k === oi ? e.target.value : o)) } : row)),
-                          )
-                        }
+                        onChange={(e) => patch(i, { options: q.options.map((o, k) => (k === oi ? e.target.value : o)) })}
                       />
-                      <span className="w-16 text-xs text-slate-400">{q.correct === oi ? "Correct" : ""}</span>
                     </label>
                   ))}
                 </div>
-              ) : (
+              )}
+              {(q.questionType === "SHORT" || q.questionType === "LONG") && (
                 <label className="mt-2 block text-sm">
-                  <span className="text-slate-600">Model answer (shown after submit; teacher still reviews)</span>
-                  <input
+                  <span className="text-slate-600">{q.questionType === "LONG" ? "Model answer (teacher reviews)" : "Expected answer"}</span>
+                  <textarea
                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
                     value={q.textAnswer}
-                    onChange={(e) => setQuestions((rows) => rows.map((row, j) => (j === i ? { ...row, textAnswer: e.target.value } : row)))}
+                    onChange={(e) => patch(i, { textAnswer: e.target.value })}
                   />
                 </label>
+              )}
+              {q.questionType === "MATCH" && (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {q.left.map((left, idx) => (
+                    <div key={idx} className="contents">
+                      <input
+                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm"
+                        placeholder={`Left ${idx + 1}`}
+                        value={left}
+                        onChange={(e) => patch(i, { left: q.left.map((v, k) => (k === idx ? e.target.value : v)) })}
+                      />
+                      <input
+                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm"
+                        placeholder={`Matches ${idx + 1}`}
+                        value={q.right[idx] || ""}
+                        onChange={(e) => patch(i, { right: q.right.map((v, k) => (k === idx ? e.target.value : v)) })}
+                      />
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="text-left text-sm text-brand sm:col-span-2"
+                    onClick={() => patch(i, { left: [...q.left, ""], right: [...q.right, ""] })}
+                  >
+                    + Add pair
+                  </button>
+                </div>
+              )}
+              {q.questionType === "CODE" && (
+                <div className="mt-3 space-y-2">
+                  <label className="block text-sm">
+                    <span className="text-slate-600">Runner language</span>
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                      value={q.language}
+                      onChange={(e) => {
+                        const language = e.target.value;
+                        patch(i, { language, starterCode: langs.find((l) => l.id === language)?.starter || q.starterCode });
+                      }}
+                    >
+                      {langs.map((lang) => (
+                        <option key={lang.id} value={lang.id}>
+                          {lang.label} {lang.available ? "" : "(install compiler)"}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="text-xs text-slate-500">
+                    Students in this course see the {languageLabel(q.language, langs)} runner. Suggested for this course: {languageLabel(suggested, langs)}.
+                  </p>
+                  <textarea
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm"
+                    rows={8}
+                    value={q.starterCode}
+                    onChange={(e) => patch(i, { starterCode: e.target.value })}
+                    placeholder="Starter code"
+                  />
+                  <p className="text-xs font-medium text-slate-600">Public / hidden tests (stdout must match)</p>
+                  {q.tests.map((t, ti) => (
+                    <div key={ti} className="grid gap-2 rounded-lg bg-mist p-2 sm:grid-cols-2">
+                      <input
+                        className="rounded border border-slate-200 px-2 py-1 font-mono text-xs"
+                        placeholder={q.language === "sql" ? "Setup SQL" : "stdin"}
+                        value={q.language === "sql" ? t.setup : t.stdin}
+                        onChange={(e) =>
+                          patch(i, {
+                            tests: q.tests.map((row, k) => (k === ti ? { ...row, [q.language === "sql" ? "setup" : "stdin"]: e.target.value } : row)),
+                          })
+                        }
+                      />
+                      <input
+                        className="rounded border border-slate-200 px-2 py-1 font-mono text-xs"
+                        placeholder="expected stdout"
+                        value={t.stdout}
+                        onChange={(e) => patch(i, { tests: q.tests.map((row, k) => (k === ti ? { ...row, stdout: e.target.value } : row)) })}
+                      />
+                      <label className="flex items-center gap-2 text-xs sm:col-span-2">
+                        <input
+                          type="checkbox"
+                          checked={t.hidden}
+                          onChange={(e) => patch(i, { tests: q.tests.map((row, k) => (k === ti ? { ...row, hidden: e.target.checked } : row)) })}
+                        />
+                        Hidden from student
+                      </label>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="text-sm text-brand"
+                    onClick={() => patch(i, { tests: [...q.tests, { stdin: "", stdout: "", hidden: true, setup: "" }] })}
+                  >
+                    + Add test case
+                  </button>
+                </div>
               )}
               <label className="mt-2 block text-sm">
                 <span className="text-slate-600">Explanation (optional)</span>
@@ -887,7 +1127,7 @@ function QuizBuilder({
                   className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                   placeholder="Why this is correct"
                   value={q.explanation}
-                  onChange={(e) => setQuestions((rows) => rows.map((row, j) => (j === i ? { ...row, explanation: e.target.value } : row)))}
+                  onChange={(e) => patch(i, { explanation: e.target.value })}
                 />
               </label>
             </div>
@@ -896,7 +1136,7 @@ function QuizBuilder({
         <button
           type="button"
           className="mt-3 text-sm font-medium text-brand"
-          onClick={() => setQuestions((rows) => [...rows, { prompt: "", options: ["", "", "", ""], correct: 0, textAnswer: "", explanation: "" }])}
+          onClick={() => setQuestions((rows) => [...rows, blankQuestion("MCQ", suggested, langsApi.data?.starter || "")])}
         >
           + Add question
         </button>
@@ -950,10 +1190,17 @@ function PreviewModal({ item, onClose }: { item: ContentRow; onClose: () => void
             {src ? "." : " — no file is attached."}
           </p>
         )}
-        {external && !isZip && (
-          <p className="text-sm text-slate-500">
-            This item is an external link. Use Open link to view it in a new tab.
-          </p>
+        {external && !isZip && src && (
+          <>
+            <iframe title={item.title} src={src} className="h-[70vh] w-full rounded-lg border" />
+            <p className="mt-2 text-xs text-slate-400">
+              If the page is blank, the site blocks embedding.{" "}
+              <a className="text-brand" href={src} target="_blank" rel="noreferrer">
+                Open in a new tab
+              </a>
+              .
+            </p>
+          </>
         )}
         {!src && <p className="text-sm text-slate-500">No file attached.</p>}
       </div>
@@ -961,7 +1208,7 @@ function PreviewModal({ item, onClose }: { item: ContentRow; onClose: () => void
   );
 }
 
-export function StudentCourseLibrary({ courseId, allowDownload = true }: { courseId: string; allowDownload?: boolean }) {
+export function StudentCourseLibrary({ courseId, allowDownload = true, examsOnly = false }: { courseId: string; allowDownload?: boolean; examsOnly?: boolean }) {
   const [params, setParams] = useSearchParams();
   const folderId = params.get("folder");
   const content = useApi<ContentRow[]>("/api/content");
@@ -979,8 +1226,12 @@ export function StudentCourseLibrary({ courseId, allowDownload = true }: { cours
   }
 
   const courseContent = (content.data ?? []).filter((row) => sameId(row.courseId, courseId) && row.published !== false);
-  const courseExams = (exams.data ?? []).filter((row) => sameId(row.courseId, courseId) && row.published !== false);
-  const items = itemsInFolder(courseContent, courseExams, folderId);
+  const courseExams = (exams.data ?? []).filter(
+    (row) => sameId(row.courseId, courseId) && row.published !== false && (row.kind || "").toUpperCase() !== "PRACTICE_LAB",
+  );
+  const items = examsOnly
+    ? courseExams.map(asTestItem).sort(compareLibrary)
+    : itemsInFolder(courseContent, courseExams, folderId);
   const trail = useMemo(() => {
     if (!folderId) return [];
     const byId = new Map(courseContent.map((row) => [row.id, row]));
@@ -1023,13 +1274,14 @@ export function StudentCourseLibrary({ courseId, allowDownload = true }: { cours
   return (
     <div className="rounded-2xl border border-line bg-white p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-navy">Contents</h2>
-        {trail.length > 0 && (
+        <h2 className="text-lg font-semibold text-navy">{examsOnly ? "Tests" : "Contents"}</h2>
+        {trail.length > 0 && !examsOnly && (
           <button type="button" className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-navy" onClick={goBack}>
             ← Back
           </button>
         )}
       </div>
+      {!examsOnly && (
       <nav className="mt-2 flex flex-wrap items-center gap-1 text-sm text-navy">
         <button type="button" className="font-medium text-brand hover:underline" onClick={() => setFolder(null)}>
           All content
@@ -1047,9 +1299,12 @@ export function StudentCourseLibrary({ courseId, allowDownload = true }: { cours
           </span>
         ))}
       </nav>
+      )}
       <div className="mt-4 divide-y divide-line">
         {items.length === 0 && (
-          <p className="py-8 text-sm text-slate-500">This folder is empty.{trail.length ? " Use Back to return to the previous folder." : ""}</p>
+          <p className="py-8 text-sm text-slate-500">
+            {examsOnly ? "No tests in this course yet." : `This folder is empty.${trail.length ? " Use Back to return to the previous folder." : ""}`}
+          </p>
         )}
         {items.map((item) => {
           if (item.folder && item.content) {
@@ -1104,6 +1359,7 @@ export function StudentCourseLibrary({ courseId, allowDownload = true }: { cours
                     setQuiz(row);
                   } else if (last) {
                     setReviewId(last.id);
+                    enterExamLock();
                     setQuiz(row);
                   }
                 }}
@@ -1124,6 +1380,7 @@ export function StudentCourseLibrary({ courseId, allowDownload = true }: { cours
                     className="text-sm font-medium text-slate-600 hover:text-navy"
                     onClick={() => {
                       setReviewId(last.id);
+                      enterExamLock();
                       setQuiz(row);
                     }}
                   >
@@ -1168,6 +1425,181 @@ export function StudentCourseLibrary({ courseId, allowDownload = true }: { cours
   );
 }
 
+function PaperItem({
+  index,
+  question,
+  value,
+  onChange,
+}: {
+  index: number;
+  question: PaperQuestion;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const type = (question.questionType || (parseOptions(question.optionsJson).length ? "MCQ" : "LONG")).toUpperCase();
+  const options = parseOptions(question.optionsJson);
+  const selected = (() => {
+    try {
+      const parsed = JSON.parse(value || "[]") as string[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  })();
+  const match = (() => {
+    try {
+      return (JSON.parse(value || "{}") as Record<string, string>) || {};
+    } catch {
+      return {} as Record<string, string>;
+    }
+  })();
+
+  return (
+    <div className="rounded-xl border border-line p-4">
+      <p className="font-medium text-navy">
+        {index + 1}. {question.prompt}
+      </p>
+      {type === "CODE" && (
+        <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-brand">{(question.language || "code").toUpperCase()} runner</p>
+      )}
+      {type === "MCQ" && (
+        <div className="mt-2 space-y-1">
+          {options.map((opt) => (
+            <label key={opt} className="flex items-center gap-2 text-sm">
+              <input type="radio" name={question.id} checked={value === opt} onChange={() => onChange(opt)} />
+              {opt}
+            </label>
+          ))}
+        </div>
+      )}
+      {type === "MULTI" && (
+        <div className="mt-2 space-y-1">
+          {options.map((opt) => (
+            <label key={opt} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={selected.includes(opt)}
+                onChange={() => {
+                  const next = selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt];
+                  onChange(JSON.stringify(next));
+                }}
+              />
+              {opt}
+            </label>
+          ))}
+        </div>
+      )}
+      {type === "SHORT" && (
+        <input className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={value} onChange={(e) => onChange(e.target.value)} />
+      )}
+      {type === "LONG" && (
+        <textarea className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" rows={5} value={value} onChange={(e) => onChange(e.target.value)} />
+      )}
+      {type === "MATCH" && (
+        <div className="mt-3 space-y-2">
+          {(question.left || []).map((left) => (
+            <label key={left} className="flex items-center gap-2 text-sm">
+              <span className="w-1/2 font-medium">{left}</span>
+              <select
+                className="flex-1 rounded-lg border border-slate-200 px-2 py-1"
+                value={match[left] || ""}
+                onChange={(e) => onChange(JSON.stringify({ ...match, [left]: e.target.value }))}
+              >
+                <option value="">Match…</option>
+                {(question.right || []).map((right) => (
+                  <option key={right} value={right}>
+                    {right}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+      )}
+      {type === "CODE" && (
+        <CodePad questionId={question.id} language={question.language || "java"} value={value} tests={question.publicTests} onChange={onChange} />
+      )}
+      {type !== "MCQ" && type !== "MULTI" && type !== "SHORT" && type !== "LONG" && type !== "MATCH" && type !== "CODE" && (
+        <textarea className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={value} onChange={(e) => onChange(e.target.value)} />
+      )}
+    </div>
+  );
+}
+
+function CodePad({
+  questionId,
+  language,
+  value,
+  tests,
+  onChange,
+}: {
+  questionId: string;
+  language: string;
+  value: string;
+  tests?: { stdin?: string; stdout?: string }[];
+  onChange: (value: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [output, setOutput] = useState<string | null>(null);
+  const [ok, setOk] = useState<boolean | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setOutput(null);
+    try {
+      const res = await api<{
+        ok?: boolean;
+        stdout?: string;
+        stderr?: string;
+        passedCount?: number;
+        total?: number;
+        cases?: { passed?: boolean; stdout?: string; stderr?: string; expected?: string }[];
+      }>("/api/actions/code/run", {
+        method: "POST",
+        body: JSON.stringify({ questionId, source: value }),
+      });
+      setOk(res.ok ?? false);
+      const lines = [
+        res.total ? `${res.passedCount ?? 0}/${res.total} public tests passed` : res.ok ? "Ran successfully" : "Run failed",
+        res.stdout ? `stdout:\n${res.stdout}` : "",
+        res.stderr ? `stderr:\n${res.stderr}` : "",
+      ].filter(Boolean);
+      setOutput(lines.join("\n\n"));
+    } catch (e) {
+      setOk(false);
+      setOutput((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="rounded bg-slate-800 px-2 py-0.5 text-xs font-semibold uppercase text-white">{language} runner</span>
+        <button type="button" disabled={busy} className="rounded-lg bg-navy px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50" onClick={() => void run()}>
+          {busy ? "Running…" : "Run"}
+        </button>
+      </div>
+      <textarea
+        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm text-slate-100"
+        rows={12}
+        spellCheck={false}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {tests && tests.length > 0 && (
+        <p className="mt-1 text-xs text-slate-500">
+          Public tests: {tests.length}. Hidden tests run on submit.
+        </p>
+      )}
+      {output && (
+        <pre className={`mt-2 overflow-x-auto rounded-lg p-3 text-xs ${ok ? "bg-emerald-50 text-emerald-900" : "bg-red-50 text-red-800"}`}>{output}</pre>
+      )}
+    </div>
+  );
+}
+
 function TakeQuiz({
   exam,
   used,
@@ -1191,6 +1623,7 @@ function TakeQuiz({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [currentQ, setCurrentQ] = useState(0);
   const remaining = exam.maxAttempts && exam.maxAttempts > 0 ? Math.max(0, exam.maxAttempts - used) : null;
   const tabLock = exam.proctoring === true || (exam.kind || "").toUpperCase() !== "PRACTICE";
   const answersRef = useRef(answers);
@@ -1258,14 +1691,21 @@ function TakeQuiz({
           return;
         }
         setAttemptId(started.id);
+        const draft: Record<string, string> = {};
         if (started.answersJson) {
           try {
             const parsed = JSON.parse(started.answersJson) as Record<string, string>;
-            if (parsed && typeof parsed === "object") setAnswers(parsed);
+            if (parsed && typeof parsed === "object") Object.assign(draft, parsed);
           } catch {
             /* ignore legacy drafts */
           }
         }
+        for (const q of paper) {
+          if ((q.questionType || "").toUpperCase() === "CODE" && !draft[q.id] && q.starterCode) {
+            draft[q.id] = q.starterCode;
+          }
+        }
+        if (Object.keys(draft).length) setAnswers(draft);
         if (exam.durationMinutes && exam.durationMinutes > 0 && started.startedAt) {
           setEndsAt(new Date(started.startedAt).getTime() + exam.durationMinutes * 60_000);
         }
@@ -1295,7 +1735,9 @@ function TakeQuiz({
 
   useEffect(() => {
     window.dispatchEvent(new Event("propel:exam-lock"));
-    return () => window.dispatchEvent(new Event("propel:exam-unlock"));
+    return () => {
+      window.dispatchEvent(new Event("propel:exam-unlock"));
+    };
   }, []);
 
   useEffect(() => {
@@ -1375,14 +1817,15 @@ function TakeQuiz({
   const timed = exam.durationMinutes && exam.durationMinutes > 0;
 
   return createPortal(
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/50 p-4">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[120] grid place-items-center bg-navy/80 p-4">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="text-lg font-semibold text-navy">{exam.title}</h3>
             <p className="mt-1 text-sm text-slate-500">
               {remaining == null ? "Unlimited attempts" : `${remaining} attempt(s) left`}
               {timed && secondsLeft == null && !result ? ` · ${exam.durationMinutes} min` : ""}
+              {!result && questions.length > 0 ? ` · ${currentQ + 1} of ${questions.length}` : ""}
             </p>
           </div>
           {timed && secondsLeft != null && !result && (
@@ -1451,31 +1894,45 @@ function TakeQuiz({
             {tabLock && timed && (
               <p className="mt-3 text-xs text-slate-500">Do not switch tabs. Leaving this page submits the test.</p>
             )}
-            <div className="mt-4 space-y-4">
+            <div className="mt-4 flex flex-wrap gap-1.5">
               {questions.map((q, i) => {
-                const options = parseOptions(q.optionsJson);
+                const filled = !!(answers[q.id] || "").trim();
                 return (
-                  <div key={q.id} className="rounded-xl border border-line p-4">
-                    <p className="font-medium text-navy">
-                      {i + 1}. {q.prompt}
-                    </p>
-                    {options.length > 0 ? (
-                      <div className="mt-2 space-y-1">
-                        {options.map((opt) => (
-                          <label key={opt} className="flex items-center gap-2 text-sm">
-                            <input type="radio" name={q.id} checked={answers[q.id] === opt} onChange={() => setAnswers((a) => ({ ...a, [q.id]: opt }))} />
-                            {opt}
-                          </label>
-                        ))}
-                      </div>
-                    ) : (
-                      <textarea className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={answers[q.id] || ""} onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))} />
-                    )}
-                  </div>
+                  <button
+                    key={q.id}
+                    type="button"
+                    className={`h-8 w-8 rounded-md text-xs font-semibold ${
+                      i === currentQ ? "bg-navy text-white" : filled ? "bg-emerald-100 text-emerald-800" : "bg-mist text-navy"
+                    }`}
+                    onClick={() => setCurrentQ(i)}
+                  >
+                    {i + 1}
+                  </button>
                 );
               })}
             </div>
+            <div className="mt-4 space-y-4">
+              {questions[currentQ] && (
+                <PaperItem
+                  key={questions[currentQ].id}
+                  index={currentQ}
+                  question={questions[currentQ]}
+                  value={answers[questions[currentQ].id] || ""}
+                  onChange={(value) => setAnswers((a) => ({ ...a, [questions[currentQ].id]: value }))}
+                />
+              )}
+            </div>
             <div className="mt-4 flex justify-end gap-2">
+              {currentQ > 0 && (
+                <button type="button" className="rounded-lg px-3 py-2 text-sm" onClick={() => setCurrentQ((n) => n - 1)}>
+                  Previous
+                </button>
+              )}
+              {currentQ < questions.length - 1 && (
+                <button type="button" className="rounded-lg border border-line px-3 py-2 text-sm" onClick={() => setCurrentQ((n) => n + 1)}>
+                  Next
+                </button>
+              )}
               <button type="button" className="rounded-lg px-3 py-2 text-sm" onClick={() => void saveAndClose()}>
                 Save & close
               </button>
