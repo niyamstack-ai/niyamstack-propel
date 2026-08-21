@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useEffect, useState } from "react";
+import { FormEvent, ReactNode, useState } from "react";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -16,7 +16,11 @@ export function SignupPage() {
 }
 
 export function ForgotPage() {
-  return <AuthGate><ForgotView /></AuthGate>;
+  return (
+    <AuthShell>
+      <ForgotView />
+    </AuthShell>
+  );
 }
 
 function AuthGate({ children }: { children: ReactNode }) {
@@ -314,25 +318,17 @@ function SignupView() {
 
 function ForgotView() {
   const [params] = useSearchParams();
-  const [method, setMethod] = useState<"otp" | "email">("otp");
+  const linkToken = params.get("token") || "";
+  const [method, setMethod] = useState<"otp" | "email">("email");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [token, setToken] = useState("");
   const [sent, setSent] = useState<OtpSent | EmailSent | null>(null);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    const fromLink = params.get("token");
-    if (!fromLink) return;
-    setMethod("email");
-    setToken(fromLink);
-    setSent({ status: "sent" });
-  }, [params]);
 
   async function requestReset(e: FormEvent) {
     e.preventDefault();
@@ -345,7 +341,6 @@ function ForgotView() {
       } else {
         const res = await api<EmailSent>("/api/auth/forgot/email", { method: "POST", body: JSON.stringify({ email }) });
         setSent(res);
-        if (res.resetToken) setToken(res.resetToken);
       }
     } catch (err) {
       setError((err as Error).message);
@@ -363,10 +358,10 @@ function ForgotView() {
     setBusy(true);
     setError(null);
     try {
-      if (method === "otp") {
-        await api("/api/auth/reset/otp", { method: "POST", body: JSON.stringify({ phone, otp, newPassword: password }) });
+      if (linkToken) {
+        await api("/api/auth/reset/email", { method: "POST", body: JSON.stringify({ token: linkToken, newPassword: password }) });
       } else {
-        await api("/api/auth/reset/email", { method: "POST", body: JSON.stringify({ token, newPassword: password }) });
+        await api("/api/auth/reset/otp", { method: "POST", body: JSON.stringify({ phone, otp, newPassword: password }) });
       }
       setDone(true);
     } catch (err) {
@@ -380,10 +375,32 @@ function ForgotView() {
     return (
       <div>
         <h1 className="text-2xl font-bold text-navy">Password updated</h1>
-        <p className="mt-2 text-sm text-slate-500">Sign in with your new password or mobile OTP.</p>
-        <Link className="mt-6 inline-block font-medium text-brand" to="/login">
+        <p className="mt-2 text-sm text-slate-500">Sign in with your new password.</p>
+        <Link className="mt-6 inline-block font-medium text-brand" to="/login?method=email">
           Back to login
         </Link>
+      </div>
+    );
+  }
+
+  if (linkToken) {
+    return (
+      <div>
+        <h1 className="text-2xl font-bold text-navy">Choose a new password</h1>
+        <p className="mt-2 text-sm text-slate-500">This link expires in 30 minutes and can be used once.</p>
+        <form className="mt-6 space-y-3" onSubmit={savePassword}>
+          <Field label="New password" value={password} onChange={setPassword} type="password" />
+          <Field label="Confirm password" value={confirm} onChange={setConfirm} type="password" />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
+            {busy ? "Saving…" : "Update password"}
+          </button>
+        </form>
+        <p className="mt-6 text-center text-sm">
+          <Link className="text-brand" to="/login?method=email">
+            Back to login
+          </Link>
+        </p>
       </div>
     );
   }
@@ -391,16 +408,23 @@ function ForgotView() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-navy">Forgot password</h1>
-      <p className="mt-2 text-sm text-slate-500">Reset with mobile OTP or email.</p>
+      <p className="mt-2 text-sm text-slate-500">Reset with email or mobile OTP.</p>
       <div className="mt-4 flex gap-2">
-        <button type="button" className={`rounded-full px-3 py-1 text-sm ${method === "otp" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => { setMethod("otp"); setSent(null); }}>
-          Mobile OTP
-        </button>
         <button type="button" className={`rounded-full px-3 py-1 text-sm ${method === "email" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => { setMethod("email"); setSent(null); }}>
           Email
         </button>
+        <button type="button" className={`rounded-full px-3 py-1 text-sm ${method === "otp" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => { setMethod("otp"); setSent(null); }}>
+          Mobile OTP
+        </button>
       </div>
-      {!sent ? (
+      {method === "email" && sent ? (
+        <div className="mt-6">
+          <p className="text-sm text-slate-600">If that email is on an account, we sent a reset link. Open the email and click the link — do not type anything here.</p>
+          <button type="button" className="mt-4 text-sm font-medium text-brand" onClick={() => setSent(null)}>
+            Use a different email
+          </button>
+        </div>
+      ) : !sent ? (
         <form className="mt-6" onSubmit={requestReset}>
           {method === "otp" ? (
             <label className="block text-sm font-medium text-navy">
@@ -420,19 +444,8 @@ function ForgotView() {
         </form>
       ) : (
         <form className="mt-6 space-y-3" onSubmit={savePassword}>
-          {method === "otp" && (
-            <>
-              {"devOtp" in sent && sent.devOtp && <p className="text-xs text-slate-400">Dev OTP: {sent.devOtp}</p>}
-              <Field label="OTP" value={otp} onChange={setOtp} />
-            </>
-          )}
-          {method === "email" && (
-            <>
-              <p className="text-sm text-slate-500">Check your email for the reset link.</p>
-              {"resetToken" in sent && sent.resetToken && <p className="text-xs text-slate-400">Dev token filled below.</p>}
-              <Field label="Reset token" value={token} onChange={setToken} />
-            </>
-          )}
+          {"devOtp" in sent && sent.devOtp && <p className="text-xs text-slate-400">Dev OTP: {sent.devOtp}</p>}
+          <Field label="OTP" value={otp} onChange={setOtp} />
           <Field label="New password" value={password} onChange={setPassword} type="password" />
           <Field label="Confirm password" value={confirm} onChange={setConfirm} type="password" />
           {error && <p className="text-sm text-red-600">{error}</p>}
@@ -442,7 +455,7 @@ function ForgotView() {
         </form>
       )}
       <p className="mt-6 text-center text-sm">
-        <Link className="text-brand" to="/login">
+        <Link className="text-brand" to="/login?method=email">
           Back to login
         </Link>
       </p>
