@@ -418,8 +418,11 @@ function ForgotView() {
         </button>
       </div>
       {method === "email" && sent ? (
-        <div className="mt-6">
-          <p className="text-sm text-slate-600">If that email is on an account, we sent a reset link. Open the email and click the link — do not type anything here.</p>
+        <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-5">
+          <h2 className="text-lg font-bold text-navy">Email sent</h2>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+            Check your inbox for a message from Niyamstack. Click <span className="font-semibold">Reset password</span> in that email. The button expires in 30 minutes.
+          </p>
           <button type="button" className="mt-4 text-sm font-medium text-brand" onClick={() => setSent(null)}>
             Use a different email
           </button>
