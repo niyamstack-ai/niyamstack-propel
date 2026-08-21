@@ -47,14 +47,15 @@ export function CourseWorkspacePage() {
     );
   }
 
+  const selected = course;
   const student = user?.role === "STUDENT";
-  const draft = course.published === false;
+  const draft = selected.published === false;
 
   async function publish() {
     setError(null);
     setBusy(true);
     try {
-      await updateRecord(`/api/courses/${course.id}`, { ...course, published: true });
+      await updateRecord(`/api/courses/${selected.id}`, { ...selected, published: true });
       courses.reload();
     } catch (e) {
       setError((e as Error).message);
@@ -68,7 +69,7 @@ export function CourseWorkspacePage() {
     setError(null);
     setBusy(true);
     try {
-      await deleteRecord(`/api/courses/${course.id}`);
+      await deleteRecord(`/api/courses/${selected.id}`);
       navigate("/courses");
     } catch (e) {
       setError((e as Error).message);

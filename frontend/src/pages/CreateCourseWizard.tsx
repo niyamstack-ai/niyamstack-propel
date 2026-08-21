@@ -175,7 +175,7 @@ export function CreateCourseWizard() {
     }
   }
 
-  const live = Boolean(draft) && draft.published !== false;
+  const live = draft !== null && draft.published !== false;
 
   async function persist(published = false) {
     const body = payload(published);
