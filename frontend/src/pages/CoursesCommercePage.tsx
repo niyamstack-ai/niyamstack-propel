@@ -90,8 +90,8 @@ function formatFees(c: Course) {
 
 function createdByLine(role?: string) {
   if (role === "STUDENT") return "Purchased by you";
-  if (role === "FACULTY") return "Created by: You (Faculty)";
-  return "Created by: You (Owner)";
+  if (role === "FACULTY") return "You (faculty)";
+  return "";
 }
 
 function courseName(c: { name?: string }) {
@@ -169,6 +169,9 @@ function OwnerCourses() {
   const [couponType, setCouponType] = useState("PERCENT");
   const [couponValue, setCouponValue] = useState("10");
   const [couponCourse, setCouponCourse] = useState("");
+  const [couponStart, setCouponStart] = useState("");
+  const [couponEnd, setCouponEnd] = useState("");
+  const [couponMax, setCouponMax] = useState("");
 
   const [addCourse, setAddCourse] = useState("");
   const [addStudent, setAddStudent] = useState("");
@@ -290,12 +293,18 @@ function OwnerCourses() {
         courseId: couponCourse || null,
         live: true,
         redeemedCount: 0,
+        startsAt: couponStart ? new Date(couponStart).toISOString() : null,
+        endsAt: couponEnd ? new Date(couponEnd).toISOString() : null,
+        maxRedemptions: couponMax ? Number(couponMax) : null,
       });
       setCouponCode("");
       setCouponName("");
       setCouponValue("10");
       setCouponType("PERCENT");
       setCouponCourse("");
+      setCouponStart("");
+      setCouponEnd("");
+      setCouponMax("");
       coupons.reload();
     } catch (e) {
       setError((e as Error).message);
@@ -390,6 +399,9 @@ function OwnerCourses() {
                 onChange={setCouponCourse}
                 options={(courses.data ?? []).map((c) => ({ value: c.id, label: courseName(c) }))}
               />
+              <Field label="Starts" value={couponStart} onChange={setCouponStart} type="date" />
+              <Field label="Ends" value={couponEnd} onChange={setCouponEnd} type="date" />
+              <Field label="Max uses" value={couponMax} onChange={setCouponMax} placeholder="No limit" />
             </FormGrid>
             <div className="mt-3">
               <PrimaryButton disabled={!couponCode.trim()} onClick={saveCoupon}>
@@ -708,7 +720,7 @@ function CourseCard({
               {c.published === false ? "Publish" : "Unpublish"}
             </button>
             <button type="button" className="text-xs text-brand hover:underline" onClick={() => onFeature(c)}>
-              {c.featured ? "Unfeature" : "Mark featured"}
+              {c.featured ? "Remove from featured" : "Show as featured"}
             </button>
             <Link className="text-xs text-brand hover:underline" to={`/courses/${c.id}/edit`}>
               Edit

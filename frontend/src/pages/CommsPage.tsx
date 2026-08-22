@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { api } from "../api";
 import { createRecord } from "../ops";
 import { useAuth } from "../auth";
+import { prettyLabel } from "../labels";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
 
 export function CommsPage() {
@@ -19,7 +21,7 @@ export function CommsPage() {
     setError(null);
     try {
       await createRecord("/api/announcements", { title, body });
-      await createRecord("/api/notifications", { channel, audience: "STUDENTS", title, body, status: "QUEUED" });
+      await api("/api/actions/notices/send", { method: "POST", body: JSON.stringify({ channel, title, body }) });
       setTitle("");
       setBody("");
       anns.reload();
@@ -32,6 +34,7 @@ export function CommsPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-navy">Communication</h1>
+      <p className="text-sm text-slate-500">WhatsApp and email go out when those keys are saved in Integrations. In-app notices stay on the student website.</p>
       {canSend && (
       <Card title="Send announcement">
         <FormGrid>
@@ -42,9 +45,9 @@ export function CommsPage() {
             value={channel}
             onChange={setChannel}
             options={[
-              { value: "IN_APP", label: "In-app" },
-              { value: "EMAIL", label: "Email (demo unless mail is live)" },
-              { value: "WHATSAPP", label: "WhatsApp (demo unless Cloud API is live)" },
+              { value: "IN_APP", label: "On the student website" },
+              { value: "EMAIL", label: "Email (sends when mail is connected)" },
+              { value: "WHATSAPP", label: "WhatsApp (sends when WhatsApp is connected)" },
             ]}
           />
           <div className="flex items-end">
@@ -59,7 +62,7 @@ export function CommsPage() {
       <Card title="Notifications">
         <Table
           columns={["Channel", "Title", "Status"]}
-          rows={(notes.data ?? []).map((n) => [n.channel, n.title, n.status])}
+          rows={(notes.data ?? []).map((n) => [prettyLabel(n.channel), n.title, prettyLabel(n.status)])}
         />
       </Card>
       <Card title="Announcements">

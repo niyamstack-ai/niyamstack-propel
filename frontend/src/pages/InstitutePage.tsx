@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { createRecord, updateRecord } from "../ops";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
+import { prettyLabel } from "../labels";
+import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, formatInr, useApi } from "../ui";
 
 type Org = {
   name: string;
@@ -23,16 +25,8 @@ export function InstitutePage() {
   const centers = useApi<Center[]>("/api/centers");
   const courses = useApi<Course[]>("/api/courses");
   const batches = useApi<Batch[]>("/api/batches");
-  const rooms = useApi<{ name: string; type: string }[]>("/api/classrooms");
+  const rooms = useApi<{ id: string; name: string; type: string }[]>("/api/classrooms");
   const years = useApi<{ id: string; name: string }[]>("/api/academic-years");
-  const integrations = useApi<{
-    payments: { provider: string; live: boolean };
-    whatsapp: { provider: string; live: boolean };
-    meetings: { provider: string; live: boolean };
-    storage: { provider: string; live: boolean };
-    mail: { provider: string; live: boolean };
-    note: string;
-  }>("/api/actions/integrations");
 
   const [error, setError] = useState<string | null>(null);
   const [oName, setOName] = useState("");
@@ -48,15 +42,18 @@ export function InstitutePage() {
   const [cCode, setCCode] = useState("");
   const [cCity, setCCity] = useState("");
 
-  const [coCode, setCoCode] = useState("");
-  const [coName, setCoName] = useState("");
-  const [coFees, setCoFees] = useState("50000");
-  const [coMonths, setCoMonths] = useState("6");
-
   const [bName, setBName] = useState("");
   const [bCourse, setBCourse] = useState("");
   const [bCenter, setBCenter] = useState("");
   const [bCap, setBCap] = useState("40");
+
+  const [roomName, setRoomName] = useState("");
+  const [roomType, setRoomType] = useState("Classroom");
+  const [roomCenter, setRoomCenter] = useState("");
+
+  useEffect(() => {
+    fillOrg();
+  }, [org.data]);
 
   function fillOrg() {
     if (!org.data) return;
@@ -103,24 +100,6 @@ export function InstitutePage() {
     }
   }
 
-  async function addCourse() {
-    setError(null);
-    try {
-      await createRecord("/api/courses", {
-        code: coCode,
-        name: coName,
-        fees: Number(coFees),
-        durationMonths: Number(coMonths),
-        active: true,
-      });
-      setCoCode("");
-      setCoName("");
-      courses.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-
   async function addBatch() {
     setError(null);
     try {
@@ -143,10 +122,10 @@ export function InstitutePage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-navy">Institute setup</h1>
       <ErrorText error={error} />
-      <Card title="Organization profile" action={<PrimaryButton onClick={fillOrg}>Load current</PrimaryButton>}>
+      <Card title="Organization profile">
         {org.data && (
           <p className="mb-3 text-sm text-slate-500">
-            {org.data.name} · GSTIN {org.data.gstin || "—"} · package {org.data.packageTier}
+            {org.data.name} · GSTIN {org.data.gstin || "—"} · plan {prettyLabel(org.data.packageTier)}
           </p>
         )}
         <FormGrid>
@@ -155,7 +134,7 @@ export function InstitutePage() {
           <Field label="GSTIN" value={gstin} onChange={setGstin} />
           <Field label="Email" value={oEmail} onChange={setOEmail} />
           <Field label="Phone" value={oPhone} onChange={setOPhone} />
-          <Field label="Logo URL" value={logoUrl} onChange={setLogoUrl} />
+          <FileUpload label="Logo" value={logoUrl} accept="image/*" onChange={setLogoUrl} />
           <Field label="Brand color" value={brandPrimary} onChange={setBrandPrimary} />
           <Field label="Navy / secondary" value={brandSecondary} onChange={setBrandSecondary} />
           <div className="flex items-end">
@@ -178,22 +157,17 @@ export function InstitutePage() {
           <Table columns={["Name", "Code", "City"]} rows={(centers.data ?? []).map((c) => [c.name, c.code, c.city])} />
         </div>
       </Card>
-      <Card title="Add course">
-        <FormGrid>
-          <Field label="Code" value={coCode} onChange={setCoCode} />
-          <Field label="Name" value={coName} onChange={setCoName} />
-          <Field label="Fees (₹)" value={coFees} onChange={setCoFees} />
-          <Field label="Duration (months)" value={coMonths} onChange={setCoMonths} />
-        </FormGrid>
+      <Card title="Courses">
+        <p className="text-sm text-slate-500">Use the course wizard for price, validity, and content. This table is the current catalog.</p>
         <div className="mt-3">
-          <PrimaryButton disabled={!coCode || !coName} onClick={addCourse}>
-            Save course
-          </PrimaryButton>
+          <Link to="/courses/new">
+            <PrimaryButton>Create course</PrimaryButton>
+          </Link>
         </div>
         <div className="mt-4">
           <Table
             columns={["Code", "Name", "Fees"]}
-            rows={(courses.data ?? []).map((c) => [c.code, c.name, `₹${c.fees}`])}
+            rows={(courses.data ?? []).map((c) => [c.code, c.name, formatInr(c.fees)])}
           />
         </div>
       </Card>
@@ -212,30 +186,46 @@ export function InstitutePage() {
         <ul className="mt-4 text-sm">
           {(batches.data ?? []).map((b) => (
             <li key={b.id}>
-              {b.name} — {b.status} ({b.capacity})
+              {b.name} — {prettyLabel(b.status)} ({b.capacity})
             </li>
           ))}
         </ul>
       </Card>
       <Card title="Classrooms">
-        <ul className="text-sm">
-          {(rooms.data ?? []).map((r, i) => (
-            <li key={i}>
+        <FormGrid>
+          <Field label="Room name" value={roomName} onChange={setRoomName} placeholder="Room 1" />
+          <Field label="Type" value={roomType} onChange={setRoomType} placeholder="Classroom / Lab" />
+          <Select label="Center" value={roomCenter} onChange={setRoomCenter} options={(centers.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
+          <div className="flex items-end">
+            <PrimaryButton
+              disabled={!roomName}
+              onClick={async () => {
+                setError(null);
+                try {
+                  await createRecord("/api/classrooms", { name: roomName, type: roomType, centerId: roomCenter || null, capacity: 40 });
+                  setRoomName("");
+                  rooms.reload();
+                } catch (e) {
+                  setError((e as Error).message);
+                }
+              }}
+            >
+              Save classroom
+            </PrimaryButton>
+          </div>
+        </FormGrid>
+        <ul className="mt-4 text-sm">
+          {(rooms.data ?? []).map((r) => (
+            <li key={r.id}>
               {r.name} ({r.type})
             </li>
           ))}
         </ul>
       </Card>
-      <Card title="Integrations (live only with credentials)">
-        {integrations.data && (
-          <ul className="text-sm">
-            <li>Payments: {integrations.data.payments.provider} — {integrations.data.payments.live ? "live" : "demo adapter"}</li>
-            <li>WhatsApp: {integrations.data.whatsapp.provider} — {integrations.data.whatsapp.live ? "live" : "demo adapter"}</li>
-            <li>Meetings: {integrations.data.meetings.provider} — {integrations.data.meetings.live ? "live" : "demo adapter"}</li>
-            <li>Storage: {integrations.data.storage.provider}</li>
-            <li className="mt-2 text-slate-500">{integrations.data.note}</li>
-          </ul>
-        )}
+      <Card title="How payments and WhatsApp run">
+        <p className="text-sm text-slate-500">
+          Live Razorpay, WhatsApp, and email are switched on by Niyamstack with keys — see Settings → Integrations. This page is for institute profile, centres, and rooms.
+        </p>
       </Card>
     </div>
   );

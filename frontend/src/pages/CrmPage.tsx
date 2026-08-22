@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { createRecord } from "../ops";
+import { prettyLabel } from "../labels";
 import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, useApi } from "../ui";
 
 type Inquiry = {
@@ -14,6 +15,8 @@ type Inquiry = {
 
 export function CrmPage() {
   const inquiries = useApi<Inquiry[]>("/api/inquiries");
+  const courses = useApi<{ id: string; name: string }[]>("/api/courses");
+  const batches = useApi<{ id: string; name: string }[]>("/api/batches");
   const notes = useApi<{ note: string; stage: string }[]>("/api/counseling-notes");
   const forms = useApi<{ applicantName: string; status: string }[]>("/api/admission-forms");
   const [name, setName] = useState("");
@@ -22,6 +25,9 @@ export function CrmPage() {
   const [source, setSource] = useState("WALKIN");
   const [noteInq, setNoteInq] = useState("");
   const [note, setNote] = useState("");
+  const [convertId, setConvertId] = useState("");
+  const [convertCourse, setConvertCourse] = useState("");
+  const [convertBatch, setConvertBatch] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   async function capture() {
@@ -30,7 +36,7 @@ export function CrmPage() {
       await createRecord("/api/inquiries", {
         fullName: name,
         phone,
-        email: email || `${name.replaceAll(" ", ".").toLowerCase()}@lead.local`,
+        email: email || undefined,
         source,
         stage: "NEW",
       });
@@ -43,10 +49,16 @@ export function CrmPage() {
     }
   }
 
-  async function convert(id: string) {
+  async function convert() {
+    if (!convertId) return;
+    if (!window.confirm("Enrol this lead as a student?")) return;
     setError(null);
     try {
-      await api(`/api/actions/inquiries/${id}/convert`, { method: "POST", body: JSON.stringify({}) });
+      await api(`/api/actions/inquiries/${convertId}/convert`, {
+        method: "POST",
+        body: JSON.stringify({ courseId: convertCourse || undefined, batchId: convertBatch || undefined }),
+      });
+      setConvertId("");
       inquiries.reload();
     } catch (e) {
       setError((e as Error).message);
@@ -67,8 +79,8 @@ export function CrmPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-navy">CRM & admissions</h1>
-        <p className="text-sm text-slate-500">Capture leads, counsel, and convert to enrolled students.</p>
+        <h1 className="text-2xl font-bold text-navy">Admissions</h1>
+        <p className="text-sm text-slate-500">Walk-ins and website leads. Enrol them as students when they join.</p>
       </div>
       <Card title="Capture inquiry">
         <FormGrid>
@@ -88,27 +100,43 @@ export function CrmPage() {
           />
         </FormGrid>
         <div className="mt-3">
-          <PrimaryButton disabled={!name} onClick={capture}>
+          <PrimaryButton disabled={!name || !phone} onClick={capture}>
             Save lead
           </PrimaryButton>
         </div>
         <ErrorText error={error} />
       </Card>
-      <Card title="Counseling pipeline">
+      <Card title="Leads">
         <Table
-          columns={["Name", "Phone", "Source", "Stage", "Action"]}
+          empty="No leads yet. Add a walk-in above."
+          columns={["Name", "Phone", "Came from", "Status", ""]}
           rows={(inquiries.data ?? []).map((i) => [
             i.fullName,
             i.phone,
-            i.source,
-            i.stage,
+            prettyLabel(i.source),
+            prettyLabel(i.stage),
             i.stage === "CONVERTED" ? (
               "Enrolled"
             ) : (
-              <LinkButton onClick={() => convert(i.id)}>Convert to student</LinkButton>
+              <LinkButton onClick={() => setConvertId(i.id)}>Enrol as student</LinkButton>
             ),
           ])}
         />
+        {convertId && (
+          <div className="mt-4 rounded-xl bg-mist p-3">
+            <p className="mb-2 text-sm font-medium text-navy">Choose course and batch, then enrol</p>
+            <FormGrid>
+              <Select label="Course" value={convertCourse} onChange={setConvertCourse} options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
+              <Select label="Batch" value={convertBatch} onChange={setConvertBatch} options={(batches.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
+              <div className="flex items-end gap-2">
+                <PrimaryButton onClick={() => void convert()}>Enrol</PrimaryButton>
+                <button type="button" className="text-sm text-slate-500" onClick={() => setConvertId("")}>
+                  Cancel
+                </button>
+              </div>
+            </FormGrid>
+          </div>
+        )}
       </Card>
       <Card title="Add counseling note">
         <FormGrid>
@@ -131,7 +159,7 @@ export function CrmPage() {
           <ul className="space-y-2 text-sm">
             {(notes.data ?? []).map((n, i) => (
               <li key={i}>
-                <span className="font-medium">{n.stage}: </span>
+                <span className="font-medium">{prettyLabel(n.stage)}: </span>
                 {n.note}
               </li>
             ))}
@@ -141,7 +169,7 @@ export function CrmPage() {
           <ul className="space-y-2 text-sm">
             {(forms.data ?? []).map((f, i) => (
               <li key={i}>
-                {f.applicantName} — {f.status}
+                {f.applicantName} — {prettyLabel(f.status)}
               </li>
             ))}
           </ul>

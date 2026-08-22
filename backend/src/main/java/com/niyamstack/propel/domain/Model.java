@@ -121,6 +121,12 @@ public final class Model {
         private BigDecimal fees;
         private String eligibility;
         private String outcomes;
+        @Column(length = 1000)
+        private String bundleCsv;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal feesAlt;
+        private Integer validityAltValue;
+        private String validityAltUnit = "MONTH";
         private boolean active = true;
     }
 
@@ -426,6 +432,7 @@ public final class Model {
         private BigDecimal gstRate;
         private Integer installmentCount;
         private String hsn;
+        private String sacCode;
     }
 
     @Entity(name = "Invoice") @Table(name = "invoices") @Getter @Setter
@@ -444,6 +451,12 @@ public final class Model {
         private BigDecimal igst = BigDecimal.ZERO;
         private BigDecimal paidAmount = BigDecimal.ZERO;
         private UUID installmentId;
+        private UUID courseId;
+        private String buyerName;
+        private String buyerGstin;
+        private String placeOfSupply;
+        private String sacCode;
+        private String seriesPrefix;
     }
 
     @Entity(name = "Payment") @Table(name = "payments") @Getter @Setter
@@ -466,6 +479,8 @@ public final class Model {
         private UUID requestedBy;
         private UUID approvedBy;
         private Instant approvedAt;
+        private String creditNoteNo;
+        private String gatewayRefundRef;
     }
 
     @Entity(name = "Notification") @Table(name = "notifications") @Getter @Setter
@@ -854,6 +869,12 @@ public final class Model {
         private String status = "NOT_CONNECTED";
         @Column(columnDefinition = "TEXT")
         private String configJson;
+    }
+
+    @Entity(name = "SiteHit") @Table(name = "site_hits") @Getter @Setter
+    public static class SiteHit extends TenantEntity {
+        private String kind = "SESSION";
+        private String path;
     }
 
     @Entity(name = "PlatformUserRole") @Table(name = "platform_user_roles") @Getter @Setter

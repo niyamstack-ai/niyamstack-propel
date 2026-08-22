@@ -29,7 +29,7 @@ export function OneToOnePage() {
         mentorName: mentor,
         durationMinutes: Number(mins),
         price: Number(price),
-        meetingUrl: url,
+        meetingUrl: url.trim() || `https://meet.jit.si/Niyamstack${title.replace(/[^A-Za-z0-9]/g, "")}${Date.now().toString().slice(-4)}`,
         status: "OPEN",
       });
       setTitle("");
@@ -45,7 +45,7 @@ export function OneToOnePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-navy">1:1 Sessions</h1>
-        <p className="text-sm text-slate-500">Monetise your time and expertise with personalised consultations.</p>
+        <p className="text-sm text-slate-500">Paid 1:1 sessions. Leave the meeting URL blank to get a Jitsi room, or paste Zoom / Meet.</p>
       </div>
       <ErrorText error={error} />
       <Card title="Create a 1:1 offering">
@@ -54,7 +54,7 @@ export function OneToOnePage() {
           <Field label="Mentor name" value={mentor} onChange={setMentor} />
           <Field label="Duration (minutes)" value={mins} onChange={setMins} />
           <Field label="Price (₹)" value={price} onChange={setPrice} />
-          <Field label="Meeting URL" value={url} onChange={setUrl} placeholder="https://meet.google.com/..." />
+          <Field label="Meeting URL (optional)" value={url} onChange={setUrl} placeholder="Leave blank for a Jitsi room, or paste Zoom / Meet" />
         </FormGrid>
         <div className="mt-3">
           <PrimaryButton disabled={!title} onClick={create}>

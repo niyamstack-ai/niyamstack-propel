@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
-import { Card, PrimaryButton, useApi } from "../ui";
+import { Card, PrimaryButton, formatInr, formatWhen, useApi } from "../ui";
 
 type Dash = {
   inquiries: number;
@@ -55,7 +55,7 @@ function StudentHome() {
           <ul className="text-sm">
             {due.map((i) => (
               <li key={i.id}>
-                {i.invoiceNo} — ₹{i.amount}
+                {i.invoiceNo} — {formatInr(i.amount)}
               </li>
             ))}
           </ul>
@@ -146,7 +146,6 @@ function PlacementHome({ recruiter }: { recruiter: boolean }) {
 }
 
 function OwnerHome() {
-  const { user } = useAuth();
   const dash = useApi<Dash & {
     coursesPublished?: number;
     landingPages?: number;
@@ -165,49 +164,46 @@ function OwnerHome() {
   const kpis = [
     ["Inquiries", data.inquiries, "/crm"],
     ["Students", data.students, "/people/students"],
-    ["Fee due", `₹${data.due}`, "/fees"],
-    ["Collected", `₹${data.collected}`, "/fees"],
+    ["Fee due", formatInr(data.due), "/fees"],
+    ["Collected", formatInr(data.collected), "/fees"],
     ["Applications", data.applications, "/placement"],
     ["Offers", data.offers, "/placement"],
   ] as const;
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-navy">Welcome to your Dashboard</h1>
-        <p className="text-sm text-slate-500">Grow with website, courses, and campaigns — run admissions, fees, and placement.</p>
+        <h1 className="text-2xl font-bold text-navy">Dashboard</h1>
+        <p className="text-sm text-slate-500">Your institute website, courses, admissions, and fees — in one place.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <HomeLink to={user?.orgSlug ? `/s/${user.orgSlug}` : "/website"} title="Student website" text="Catalog, purchase, login, study" />
-        <HomeLink to={user?.orgSlug ? `/s/${user.orgSlug}/app` : "/your-app"} title="Student app" text="Same courses on Android" />
+        <HomeLink to="/website" title="Student website" text="Build pages, then connect your domain. Students log in there." />
+        <HomeLink to="/your-app" title="Student app" text="Home-screen shortcut to the same website. Not a Play Store app." />
       </div>
       <div>
-        <h2 className="mb-3 text-lg font-semibold text-navy">Our Offerings</h2>
+        <h2 className="mb-3 text-lg font-semibold text-navy">Grow the institute</h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <HomeLink to="/courses" title="Course" text={`${data.coursesPublished ?? 0} course published — create and sell courses`} />
-          <HomeLink to="/landing-pages" title="Landing Page" text={`${data.landingPages ?? 0} pages — boost conversions`} />
-          <HomeLink to="/content-hub" title="Test Portal" text={`${data.testsCreated ?? 0} tests created`} />
-          <HomeLink to="/campaigns" title="Campaign" text={`${data.campaigns ?? 0} campaigns — boost engagement`} />
+          <HomeLink to="/courses" title="Courses" text={`${data.coursesPublished ?? 0} published — create and sell`} />
+          <HomeLink to="/landing-pages" title="Landing pages" text={`${data.landingPages ?? 0} pages for ads and webinars`} />
+          <HomeLink to="/content-hub" title="Tests" text={`${data.testsCreated ?? 0} tests created`} />
+          <HomeLink to="/campaigns" title="Campaigns" text={`${data.campaigns ?? 0} campaigns`} />
         </div>
       </div>
       <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
-        <Card title="Analytics · last period">
+        <Card title="Money this month">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <MiniStat label="Website sessions" value={data.websiteSessions ?? 0} />
-            <MiniStat label="Buy Now Clicks" value={data.buyNowClicks ?? 0} />
-            <MiniStat label="Transactions" value={data.transactions ?? 0} />
-            <MiniStat label="Revenue" value={`₹${data.revenue ?? data.collected}`} />
+            <MiniStat label="Website visits" value={data.websiteSessions ?? 0} />
+            <MiniStat label="Buy clicks" value={data.buyNowClicks ?? 0} />
+            <MiniStat label="Payments" value={data.transactions ?? 0} />
+            <MiniStat label="Revenue" value={formatInr(data.revenue ?? data.collected)} />
           </div>
+          <p className="mt-2 text-xs text-slate-400">Visits count when someone opens your public site. Payments come from fees and course checkout.</p>
           <Link to="/analytics" className="mt-3 inline-block text-sm text-brand hover:underline">
             View Details
           </Link>
         </Card>
         <div className="space-y-3">
-          <Card title="Upcoming Classes">
-            <Link to="/courses">
-              <PrimaryButton>+ Create Class</PrimaryButton>
-            </Link>
-          </Card>
-          <Card title="Additional Offerings">
+          <UpcomingClasses />
+          <Card title="Offers">
             <ul className="space-y-2 text-sm">
               <li className="flex justify-between">
                 <Link to="/your-app" className="hover:underline">
@@ -248,6 +244,41 @@ function OwnerHome() {
         ))}
       </div>
     </div>
+  );
+}
+
+function UpcomingClasses() {
+  const live = useApi<{ id: string; title: string; startsAt?: string; meetingUrl?: string; provider?: string }[]>("/api/live-sessions");
+  const upcoming = (live.data ?? [])
+    .filter((row) => !row.startsAt || new Date(row.startsAt).getTime() > Date.now() - 60 * 60 * 1000)
+    .sort((a, b) => new Date(a.startsAt || 0).getTime() - new Date(b.startsAt || 0).getTime())
+    .slice(0, 3);
+  return (
+    <Card title="Classes">
+      {upcoming.length === 0 ? (
+        <p className="mb-3 text-sm text-slate-500">No upcoming live classes scheduled.</p>
+      ) : (
+        <ul className="mb-3 space-y-2 text-sm">
+          {upcoming.map((row) => (
+            <li key={row.id}>
+              <p className="font-medium text-navy">{row.title}</p>
+              <p className="text-xs text-slate-500">
+                {row.startsAt ? formatWhen(row.startsAt) : "Time not set"}
+                {row.provider ? ` · ${row.provider}` : ""}
+              </p>
+              {row.meetingUrl && (
+                <a className="text-xs text-brand hover:underline" href={row.meetingUrl} target="_blank" rel="noreferrer">
+                  Join room
+                </a>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <Link to="/lms">
+        <PrimaryButton>Open live classes</PrimaryButton>
+      </Link>
+    </Card>
   );
 }
 

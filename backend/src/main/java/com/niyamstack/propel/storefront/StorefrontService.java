@@ -20,8 +20,11 @@ import com.niyamstack.propel.domain.Model.Invoice;
 import com.niyamstack.propel.domain.Model.Organization;
 import com.niyamstack.propel.domain.Model.Payment;
 import com.niyamstack.propel.domain.Model.Receipt;
+import com.niyamstack.propel.domain.Model.SiteHit;
 import com.niyamstack.propel.domain.Model.Student;
 import com.niyamstack.propel.domain.Model.TimetableSlot;
+import com.niyamstack.propel.fees.FeeService;
+import com.niyamstack.propel.integration.EventHook;
 import com.niyamstack.propel.integration.PaymentGateway;
 import com.niyamstack.propel.security.Phones;
 import com.niyamstack.propel.security.Roles;
@@ -51,12 +54,17 @@ public class StorefrontService {
     private final PaymentGateway payments;
     private final PasswordEncoder encoder;
     private final SessionService sessions;
+    private final EventHook hooks;
+    private final FeeService fees;
 
-    public StorefrontService(Store store, PaymentGateway payments, PasswordEncoder encoder, SessionService sessions) {
+    public StorefrontService(Store store, PaymentGateway payments, PasswordEncoder encoder, SessionService sessions,
+                             EventHook hooks, FeeService fees) {
         this.store = store;
         this.payments = payments;
         this.encoder = encoder;
         this.sessions = sessions;
+        this.hooks = hooks;
+        this.fees = fees;
     }
 
     public Organization liveOrg(String slug) {
@@ -80,7 +88,39 @@ public class StorefrontService {
         out.put("logoUrl", org.getLogoUrl());
         out.put("brandPrimary", org.getBrandPrimary() == null ? "#0078f0" : org.getBrandPrimary());
         out.put("brandSecondary", org.getBrandSecondary() == null ? "#071a33" : org.getBrandSecondary());
+        out.put("customDomain", org.getCustomDomain());
+        out.put("websiteUrl", org.getWebsiteUrl());
+        out.put("phone", org.getPhone());
+        out.put("email", org.getEmail());
+        out.putAll(hooks.tracking(org.getId()));
+        try {
+            out.put("pages", publicPages(org));
+        } catch (Exception ignored) {
+            out.put("pages", List.of());
+        }
         return out;
+    }
+
+    public List<Map<String, Object>> publicPages(Organization org) {
+        return store.list(com.niyamstack.propel.domain.Model.WebsitePage.class, org.getId()).stream()
+                .filter(p -> !p.isHidden())
+                .sorted(Comparator.comparing(p -> p.getSortOrder() == null ? 0 : p.getSortOrder()))
+                .map(p -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("title", p.getTitle());
+                    row.put("slug", p.getSlug());
+                    row.put("pageType", p.getPageType());
+                    row.put("body", p.getBody());
+                    return row;
+                })
+                .toList();
+    }
+
+    public Map<String, Object> publicPage(Organization org, String pageSlug) {
+        return publicPages(org).stream()
+                .filter(p -> pageSlug.equalsIgnoreCase(String.valueOf(p.get("slug"))))
+                .findFirst()
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Page not found"));
     }
 
     public List<Map<String, Object>> catalog(Organization org) {
@@ -99,7 +139,7 @@ public class StorefrontService {
     }
 
     @Transactional
-    public Map<String, Object> purchase(String slug, String fullName, String email, String phoneRaw, UUID courseId, String couponCode) {
+    public Map<String, Object> purchase(String slug, String fullName, String email, String phoneRaw, UUID courseId, String couponCode, String validityOption) {
         if (fullName == null || fullName.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Name is required");
         }
@@ -164,51 +204,142 @@ public class StorefrontService {
             return session;
         }
 
-        BigDecimal price = payable(course);
+        BigDecimal price = payable(course, validityOption);
         Coupon applied = couponFor(org.getId(), course.getId(), couponCode);
         if (applied != null) {
             price = discounted(price, applied);
-            applied.setRedeemedCount((applied.getRedeemedCount() == null ? 0 : applied.getRedeemedCount()) + 1);
-            store.save(applied);
         }
         Invoice invoice = new Invoice();
         invoice.setOrganizationId(org.getId());
         invoice.setStudentId(student.getId());
+        invoice.setCourseId(course.getId());
         invoice.setInvoiceNo("WEB-" + System.currentTimeMillis() % 1_000_000);
         invoice.setAmount(price);
         invoice.setPaidAmount(BigDecimal.ZERO);
         invoice.setStatus(price.signum() == 0 ? "PAID" : "DUE");
         invoice.setDueDate(LocalDate.now());
-        invoice = store.save(invoice);
+        invoice.setGstRate(new BigDecimal("18"));
+        invoice.setSacCode("999293");
+        invoice.setHsn("9992");
+        invoice.setBuyerName(student.getFullName());
+        invoice = fees.finalizeInvoice(invoice);
 
-        if (price.signum() > 0) {
-            PaymentGateway.ChargeResult charge = payments.charge(org.getId(), price, "UPI", invoice.getInvoiceNo());
-            if (!charge.success()) {
-                throw new ApiException(HttpStatus.BAD_GATEWAY, charge.message());
-            }
-            Payment payment = new Payment();
-            payment.setOrganizationId(org.getId());
-            payment.setInvoiceId(invoice.getId());
-            payment.setAmount(price);
-            payment.setMethod("UPI");
-            payment.setGatewayRef(charge.gatewayRef());
-            payment.setReceivedAt(Instant.now());
-            payment.setStatus("CAPTURED");
-            payment.setReceiptNo("RCPT-" + Instant.now().toEpochMilli());
-            payment = store.save(payment);
-            invoice.setPaidAmount(price);
-            invoice.setStatus("PAID");
-            store.save(invoice);
-            Receipt receipt = new Receipt();
-            receipt.setOrganizationId(org.getId());
-            receipt.setPaymentId(payment.getId());
-            receipt.setInvoiceId(invoice.getId());
-            receipt.setReceiptNo(payment.getReceiptNo());
-            receipt.setAmount(price);
-            receipt.setIssuedAt(Instant.now());
-            store.save(receipt);
+        if (price.signum() == 0) {
+            enroll(org, student, course, invoice, applied);
+            hooks.fire(org.getId(), "course.enrolled", Map.of("courseId", course.getId(), "price", 0));
+            Map<String, Object> session = new LinkedHashMap<>(sessions.issue(user));
+            session.put("alreadyEnrolled", false);
+            session.put("checkout", false);
+            session.put("course", publicCourse(course));
+            return session;
         }
 
+        if (payments.live(org.getId())) {
+            PaymentGateway.ChargeResult order = payments.createOrder(org.getId(), price, invoice.getInvoiceNo(),
+                    Map.of("invoiceId", invoice.getId().toString(), "orgId", org.getId().toString(), "courseId", course.getId().toString()));
+            Payment pending = new Payment();
+            pending.setOrganizationId(org.getId());
+            pending.setInvoiceId(invoice.getId());
+            pending.setAmount(price);
+            pending.setMethod("UPI");
+            pending.setGatewayRef(order.gatewayRef());
+            pending.setReceivedAt(Instant.now());
+            pending.setStatus("PENDING");
+            store.save(pending);
+            if (applied != null) {
+                applied.setRedeemedCount((applied.getRedeemedCount() == null ? 0 : applied.getRedeemedCount()) + 1);
+                store.save(applied);
+            }
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("checkout", true);
+            out.put("keyId", payments.publicKey(org.getId()));
+            out.put("orderId", order.gatewayRef());
+            out.put("amountPaise", price.multiply(BigDecimal.valueOf(100)).longValue());
+            out.put("currency", "INR");
+            out.put("name", org.getName());
+            out.put("invoiceId", invoice.getId());
+            out.put("courseId", course.getId());
+            return out;
+        }
+
+        PaymentGateway.ChargeResult charge = payments.charge(org.getId(), price, "UPI", invoice.getInvoiceNo());
+        if (!charge.success()) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY, charge.message());
+        }
+        Payment payment = new Payment();
+        payment.setOrganizationId(org.getId());
+        payment.setInvoiceId(invoice.getId());
+        payment.setAmount(price);
+        payment.setMethod("UPI");
+        payment.setGatewayRef(charge.gatewayRef());
+        payment.setReceivedAt(Instant.now());
+        payment.setStatus("CAPTURED");
+        payment.setReceiptNo("RCPT-" + Instant.now().toEpochMilli());
+        payment = store.save(payment);
+        invoice.setPaidAmount(price);
+        invoice.setStatus("PAID");
+        store.save(invoice);
+        Receipt receipt = new Receipt();
+        receipt.setOrganizationId(org.getId());
+        receipt.setPaymentId(payment.getId());
+        receipt.setInvoiceId(invoice.getId());
+        receipt.setReceiptNo(payment.getReceiptNo());
+        receipt.setAmount(price);
+        receipt.setIssuedAt(Instant.now());
+        store.save(receipt);
+        if (applied != null) {
+            applied.setRedeemedCount((applied.getRedeemedCount() == null ? 0 : applied.getRedeemedCount()) + 1);
+            store.save(applied);
+        }
+        enroll(org, student, course, invoice, applied);
+        hooks.fire(org.getId(), "course.purchased", Map.of("courseId", course.getId(), "amount", price));
+        Map<String, Object> session = new LinkedHashMap<>(sessions.issue(user));
+        session.put("alreadyEnrolled", false);
+        session.put("checkout", false);
+        session.put("course", publicCourse(course));
+        return session;
+    }
+
+    @Transactional
+    public Map<String, Object> confirmPurchase(String slug, UUID invoiceId, String orderId, String paymentId, String signature) {
+        Organization org = liveOrg(slug);
+        Invoice invoice = store.getOwned(Invoice.class, invoiceId, org.getId());
+        fees.captureVerified(org.getId(), invoice, orderId, paymentId, signature);
+        if (invoice.getCourseId() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "This invoice is not a course purchase");
+        }
+        Student student = store.getOwned(Student.class, invoice.getStudentId(), org.getId());
+        Course course = store.getOwned(Course.class, invoice.getCourseId(), org.getId());
+        enroll(org, student, course, invoice, null);
+        AppUser user = store.get(AppUser.class, student.getUserId());
+        hooks.fire(org.getId(), "course.purchased", Map.of("courseId", course.getId(), "amount", invoice.getAmount()));
+        Map<String, Object> session = new LinkedHashMap<>(sessions.issue(user));
+        session.put("alreadyEnrolled", false);
+        session.put("checkout", false);
+        session.put("course", publicCourse(course));
+        return session;
+    }
+
+    @Transactional
+    public void webhookPaid(UUID orgId, UUID invoiceId, String orderId, String paymentId) {
+        fees.captureFromWebhook(orgId, invoiceId, orderId, paymentId);
+        Invoice invoice = store.getOwned(Invoice.class, invoiceId, orgId);
+        if (invoice.getCourseId() == null) {
+            return;
+        }
+        Student student = store.getOwned(Student.class, invoice.getStudentId(), orgId);
+        Course course = store.getOwned(Course.class, invoice.getCourseId(), orgId);
+        enroll(store.get(Organization.class, orgId), student, course, invoice, null);
+    }
+
+    private void enroll(Organization org, Student student, Course course, Invoice invoice, Coupon applied) {
+        CourseEnrollment existing = store.listBy(CourseEnrollment.class, org.getId(), "studentId", student.getId()).stream()
+                .filter(e -> course.getId().equals(e.getCourseId()) && !"CANCELLED".equals(e.getStatus()))
+                .findFirst()
+                .orElse(null);
+        if (existing != null) {
+            return;
+        }
         CourseEnrollment enrollment = new CourseEnrollment();
         enrollment.setOrganizationId(org.getId());
         enrollment.setStudentId(student.getId());
@@ -218,17 +349,11 @@ public class StorefrontService {
         enrollment.setSource("WEBSITE");
         enrollment.setPurchasedAt(Instant.now());
         store.save(enrollment);
-
         if (student.getCourseId() == null) {
             student.setCourseId(course.getId());
             student.setStatus("ENROLLED");
             store.save(student);
         }
-
-        Map<String, Object> session = new LinkedHashMap<>(sessions.issue(user));
-        session.put("alreadyEnrolled", false);
-        session.put("course", publicCourse(course));
-        return session;
     }
 
     public List<Map<String, Object>> myCourses(UUID orgId, UUID userId) {
@@ -518,7 +643,42 @@ public class StorefrontService {
         out.put("price", payable(course));
         out.put("courseType", course.getCourseType() == null ? "PAID" : course.getCourseType());
         out.put("featured", course.isFeatured());
+        out.put("validityOptions", validityOptions(course));
         return out;
+    }
+
+    private List<Map<String, Object>> validityOptions(Course course) {
+        List<Map<String, Object>> options = new ArrayList<>();
+        Map<String, Object> primary = new LinkedHashMap<>();
+        primary.put("id", "a");
+        primary.put("label", validityLabel(course.getValidityType(), course.getValidityValue(), course.getValidityUnit(), course.getDurationMonths()));
+        primary.put("price", payable(course, "a"));
+        options.add(primary);
+        if ("MULTIPLE".equalsIgnoreCase(course.getValidityType()) && course.getFeesAlt() != null && course.getFeesAlt().signum() > 0) {
+            Map<String, Object> alt = new LinkedHashMap<>();
+            alt.put("id", "b");
+            alt.put("label", validityLabel("SINGLE", course.getValidityAltValue(), course.getValidityAltUnit(), course.getDurationMonths()));
+            alt.put("price", payable(course, "b"));
+            options.add(alt);
+        }
+        return options;
+    }
+
+    private static String validityLabel(String type, Integer value, String unit, Integer months) {
+        if ("LIFETIME".equalsIgnoreCase(type)) {
+            return "Lifetime access";
+        }
+        if (value != null && unit != null) {
+            String u = unit.toLowerCase();
+            if (!u.endsWith("s") && value != 1) {
+                u = u + "s";
+            }
+            return value + " " + u;
+        }
+        if (months != null) {
+            return months + " months";
+        }
+        return "Standard access";
     }
 
     public List<Map<String, Object>> courseOutline(Organization org, UUID courseId) {
@@ -576,7 +736,7 @@ public class StorefrontService {
         if (url == null || url.isBlank()) {
             return null;
         }
-        String marker = "/api/files/";
+        String marker = url.contains("/api/public/media/") ? "/api/public/media/" : "/api/files/";
         int at = url.indexOf(marker);
         if (at < 0) {
             return null;
@@ -593,6 +753,10 @@ public class StorefrontService {
                 .filter(Coupon::isLive)
                 .filter(c -> c.getCode() != null && c.getCode().equalsIgnoreCase(wanted))
                 .filter(c -> c.getCourseId() == null || courseId.equals(c.getCourseId()))
+                .filter(c -> c.getStartsAt() == null || !c.getStartsAt().isAfter(Instant.now()))
+                .filter(c -> c.getEndsAt() == null || !c.getEndsAt().isBefore(Instant.now()))
+                .filter(c -> c.getMaxRedemptions() == null || c.getMaxRedemptions() <= 0
+                        || (c.getRedeemedCount() == null ? 0 : c.getRedeemedCount()) < c.getMaxRedemptions())
                 .findFirst()
                 .orElse(null);
     }
@@ -611,12 +775,30 @@ public class StorefrontService {
     }
 
     private static BigDecimal payable(Course course) {
+        return payable(course, "a");
+    }
+
+    private static BigDecimal payable(Course course, String option) {
         if ("FREE".equalsIgnoreCase(course.getCourseType())) {
             return BigDecimal.ZERO;
         }
-        BigDecimal fees = course.getFees() == null ? BigDecimal.ZERO : course.getFees();
+        BigDecimal fees;
+        if ("b".equalsIgnoreCase(option) && course.getFeesAlt() != null && course.getFeesAlt().signum() > 0) {
+            fees = course.getFeesAlt();
+        } else {
+            fees = course.getFees() == null ? BigDecimal.ZERO : course.getFees();
+        }
         BigDecimal discount = course.getDiscount() == null ? BigDecimal.ZERO : course.getDiscount();
         BigDecimal price = fees.subtract(discount);
         return price.signum() < 0 ? BigDecimal.ZERO : price;
+    }
+
+    @Transactional
+    public void recordHit(Organization org, String kind, String path) {
+        SiteHit hit = new SiteHit();
+        hit.setOrganizationId(org.getId());
+        hit.setKind(kind == null || kind.isBlank() ? "SESSION" : kind.trim().toUpperCase());
+        hit.setPath(path);
+        store.save(hit);
     }
 }

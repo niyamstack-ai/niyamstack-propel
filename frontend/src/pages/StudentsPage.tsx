@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { createRecord, updateRecord } from "../ops";
 import { useAuth } from "../auth";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatDay, useApi } from "../ui";
+import { prettyLabel } from "../labels";
+import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, formatDay, useApi } from "../ui";
 
 type Student = {
   id: string;
@@ -189,8 +190,15 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
   const [courseId, setCourseId] = useState("");
   const [batchId, setBatchId] = useState("");
   const [centerId, setCenterId] = useState("");
+  const [dob, setDob] = useState("");
+  const [address, setAddress] = useState("");
+  const [parentPhone, setParentPhone] = useState("");
+  const [photoUrl, setPhotoUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [docStudent, setDocStudent] = useState("");
+  const [docType, setDocType] = useState("Aadhaar");
+  const [docFile, setDocFile] = useState("");
 
   const [gStudent, setGStudent] = useState("");
   const [gName, setGName] = useState("");
@@ -201,7 +209,7 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
     setBusy(true);
     setError(null);
     try {
-      await createRecord("/api/students", {
+      const created = await createRecord("/api/students", {
         studentCode: code || `STU-${Date.now().toString().slice(-6)}`,
         fullName: name,
         email,
@@ -209,13 +217,28 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
         courseId: courseId || null,
         batchId: batchId || null,
         centerId: centerId || null,
+        dateOfBirth: dob || null,
+        permanentAddress: address || null,
+        photoUrl: photoUrl || null,
         status: "ENROLLED",
         enrollmentDate: new Date().toISOString().slice(0, 10),
-      });
+      }) as Student;
+      if (parentPhone) {
+        await createRecord("/api/guardians", {
+          studentId: created.id,
+          fullName: "Parent",
+          relation: "Parent",
+          phone: parentPhone,
+        });
+      }
       setCode("");
       setName("");
       setEmail("");
       setPhone("");
+      setDob("");
+      setAddress("");
+      setParentPhone("");
+      setPhotoUrl("");
       students.reload();
     } catch (e) {
       setError((e as Error).message);
@@ -225,6 +248,13 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
   }
 
   async function setStatus(s: Student, status: string) {
+    const labels: Record<string, string> = {
+      DEFERRED: `Put ${s.fullName} on hold? They stay in the list but are not treated as active.`,
+      DROPPED: `Drop ${s.fullName}? This does not delete fee records.`,
+      ALUMNI: `Mark ${s.fullName} as alumni?`,
+      ACTIVE: `Mark ${s.fullName} as active?`,
+    };
+    if (!window.confirm(labels[status] || `Change status for ${s.fullName}?`)) return;
     try {
       await updateRecord(`/api/students/${s.id}`, { ...s, status });
       students.reload();
@@ -264,7 +294,11 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
           <Field label="Student code" value={code} onChange={setCode} placeholder="Auto if blank" />
           <Field label="Full name" value={name} onChange={setName} />
           <Field label="Email" value={email} onChange={setEmail} />
-          <Field label="Phone" value={phone} onChange={setPhone} />
+          <Field label="Phone" value={phone} onChange={setPhone} placeholder="Student mobile" />
+          <Field label="Date of birth" value={dob} onChange={setDob} type="date" />
+          <Field label="Address" value={address} onChange={setAddress} />
+          <Field label="Parent phone" value={parentPhone} onChange={setParentPhone} />
+          <FileUpload label="Photo" value={photoUrl} accept="image/*" onChange={setPhotoUrl} />
           <Select label="Center" value={centerId} onChange={setCenterId} options={(centers.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
           <Select label="Course" value={courseId} onChange={setCourseId} options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
           <Select label="Batch" value={batchId} onChange={setBatchId} options={(batches.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
@@ -277,17 +311,18 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
         <ErrorText error={error} />
       </Card>
       )}
-      <Card title="Student master">
+      <Card title="Students">
         <Table
-          columns={["Code", "Name", "Status", "Email", "Lifecycle"]}
+          empty="No students yet. Enrol the first student above."
+          columns={["Code", "Name", "Status", "Email", ""]}
           rows={(students.data ?? []).map((s) => [
             s.studentCode,
             s.fullName,
-            s.status,
+            prettyLabel(s.status),
             s.email,
             <span className="flex flex-wrap gap-2">
               <Linkish onClick={() => setStatus(s, "ACTIVE")}>Active</Linkish>
-              <Linkish onClick={() => setStatus(s, "DEFERRED")}>Defer</Linkish>
+              <Linkish onClick={() => setStatus(s, "DEFERRED")}>On hold</Linkish>
               <Linkish onClick={() => setStatus(s, "DROPPED")}>Drop</Linkish>
               <Linkish onClick={() => setStatus(s, "ALUMNI")}>Alumni</Linkish>
             </span>,
@@ -313,8 +348,26 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
         </div>
       </Card>
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card title="Documents vault">
-          <ul className="text-sm">
+        <Card title="ID documents">
+          <p className="mb-3 text-xs text-slate-500">Upload Aadhaar, PAN, or a photo. The file is stored on this server.</p>
+          <FormGrid>
+            <Select label="Student" value={docStudent} onChange={setDocStudent} options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))} />
+            <Field label="Document" value={docType} onChange={setDocType} placeholder="Aadhaar / PAN / photo" />
+            <FileUpload label="File" value={docFile} onChange={setDocFile} />
+            <div className="flex items-end">
+              <PrimaryButton
+                disabled={!docStudent || !docFile}
+                onClick={async () => {
+                  await createRecord("/api/student-documents", { studentId: docStudent, docType, fileName: docType || "document", storageUrl: docFile });
+                  setDocFile("");
+                  docs.reload();
+                }}
+              >
+                Save document
+              </PrimaryButton>
+            </div>
+          </FormGrid>
+          <ul className="mt-3 text-sm">
             {(docs.data ?? []).map((d, i) => (
               <li key={i}>
                 {d.docType}: {d.fileName}
@@ -331,8 +384,9 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
             ))}
           </ul>
         </Card>
-        <Card title="At-risk / success CRM">
+        <Card title="Needs follow-up">
           <ul className="text-sm">
+            {(risk.data ?? []).length === 0 && <li className="text-slate-500">No attendance or readiness warnings right now.</li>}
             {(risk.data ?? []).map((r, i) => (
               <li key={i}>
                 {r.student.fullName}: {r.reason}

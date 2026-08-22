@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { createRecord } from "../ops";
 import { useAuth } from "../auth";
+import { prettyLabel } from "../labels";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
 
 type Thread = { id: string; studentName?: string; subject?: string; status: string; lastMessageAt?: string };
@@ -104,7 +105,7 @@ export function ChatsPage() {
                 {threadMessages.map((m) => (
                   <div key={m.id} className="rounded-lg bg-mist px-3 py-2 text-sm">
                     <p className="text-xs text-slate-500">
-                      {m.senderName} · {m.senderRole}
+                      {m.senderName} · {prettyLabel(m.senderRole)}
                     </p>
                     <p>{m.body}</p>
                   </div>
@@ -126,7 +127,7 @@ export function ChatsPage() {
       <Card title="All threads">
         <Table
           columns={["Student", "Subject", "Status"]}
-          rows={(threads.data ?? []).map((t) => [t.studentName || "—", t.subject || "—", t.status])}
+          rows={(threads.data ?? []).map((t) => [t.studentName || "—", t.subject || "—", prettyLabel(t.status)])}
         />
       </Card>
     </div>

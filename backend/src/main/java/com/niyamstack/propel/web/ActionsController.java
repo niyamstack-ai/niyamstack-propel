@@ -1,10 +1,16 @@
 package com.niyamstack.propel.web;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.niyamstack.propel.comms.OutreachService;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.*;
 import com.niyamstack.propel.fees.FeeService;
 import com.niyamstack.propel.integration.IntegrationStatusService;
+import com.niyamstack.propel.integration.ObjectStorage;
+import com.niyamstack.propel.integration.OrgSecrets;
 import com.niyamstack.propel.lms.LmsService;
 import com.niyamstack.propel.placement.PlacementService;
 import com.niyamstack.propel.security.Access;
@@ -19,6 +25,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.net.InetAddress;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -32,15 +40,21 @@ public class ActionsController {
     private final IntegrationStatusService integrations;
 
     private final StorefrontService storefront;
+    private final ObjectStorage storage;
+    private final OutreachService outreach;
+    private final ObjectMapper mapper = new ObjectMapper();
 
     public ActionsController(Store store, FeeService fees, LmsService lms, PlacementService placement,
-                             IntegrationStatusService integrations, StorefrontService storefront) {
+                             IntegrationStatusService integrations, StorefrontService storefront, ObjectStorage storage,
+                             OutreachService outreach) {
         this.store = store;
         this.fees = fees;
         this.lms = lms;
         this.placement = placement;
         this.integrations = integrations;
         this.storefront = storefront;
+        this.storage = storage;
+        this.outreach = outreach;
     }
 
     @GetMapping("/my-courses")
@@ -69,7 +83,10 @@ public class ActionsController {
         student.setOrganizationId(org);
         student.setCenterId(inquiry.getCenterId());
         student.setCourseId(inquiry.getCourseId());
-        if (body.get("batchId") != null) {
+        if (body.get("courseId") != null && !body.get("courseId").isBlank()) {
+            student.setCourseId(UUID.fromString(body.get("courseId")));
+        }
+        if (body.get("batchId") != null && !body.get("batchId").isBlank()) {
             student.setBatchId(UUID.fromString(body.get("batchId")));
         }
         student.setStudentCode("STU-" + System.currentTimeMillis() % 100000);
@@ -86,9 +103,36 @@ public class ActionsController {
     }
 
     @PostMapping("/invoices/{id}/collect")
-    public Payment collect(@PathVariable UUID id, @RequestBody Map<String, String> body) {
+    public Map<String, Object> collect(@PathVariable UUID id, @RequestBody Map<String, String> body) {
         BigDecimal amount = body.get("amount") == null ? null : new BigDecimal(body.get("amount"));
         return fees.collect(id, amount, body.getOrDefault("method", "UPI"));
+    }
+
+    @PostMapping("/invoices/{id}/confirm")
+    public Map<String, Object> confirmInvoice(@PathVariable UUID id, @RequestBody Map<String, String> body) {
+        return fees.confirmCheckout(id, body.get("orderId"), body.get("paymentId"), body.get("signature"));
+    }
+
+    @GetMapping("/gstr1")
+    public List<Map<String, Object>> gstr1(@RequestParam(required = false) String from, @RequestParam(required = false) String to) {
+        LocalDate start = from == null || from.isBlank() ? null : LocalDate.parse(from);
+        LocalDate end = to == null || to.isBlank() ? null : LocalDate.parse(to);
+        return fees.gstr1(start, end);
+    }
+
+    @PostMapping("/campaigns/{id}/launch")
+    public Campaign launchCampaign(@PathVariable UUID id) {
+        return outreach.launch(id);
+    }
+
+    @PostMapping("/notices/send")
+    public Map<String, Object> sendNotice(@RequestBody Map<String, String> body) {
+        return outreach.sendNotice(body.get("channel"), body.get("title"), body.get("body"));
+    }
+
+    @PostMapping("/pushes/send")
+    public AppPush sendPush(@RequestBody Map<String, String> body) {
+        return outreach.sendPush(body.get("title"), body.get("body"), body.get("audience"));
     }
 
     @PostMapping("/fee-plans/{planId}/schedule/{studentId}")
@@ -163,6 +207,11 @@ public class ActionsController {
     @PostMapping("/courses/{courseId}/quizzes")
     public Assessment saveCourseQuiz(@PathVariable UUID courseId, @RequestBody LmsService.CourseQuizInput body) {
         return lms.saveCourseQuiz(courseId, body);
+    }
+
+    @PostMapping("/quizzes")
+    public Assessment saveQuiz(@RequestBody LmsService.CourseQuizInput body) {
+        return lms.saveCourseQuiz(null, body);
     }
 
     @GetMapping("/code/languages")
@@ -293,7 +342,7 @@ public class ActionsController {
         store.getOwned(Student.class, studentId, org);
         List<AttendanceRecord> att = store.listBy(AttendanceRecord.class, org, "studentId", studentId);
         long present = att.stream().filter(a -> "PRESENT".equals(a.getStatus())).count();
-        int attendance = att.isEmpty() ? 0 : (int) (present * 100 / att.size());
+        int attendance = att.isEmpty() ? 100 : (int) (present * 100 / att.size());
         int skills = store.listBy(Skill.class, org, "studentId", studentId).size() * 12;
         int mocks = store.listBy(MockInterview.class, org, "studentId", studentId).stream()
                 .map(MockInterview::getScore).filter(Objects::nonNull).mapToInt(i -> i).max().orElse(0);
@@ -313,13 +362,17 @@ public class ActionsController {
             Map<String, Object> r = readiness(s.getId());
             int score = (int) r.get("score");
             int attendance = (int) r.get("attendance");
-            if (score < 60 || attendance < 75) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("student", s);
-                row.put("readiness", r);
-                row.put("reason", attendance < 75 ? "Low attendance" : "Low placement readiness");
-                out.add(row);
+            List<AttendanceRecord> att = store.listBy(AttendanceRecord.class, org, "studentId", s.getId());
+            boolean lowAttendance = att.size() >= 3 && attendance < 75;
+            boolean lowReady = score < 60 && (att.size() >= 3 || ((int) r.get("mock")) > 0);
+            if (!lowAttendance && !lowReady) {
+                continue;
             }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("student", s);
+            row.put("readiness", r);
+            row.put("reason", lowAttendance ? "Marked present in under 75% of classes" : "Placement readiness is below 60");
+            out.add(row);
         }
         return out;
     }
@@ -359,23 +412,173 @@ public class ActionsController {
         );
     }
 
+    @PostMapping("/media/upload")
+    public Map<String, String> uploadMedia(@RequestParam("file") MultipartFile file) {
+        Access.requireAny(Auth.current(), Roles.OWNER, Roles.FACULTY, Roles.COUNSELOR, Roles.ACCOUNTANT);
+        if (file == null || file.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Choose a file");
+        }
+        if (file.getSize() > 15L * 1024 * 1024) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "File must be 15 MB or smaller");
+        }
+        try {
+            var stored = storage.put(Auth.current().organizationId(), file.getOriginalFilename(), file.getContentType(),
+                    file.getInputStream(), file.getSize());
+            String publicUrl = stored.url().replace("/api/files/", "/api/public/media/");
+            Map<String, String> out = new LinkedHashMap<>();
+            out.put("url", publicUrl);
+            out.put("fileName", file.getOriginalFilename() == null ? "file" : file.getOriginalFilename());
+            return out;
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Upload failed");
+        }
+    }
+
+    @GetMapping("/invoices/{id}/tax")
+    public Map<String, Object> taxInvoice(@PathVariable UUID id) {
+        return fees.taxInvoice(id);
+    }
+
+    @GetMapping("/live-keys")
+    public Map<String, Object> liveKeys() {
+        Access.requireAny(Auth.current(), Roles.OWNER);
+        Organization org = store.get(Organization.class, Auth.current().organizationId());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("razorpay", OrgSecrets.has(org, "razorpayKeyId") && OrgSecrets.has(org, "razorpayKeySecret"));
+        out.put("whatsapp", OrgSecrets.has(org, "whatsappToken") && OrgSecrets.has(org, "whatsappPhoneId"));
+        out.put("smtp", OrgSecrets.has(org, "smtpHost") && OrgSecrets.has(org, "smtpUser"));
+        out.put("webhook", OrgSecrets.has(org, "razorpayWebhookSecret"));
+        out.put("gstState", OrgSecrets.live(org, "gstState"));
+        out.put("invoiceSeries", OrgSecrets.live(org, "invoiceSeries"));
+        out.put("smtpHost", OrgSecrets.live(org, "smtpHost"));
+        out.put("smtpPort", OrgSecrets.live(org, "smtpPort"));
+        out.put("smtpUser", OrgSecrets.live(org, "smtpUser"));
+        out.put("smtpFrom", OrgSecrets.live(org, "smtpFrom"));
+        return out;
+    }
+
+    @PutMapping("/live-keys")
+    public Map<String, Object> saveLiveKeys(@RequestBody Map<String, String> body) {
+        Access.requireAny(Auth.current(), Roles.OWNER);
+        Organization org = store.get(Organization.class, Auth.current().organizationId());
+        ObjectNode root;
+        try {
+            JsonNode parsed = org.getSettingsJson() == null || org.getSettingsJson().isBlank()
+                    ? mapper.createObjectNode()
+                    : mapper.readTree(org.getSettingsJson());
+            root = parsed.isObject() ? (ObjectNode) parsed : mapper.createObjectNode();
+        } catch (Exception e) {
+            root = mapper.createObjectNode();
+        }
+        ObjectNode live = root.has("live") && root.get("live").isObject()
+                ? (ObjectNode) root.get("live")
+                : root.putObject("live");
+        putIfPresent(live, body, "razorpayKeyId");
+        putIfPresent(live, body, "razorpayKeySecret");
+        putIfPresent(live, body, "whatsappToken");
+        putIfPresent(live, body, "whatsappPhoneId");
+        putIfPresent(live, body, "smtpHost");
+        putIfPresent(live, body, "smtpPort");
+        putIfPresent(live, body, "smtpUser");
+        putIfPresent(live, body, "smtpPass");
+        putIfPresent(live, body, "smtpFrom");
+        putIfPresent(live, body, "razorpayWebhookSecret");
+        putIfPresent(live, body, "gstState");
+        putIfPresent(live, body, "invoiceSeries");
+        try {
+            org.setSettingsJson(mapper.writeValueAsString(root));
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Could not save keys");
+        }
+        store.save(org);
+        return liveKeys();
+    }
+
+    private static void putIfPresent(ObjectNode live, Map<String, String> body, String key) {
+        if (!body.containsKey(key)) {
+            return;
+        }
+        String value = body.get(key);
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        live.put(key, value.trim());
+    }
+
+    @GetMapping("/domain/status")
+    public Map<String, Object> domainStatus() {
+        Access.requireAny(Auth.current(), Roles.OWNER);
+        Organization org = store.get(Organization.class, Auth.current().organizationId());
+        String host = org.getCustomDomain() == null ? "" : org.getCustomDomain().trim().toLowerCase()
+                .replaceFirst("^https?://", "").replaceAll("/.*", "");
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("host", host);
+        out.put("resolves", false);
+        out.put("nginx", nginxBlock(host.isBlank() ? "yourdomain.com" : host));
+        if (host.isBlank()) {
+            out.put("message", "Save a domain first.");
+            return out;
+        }
+        try {
+            InetAddress.getAllByName(host);
+            out.put("resolves", true);
+            out.put("message", "DNS has an address. Paste the nginx block on your VPS, then issue SSL with certbot.");
+        } catch (Exception e) {
+            out.put("message", "This domain does not resolve yet. Add the CNAME at your registrar, wait a few minutes, then check again.");
+        }
+        return out;
+    }
+
+    private static String nginxBlock(String host) {
+        return """
+                # Same VPS as Niyamstack Propel. Then: sudo certbot --nginx -d %s
+                server {
+                  listen 80;
+                  server_name %s www.%s;
+                  location /api/ {
+                    proxy_pass http://127.0.0.1:8080;
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  }
+                  location / {
+                    proxy_pass http://127.0.0.1:5173;
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                  }
+                }
+                """.formatted(host, host, host);
+    }
+
     @GetMapping("/dashboard")
-    public Map<String, Object> dashboard() {
+    public Map<String, Object> dashboard(@RequestParam(defaultValue = "0") int days) {
         UUID org = Auth.current().organizationId();
+        Instant from = days > 0 ? Instant.now().minus(days, ChronoUnit.DAYS) : Instant.EPOCH;
         List<Inquiry> inquiries = store.list(Inquiry.class, org);
         List<Student> students = store.list(Student.class, org);
         List<Invoice> invoices = store.list(Invoice.class, org);
         List<Application> apps = store.list(Application.class, org);
-        BigDecimal due = invoices.stream().filter(i -> !"PAID".equals(i.getStatus()))
+        List<Payment> payments = store.list(Payment.class, org).stream()
+                .filter(p -> p.getReceivedAt() == null || !p.getReceivedAt().isBefore(from))
+                .toList();
+        List<Invoice> rangedInvoices = invoices.stream()
+                .filter(i -> i.getCreatedAt() == null || !i.getCreatedAt().isBefore(from))
+                .toList();
+        BigDecimal due = rangedInvoices.stream().filter(i -> !"PAID".equals(i.getStatus()))
                 .map(Invoice::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal paid = invoices.stream().filter(i -> "PAID".equals(i.getStatus()))
-                .map(Invoice::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal paid = payments.stream().map(Payment::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         long converted = inquiries.stream().filter(i -> "CONVERTED".equals(i.getStage())).count();
         Map<String, Long> funnel = inquiries.stream().collect(Collectors.groupingBy(Inquiry::getStage, Collectors.counting()));
         Map<String, Long> ats = apps.stream().collect(Collectors.groupingBy(Application::getStatus, Collectors.counting()));
         BigDecimal total = paid.add(due);
         int collectionPct = total.signum() == 0 ? 0 : paid.multiply(BigDecimal.valueOf(100)).divide(total, 0, RoundingMode.HALF_UP).intValue();
+        List<SiteHit> hits = store.list(SiteHit.class, org).stream()
+                .filter(h -> h.getCreatedAt() == null || !h.getCreatedAt().isBefore(from))
+                .toList();
         Map<String, Object> out = new LinkedHashMap<>();
+        out.put("days", days);
         out.put("inquiries", inquiries.size());
         out.put("converted", converted);
         out.put("students", students.size());
@@ -395,9 +598,9 @@ public class ActionsController {
         out.put("testsCreated", store.list(Assessment.class, org).size());
         out.put("couponsLive", store.list(Coupon.class, org).stream().filter(Coupon::isLive).count());
         out.put("bannersLive", store.list(AppBanner.class, org).stream().filter(AppBanner::isLive).count());
-        out.put("websiteSessions", 0);
-        out.put("buyNowClicks", 0);
-        out.put("transactions", store.list(Payment.class, org).size());
+        out.put("websiteSessions", hits.stream().filter(h -> "SESSION".equals(h.getKind())).count());
+        out.put("buyNowClicks", hits.stream().filter(h -> "BUY_CLICK".equals(h.getKind())).count());
+        out.put("transactions", payments.size());
         out.put("revenue", paid);
         return out;
     }

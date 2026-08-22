@@ -20,12 +20,16 @@ type Draft = {
   validityValue?: number;
   validityUnit?: string;
   fees?: number;
+  feesAlt?: number;
+  validityAltValue?: number;
+  validityAltUnit?: string;
   discount?: number;
   allowOffline?: boolean;
   allowTrial?: boolean;
   allowPreview?: boolean;
   allowLive?: boolean;
   featured?: boolean;
+  bundleCsv?: string;
 };
 
 const STEPS = ["Basic Information", "Edit Price", "Add Content", "Bundle (Optional)"] as const;
@@ -39,15 +43,6 @@ const CATEGORIES: Record<string, string[]> = {
   Language: ["English", "Hindi", "Others"],
   Others: ["Others"],
 };
-
-const FEATURES = [
-  "Allow offline download",
-  "Create installments",
-  "Promote course with trial",
-  "Conduct LIVE classes",
-  "Allow course preview",
-  "Limit course access",
-];
 
 export function CreateCourseWizard() {
   const navigate = useNavigate();
@@ -74,6 +69,9 @@ export function CreateCourseWizard() {
   const [validityValue, setValidityValue] = useState("1");
   const [validityUnit, setValidityUnit] = useState("YEAR");
   const [fees, setFees] = useState("1");
+  const [feesAlt, setFeesAlt] = useState("");
+  const [validityAltValue, setValidityAltValue] = useState("12");
+  const [validityAltUnit, setValidityAltUnit] = useState("MONTH");
   const [discount, setDiscount] = useState("0");
 
   const [payInternet, setPayInternet] = useState(false);
@@ -85,6 +83,8 @@ export function CreateCourseWizard() {
   const [pdfApp, setPdfApp] = useState(false);
   const [pdfWeb, setPdfWeb] = useState(false);
   const [allowLive, setAllowLive] = useState(false);
+  const [installmentsOn, setInstallmentsOn] = useState(false);
+  const [installmentCount, setInstallmentCount] = useState("3");
   const [featured, setFeatured] = useState(false);
   const [markNew, setMarkNew] = useState(false);
   const [webVideos, setWebVideos] = useState(false);
@@ -94,6 +94,7 @@ export function CreateCourseWizard() {
   const [bundleIds, setBundleIds] = useState<string[]>([]);
 
   const thumbInput = useRef<HTMLInputElement>(null);
+  const madePlan = useRef(false);
 
   useEffect(() => {
     if (!courseId || loaded || !courses.data) return;
@@ -114,12 +115,16 @@ export function CreateCourseWizard() {
     setValidityValue(String(existing.validityValue || 1));
     setValidityUnit(existing.validityUnit || "MONTH");
     setFees(String(existing.fees ?? 0));
+    setFeesAlt(existing.feesAlt != null ? String(existing.feesAlt) : "");
+    setValidityAltValue(String(existing.validityAltValue || 12));
+    setValidityAltUnit(existing.validityAltUnit || "MONTH");
     setDiscount(String(existing.discount ?? 0));
     setAllowOffline(Boolean(existing.allowOffline));
     setAllowTrial(Boolean(existing.allowTrial));
     setAllowPreview(existing.allowPreview !== false);
     setAllowLive(Boolean(existing.allowLive));
     setFeatured(Boolean(existing.featured));
+    setBundleIds((existing.bundleCsv || "").split(",").filter(Boolean));
     setLoaded(true);
   }, [courseId, courses.data, loaded]);
 
@@ -148,17 +153,21 @@ export function CreateCourseWizard() {
       subCategory: primary?.subCategory || "Others",
       courseType,
       fees: paid ? Number(fees) : 0,
+      feesAlt: paid && validityType === "MULTIPLE" && feesAlt ? Number(feesAlt) : null,
+      validityAltValue: validityType === "MULTIPLE" ? Number(validityAltValue) || 12 : null,
+      validityAltUnit: validityType === "MULTIPLE" ? validityAltUnit : null,
       discount: paid ? Number(discount) : 0,
       validityType,
       validityValue: Number(validityValue) || 1,
       validityUnit,
       durationMonths,
       published,
-      featured,
+        featured,
       allowOffline,
       allowTrial,
       allowPreview,
       allowLive,
+      bundleCsv: bundleIds.join(","),
       active: true,
     };
   }
@@ -179,14 +188,23 @@ export function CreateCourseWizard() {
 
   async function persist(published = false) {
     const body = payload(published);
-    if (draft) {
-      const updated = await updateRecord<Draft>(`/api/courses/${draft.id}`, { ...draft, ...body });
-      setDraft(updated);
-      return updated;
+    const createdOrUpdated = draft
+      ? await updateRecord<Draft>(`/api/courses/${draft.id}`, { ...draft, ...body })
+      : await createRecord<Draft>("/api/courses", body);
+    setDraft(createdOrUpdated);
+    if (installmentsOn && paid && createdOrUpdated.id && !madePlan.current) {
+      madePlan.current = true;
+      await createRecord("/api/fee-plans", {
+        name: `${name} installments`,
+        totalAmount: Number(fees),
+        gstRate: includeTax ? Number(taxPercent) : 0,
+        installmentCount: Number(installmentCount) || 3,
+        courseId: createdOrUpdated.id,
+        hsn: "9992",
+        sacCode: "999293",
+      });
     }
-    const created = await createRecord<Draft>("/api/courses", body);
-    setDraft(created);
-    return created;
+    return createdOrUpdated;
   }
 
   async function goNext() {
@@ -195,7 +213,7 @@ export function CreateCourseWizard() {
       return;
     }
     await run(async () => {
-      if (step <= 1) await persist(live);
+      if (step >= 1) await persist(live);
       setStep((s) => Math.min(s + 1, 3));
     });
   }
@@ -345,18 +363,42 @@ export function CreateCourseWizard() {
               </button>
             </div>
             <aside className="min-w-0 border-t border-line bg-[#f4f8fc] p-5 xl:border-l xl:border-t-0">
-              <h3 className="font-semibold text-navy">Features</h3>
+              <h3 className="font-semibold text-navy">Course options</h3>
               <ul className="mt-4 space-y-3">
-                {FEATURES.map((f) => (
-                  <li key={f} className="flex min-w-0 items-start gap-2.5 text-sm text-slate-700">
-                    <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-500 text-white">
-                      <svg viewBox="0 0 20 20" className="h-3 w-3" aria-hidden>
-                        <path fill="currentColor" d="M7.7 13.3 4.4 10l-1.4 1.4 4.7 4.7L17 6.8 15.6 5.4z" />
-                      </svg>
-                    </span>
-                    <span className="min-w-0 break-words">{f}</span>
+                <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
+                  <span>Offline download</span>
+                  <Toggle on={allowOffline} onChange={setAllowOffline} />
+                </li>
+                <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
+                  <span>Create installments</span>
+                  <Toggle on={installmentsOn} onChange={setInstallmentsOn} />
+                </li>
+                {installmentsOn && (
+                  <li>
+                    <input
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      value={installmentCount}
+                      onChange={(e) => setInstallmentCount(e.target.value)}
+                      placeholder="Number of installments"
+                    />
                   </li>
-                ))}
+                )}
+                <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
+                  <span>Trial before buying</span>
+                  <Toggle on={allowTrial} onChange={setAllowTrial} />
+                </li>
+                <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
+                  <span>Live classes</span>
+                  <Toggle on={allowLive} onChange={setAllowLive} />
+                </li>
+                <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
+                  <span>Course preview</span>
+                  <Toggle on={allowPreview} onChange={setAllowPreview} />
+                </li>
+                <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
+                  <span>Limit access (validity)</span>
+                  <span className="text-xs text-slate-500">{validityType === "LIFETIME" ? "Off" : "On in price step"}</span>
+                </li>
               </ul>
             </aside>
           </div>
@@ -411,6 +453,21 @@ export function CreateCourseWizard() {
                       <option value="MONTH">Month(s)</option>
                       <option value="YEAR">Year(s)</option>
                     </select>
+                  </div>
+                )}
+                {validityType === "MULTIPLE" && paid && (
+                  <div className="mt-4 rounded-xl bg-[#eef5fb] p-4">
+                    <p className="text-sm font-semibold text-navy">Second checkout option</p>
+                    <p className="mt-1 text-xs text-slate-500">Students pick this or the first duration/price on the website.</p>
+                    <div className="mt-3 grid max-w-md grid-cols-[1fr_1fr] gap-3">
+                      <input className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm" value={validityAltValue} onChange={(e) => setValidityAltValue(e.target.value)} />
+                      <select className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm" value={validityAltUnit} onChange={(e) => setValidityAltUnit(e.target.value)}>
+                        <option value="DAY">Day(s)</option>
+                        <option value="MONTH">Month(s)</option>
+                        <option value="YEAR">Year(s)</option>
+                      </select>
+                    </div>
+                    <input className="mt-3 w-full max-w-md rounded-lg border border-slate-200 px-3 py-2.5 text-sm" value={feesAlt} onChange={(e) => setFeesAlt(e.target.value)} placeholder="Price for this option (₹)" />
                   </div>
                 )}
               </div>
@@ -699,8 +756,7 @@ function AdvancedSettings({
           </button>
         </div>
         <div className="flex-1 space-y-3 overflow-y-auto p-5">
-          <SettingCard title="Internet Handling Charges" hint="Switch ON to pay internet charges yourself (₹ 0.05)" on={b("payInternet")} onChange={(v) => onChange("payInternet", v)} />
-          <SettingCard title="Tax Details" hint="Switch ON to include taxes in this course" on={b("includeTax")} onChange={(v) => onChange("includeTax", v)}>
+          <SettingCard title="Tax Details" hint="Switch ON to include GST in the fee plan when you create installments" on={b("includeTax")} onChange={(v) => onChange("includeTax", v)}>
             {b("includeTax") && (
               <select
                 className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
@@ -714,30 +770,11 @@ function AdvancedSettings({
               </select>
             )}
           </SettingCard>
-          <SettingCard title="Course Sharing" hint="Switch ON to make this course visible globally and earn commissions" on={b("courseSharing")} onChange={(v) => onChange("courseSharing", v)} />
-          <SettingCard title="Course Has Offline Material For Shipment" hint="Switch ON to collect student addresses for physical material" on={b("offlineMaterial")} onChange={(v) => onChange("offlineMaterial", v)} />
-          <SettingCard title="Offline Download Of Videos" hint="Switch ON to allow mobile app offline access" on={b("allowOffline")} onChange={(v) => onChange("allowOffline", v)} />
-          <SettingCard title="PDF Download Permissions in APP" hint="Switch ON to allow PDF downloads in the app" on={b("pdfApp")} onChange={(v) => onChange("pdfApp", v)} />
-          <SettingCard title="PDF permissions on Web" hint="Switch ON to allow PDF access on web" on={b("pdfWeb")} onChange={(v) => onChange("pdfWeb", v)} />
-          <SettingCard title="LIVE Classes" hint="Switch ON to conduct live classes in this course" on={b("allowLive")} onChange={(v) => onChange("allowLive", v)} />
-          <SettingCard title="Mark as Featured" hint="Switch ON to show this course on the student home screen" on={b("featured")} onChange={(v) => onChange("featured", v)} />
-          <SettingCard title="Mark as New" hint="Switch ON to show a NEW tag on this course" on={b("markNew")} onChange={(v) => onChange("markNew", v)} />
-          <SettingCard title="Promote with trial" hint="Switch ON to let students try this course before buying" on={b("allowTrial")} onChange={(v) => onChange("allowTrial", v)} />
-          <SettingCard title="Allow course preview" hint="Switch ON to let visitors preview selected lessons" on={b("allowPreview")} onChange={(v) => onChange("allowPreview", v)} />
-          <div className="rounded-xl bg-[#eef5fb] p-4">
-            <p className="font-semibold text-navy">Add Restrictions To Videos</p>
-            <div className="mt-3 flex items-start justify-between gap-4">
-              <p className="text-sm text-slate-500">Switch ON, in case you want to allow the videos of this course to be viewed on web as well</p>
-              <Toggle on={b("webVideos")} onChange={(v) => onChange("webVideos", v)} />
-            </div>
-            <div className="mt-3 flex items-start justify-between gap-4">
-              <p className="text-sm text-slate-500">Switch ON, in case you want to add restrictions to the videos of this course</p>
-              <Toggle on={b("restrictVideos")} onChange={(v) => onChange("restrictVideos", v)} />
-            </div>
-            <label className="mt-3 flex items-center gap-2 text-sm">
-              <input type="checkbox" /> Update existing videos
-            </label>
-          </div>
+          <SettingCard title="Offline Download Of Videos" hint="Students can download videos in the student app" on={b("allowOffline")} onChange={(v) => onChange("allowOffline", v)} />
+          <SettingCard title="LIVE Classes" hint="You can schedule live classes for this course" on={b("allowLive")} onChange={(v) => onChange("allowLive", v)} />
+          <SettingCard title="Mark as Featured" hint="Show this course first on the student catalog" on={b("featured")} onChange={(v) => onChange("featured", v)} />
+          <SettingCard title="Promote with trial" hint="Let students try this course before buying" on={b("allowTrial")} onChange={(v) => onChange("allowTrial", v)} />
+          <SettingCard title="Allow course preview" hint="Let visitors preview selected lessons" on={b("allowPreview")} onChange={(v) => onChange("allowPreview", v)} />
         </div>
         <div className="border-t border-line px-5 py-4 text-right">
           <button type="button" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white" onClick={onClose}>

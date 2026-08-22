@@ -6,6 +6,12 @@ import { AuthProvider } from "./auth";
 import { PlatformAuthProvider } from "./platformAuth";
 import "./index.css";
 
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+  });
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>

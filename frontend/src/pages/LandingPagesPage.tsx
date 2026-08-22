@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createRecord, updateRecord } from "../ops";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
+import { prettyLabel } from "../labels";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, TextArea, useApi } from "../ui";
 
 type Landing = {
   id: string;
@@ -34,7 +35,7 @@ export function LandingPagesPage() {
   function start(k: string) {
     setKind(k);
     setStep("form");
-    setName(`${k === "WEBINAR" ? "Webinar" : k === "COURSE" ? "Course" : "Form"} page`);
+    setName(k === "WEBINAR" ? "New webinar signup" : k === "COURSE" ? "New course offer" : "New enquiry form");
   }
 
   async function create() {
@@ -108,11 +109,11 @@ export function LandingPagesPage() {
       {step === "form" && (
         <Card title={`Create ${kind.toLowerCase()} landing page`} action={<button onClick={() => setStep("pick")}>Back</button>}>
           <FormGrid>
-            <Field label="Name" value={name} onChange={setName} />
-            <Field label="Slug" value={slug} onChange={setSlug} placeholder="auto from name" />
-            <Field label="Headline" value={headline} onChange={setHeadline} />
-            <Field label="Body" value={body} onChange={setBody} />
-            <Field label="CTA label" value={cta} onChange={setCta} />
+            <Field label="Page name" value={name} onChange={setName} />
+            <Field label="Link ending (optional)" value={slug} onChange={setSlug} placeholder="auto from name, e.g. jee-webinar" />
+            <Field label="Headline students see" value={headline} onChange={setHeadline} />
+            <TextArea label="Page text" value={body} onChange={setBody} placeholder="Date, speaker, fee, what they get" />
+            <Field label="Button text" value={cta} onChange={setCta} />
             <Select
               label="Linked course (optional)"
               value={courseId}
@@ -130,10 +131,11 @@ export function LandingPagesPage() {
 
       <Card title={`Your landing pages (${pages.data?.length ?? 0})`}>
         <Table
-          columns={["Name", "Kind", "Views", "Leads", "Status", ""]}
+          empty="No landing pages yet."
+          columns={["Name", "Type", "Views", "Leads", "Status", ""]}
           rows={(pages.data ?? []).map((p) => [
             p.name,
-            p.pageKind,
+            prettyLabel(p.pageKind),
             String(p.viewsCount ?? 0),
             String(p.leadsCount ?? 0),
             p.published ? "Published" : "Draft",

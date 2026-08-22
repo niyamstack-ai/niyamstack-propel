@@ -3,6 +3,7 @@ import { useState } from "react";
 import { createRecord } from "../ops";
 import { AlumniPage } from "./AlumniPage";
 import { StaffStudents } from "./StudentsPage";
+import { prettyLabel } from "../labels";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
 
 type Staff = { id: string; fullName: string; email: string; role: string; active: boolean };
@@ -25,9 +26,7 @@ export function PeoplePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-navy">People</h1>
-        <p className="text-sm text-slate-500">
-          Students, institute staff, and alumni. Niyamstack employees are managed separately on the platform admin.
-        </p>
+        <p className="text-sm text-slate-500">Students, teachers, and alumni of this institute.</p>
       </div>
       <div className="flex flex-wrap gap-2">
         {tabs.map((item) => (
@@ -50,6 +49,7 @@ export function PeoplePage() {
 function InstituteStaff() {
   const staff = useApi<Staff[]>("/api/staff");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [memberName, setMemberName] = useState("");
   const [memberEmail, setMemberEmail] = useState("");
   const [memberPhone, setMemberPhone] = useState("");
@@ -57,18 +57,23 @@ function InstituteStaff() {
 
   async function inviteMember() {
     setError(null);
+    setNotice(null);
     try {
-      await createRecord("/api/tickets", {
-        raisedBy: "Owner",
-        category: "TEAM",
-        subject: `Add team member: ${memberName}`,
-        body: `${memberName} · ${memberEmail} · ${memberPhone} · role ${memberRole}`,
-        status: "OPEN",
-      });
+      const created = await createRecord("/api/staff", {
+        fullName: memberName,
+        email: memberEmail,
+        phone: memberPhone,
+        role: memberRole,
+      }) as Staff & { tempPassword?: string };
       setMemberName("");
       setMemberEmail("");
       setMemberPhone("");
-      alert("Institute staff request logged. This is your institute team (teachers and employees), not Niyamstack staff.");
+      staff.reload();
+      setNotice(
+        created.tempPassword
+          ? `${created.fullName} can log in with ${created.email}. Temporary password: ${created.tempPassword}. Ask them to change it after first login.`
+          : `${created.fullName} was added.`
+      );
     } catch (e) {
       setError((e as Error).message);
     }
@@ -77,25 +82,25 @@ function InstituteStaff() {
   return (
     <>
       <Card title="Institute staff">
-        <p className="mb-3 text-sm text-slate-500">
-          Teachers, counselors, accountants, and other employees of this institute. Niyamstack company staff live under Platform →
-          Employee management.
-        </p>
+        <p className="mb-3 text-sm text-slate-500">Teachers, counselors, accountants, and placement staff. They log in to this portal, not the student website.</p>
         <Table
+          empty="No staff besides you yet. Add a teacher below."
           columns={["Member", "Email", "Role", "Active"]}
-          rows={(staff.data ?? []).map((s) => [s.fullName, s.email, s.role, s.active ? "Yes" : "No"])}
+          rows={(staff.data ?? []).map((s) => [s.fullName, s.email, prettyLabel(s.role), s.active ? "Yes" : "No"])}
         />
       </Card>
       <ErrorText error={error} />
-      <Card title="Add institute staff">
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <Card title="Add staff login">
         <FormGrid>
-          <Field label="Name" value={memberName} onChange={setMemberName} placeholder="Enter Name" />
-          <Field label="Phone" value={memberPhone} onChange={setMemberPhone} placeholder="Enter Phone Number" />
-          <Field label="Email ID" value={memberEmail} onChange={setMemberEmail} />
+          <Field label="Name" value={memberName} onChange={setMemberName} placeholder="Full name" />
+          <Field label="Phone" value={memberPhone} onChange={setMemberPhone} placeholder="10-digit mobile" />
+          <Field label="Email" value={memberEmail} onChange={setMemberEmail} placeholder="They will log in with this" />
           <Select
             label="Role"
             value={memberRole}
             onChange={setMemberRole}
+            allowEmpty={false}
             options={[
               { value: "FACULTY", label: "Faculty" },
               { value: "COUNSELOR", label: "Counselor" },
@@ -105,8 +110,8 @@ function InstituteStaff() {
           />
         </FormGrid>
         <div className="mt-3">
-          <PrimaryButton disabled={!memberName} onClick={inviteMember}>
-            Save & Proceed
+          <PrimaryButton disabled={!memberName || !memberEmail} onClick={() => void inviteMember()}>
+            Create staff login
           </PrimaryButton>
         </div>
       </Card>

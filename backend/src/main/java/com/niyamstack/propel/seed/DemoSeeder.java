@@ -39,7 +39,7 @@ public class DemoSeeder implements CommandLineRunner {
         org.setName("Aarohan Coaching");
         org.setLegalName("Aarohan Skills Private Limited");
         org.setGstin("27AABCU9603R1ZX");
-        org.setEmail("hello@aarohan.demo");
+        org.setEmail("hello@yopmail.com");
         org.setPhone("+91 98765 00001");
         org.setWebsite("https://aarohan.demo");
         org.setPackageTier("ENTERPRISE");
@@ -64,12 +64,12 @@ public class DemoSeeder implements CommandLineRunner {
         Center hyd = center(oid, "Hyderabad Center", "HYD", "HITEC City", "Hyderabad");
 
         AppUser owner = user(oid, pune.getId(), "Ananya Deshmukh", "deepak@yopmail.com", "OWNER", "9876500001");
-        user(oid, pune.getId(), "Rohan Kulkarni", "placement@aarohan.demo", "PLACEMENT_HEAD", "9876500005");
-        AppUser faculty = user(oid, pune.getId(), "Meera Iyer", "faculty@aarohan.demo", "FACULTY", "9876500003");
-        user(oid, pune.getId(), "Sahil Khan", "counselor@aarohan.demo", "COUNSELOR", "9876500007");
-        user(oid, pune.getId(), "Priya Shah", "accounts@aarohan.demo", "ACCOUNTANT", "9876500006");
-        user(oid, null, "Nisha Parent", "parent@aarohan.demo", "PARENT", "9876500004");
-        user(oid, null, "Kiran Recruiter", "recruiter@aarohan.demo", "RECRUITER", "9876500008");
+        user(oid, pune.getId(), "Rohan Kulkarni", "placement@yopmail.com", "PLACEMENT_HEAD", "9876500005");
+        AppUser faculty = user(oid, pune.getId(), "Meera Iyer", "faculty@yopmail.com", "FACULTY", "9876500003");
+        user(oid, pune.getId(), "Sahil Khan", "counselor@yopmail.com", "COUNSELOR", "9876500007");
+        user(oid, pune.getId(), "Priya Shah", "accounts@yopmail.com", "ACCOUNTANT", "9876500006");
+        user(oid, null, "Nisha Parent", "parent@yopmail.com", "PARENT", "9876500004");
+        user(oid, null, "Kiran Recruiter", "recruiter@yopmail.com", "RECRUITER", "9876500008");
 
         AcademicYear year = new AcademicYear();
         year.setOrganizationId(oid);
@@ -88,7 +88,17 @@ public class DemoSeeder implements CommandLineRunner {
         store.save(term);
 
         Course java = course(oid, "JFS", "Java Full Stack", 6, new BigDecimal("85000"));
+        java.setDescription("Java, Spring Boot, REST APIs, and PostgreSQL — live classes, recordings, and placement support.");
+        store.save(java);
         Course da = course(oid, "DA", "Data Analytics", 4, new BigDecimal("72000"));
+        da.setDescription("Excel, SQL, Power BI, and Python for working with real business data — live classes, recordings, and placement support.");
+        da.setValidityType("MULTIPLE");
+        da.setValidityValue(4);
+        da.setValidityUnit("MONTH");
+        da.setFeesAlt(new BigDecimal("42000"));
+        da.setValidityAltValue(12);
+        da.setValidityAltUnit("MONTH");
+        store.save(da);
 
         Batch jfs = batch(oid, pune.getId(), java.getId(), year.getId(), faculty.getId(), "JFS-2026-A");
         Batch dab = batch(oid, hyd.getId(), da.getId(), year.getId(), faculty.getId(), "DA-2026-B");
@@ -139,7 +149,7 @@ public class DemoSeeder implements CommandLineRunner {
         form.setOrganizationId(oid);
         form.setCourseId(java.getId());
         form.setApplicantName("Online Applicant");
-        form.setEmail("apply@demo.test");
+        form.setEmail("apply@yopmail.com");
         form.setPhone("9000000000");
         form.setStatus("SUBMITTED");
         store.save(form);
@@ -167,7 +177,7 @@ public class DemoSeeder implements CommandLineRunner {
         sch.setApprovalStatus("APPROVED");
         store.save(sch);
 
-        AppUser studentUser = user(oid, pune.getId(), "Ishaan Patel", "student@aarohan.demo", "STUDENT", "9876500002");
+        AppUser studentUser = user(oid, pune.getId(), "Ishaan Patel", "student@yopmail.com", "STUDENT", "9876500002");
         Student s1 = student(oid, pune.getId(), java.getId(), jfs.getId(), studentUser.getId(), "STU-1001", "Ishaan Patel");
         Student s2 = student(oid, pune.getId(), java.getId(), jfs.getId(), null, "STU-1002", "Riya Sen");
         Student s3 = student(oid, hyd.getId(), da.getId(), dab.getId(), null, "STU-2001", "Aditya Menon");
@@ -188,7 +198,7 @@ public class DemoSeeder implements CommandLineRunner {
         g.setStudentId(s1.getId());
         g.setFullName("Nisha Parent");
         g.setRelation("Mother");
-        g.setEmail("parent@aarohan.demo");
+        g.setEmail("parent@yopmail.com");
         g.setPhone("9876500099");
         store.save(g);
 
@@ -242,10 +252,20 @@ public class DemoSeeder implements CommandLineRunner {
         live.setOrganizationId(oid);
         live.setBatchId(jfs.getId());
         live.setTitle("Live: JPA mapping");
-        live.setProvider("ZOOM");
-        live.setMeetingUrl("https://zoom.us/j/demo");
+        live.setProvider("JITSI");
+        live.setMeetingUrl("https://meet.jit.si/NiyamstackJpamapping");
         live.setStartsAt(Instant.now().plusSeconds(3600));
         store.save(live);
+
+        OneToOneSession oneToOne = new OneToOneSession();
+        oneToOne.setOrganizationId(oid);
+        oneToOne.setTitle("Career counselling call");
+        oneToOne.setMentorName("Faculty desk");
+        oneToOne.setDurationMinutes(30);
+        oneToOne.setPrice(new BigDecimal("499"));
+        oneToOne.setMeetingUrl("https://meet.jit.si/NiyamstackCareerCall");
+        oneToOne.setStatus("OPEN");
+        store.save(oneToOne);
 
         Recording rec = new Recording();
         rec.setOrganizationId(oid);
@@ -561,6 +581,27 @@ public class DemoSeeder implements CommandLineRunner {
                 store.save(owner);
             }
         }
+        if (owner != null) {
+            owner.setPasswordHash(encoder.encode("Propel@123"));
+            owner.setFailedLogins(0);
+            owner.setLockedUntil(null);
+            owner.setActive(true);
+            if ("owner@aarohan.demo".equalsIgnoreCase(owner.getEmail())) {
+                owner.setEmail("deepak@yopmail.com");
+            }
+            store.save(owner);
+        }
+        if (owner == null) {
+            owner = store.findUserByPhone("9876500001");
+            if (owner != null) {
+                owner.setEmail("deepak@yopmail.com");
+                owner.setPasswordHash(encoder.encode("Propel@123"));
+                owner.setFailedLogins(0);
+                owner.setLockedUntil(null);
+                owner.setActive(true);
+                store.save(owner);
+            }
+        }
         if (owner == null || owner.getOrganizationId() == null) {
             return;
         }
@@ -588,13 +629,8 @@ public class DemoSeeder implements CommandLineRunner {
             org.setWebsiteUrl("/s/aarohan");
         }
         store.save(org);
-        for (Course course : store.list(Course.class, org.getId())) {
-            if (!course.isPublished()) {
-                course.setPublished(true);
-                course.setActive(true);
-                store.save(course);
-            }
-        }
+        remapDemoEmails(org.getId());
+        refreshDemoCatalog(org.getId());
         if (store.list(CourseEnrollment.class, org.getId()).isEmpty()) {
             for (Student student : store.list(Student.class, org.getId())) {
                 if (student.getCourseId() != null) {
@@ -603,13 +639,103 @@ public class DemoSeeder implements CommandLineRunner {
             }
         }
         phone("deepak@yopmail.com", "9876500001");
+        phone("student@yopmail.com", "9876500002");
+        phone("faculty@yopmail.com", "9876500003");
+        phone("parent@yopmail.com", "9876500004");
+        phone("placement@yopmail.com", "9876500005");
+        phone("accounts@yopmail.com", "9876500006");
+        phone("counselor@yopmail.com", "9876500007");
+        phone("recruiter@yopmail.com", "9876500008");
         phone("student@aarohan.demo", "9876500002");
         phone("faculty@aarohan.demo", "9876500003");
-        phone("parent@aarohan.demo", "9876500004");
-        phone("placement@aarohan.demo", "9876500005");
-        phone("accounts@aarohan.demo", "9876500006");
-        phone("counselor@aarohan.demo", "9876500007");
-        phone("recruiter@aarohan.demo", "9876500008");
+    }
+
+    private void refreshDemoCatalog(UUID oid) {
+        for (Course course : store.list(Course.class, oid)) {
+            if (course.getName() != null) {
+                course.setName(course.getName().trim());
+            }
+            String name = course.getName() == null ? "" : course.getName();
+            String desc = course.getDescription() == null ? "" : course.getDescription().trim();
+            boolean placeholder = desc.isBlank()
+                    || desc.equals("dkjagskjdk")
+                    || desc.toLowerCase().contains("open this course to see lessons");
+            if (name.toLowerCase().contains("ipc")) {
+                if (course.getFees() == null || course.getFees().compareTo(new BigDecimal("5000")) < 0) {
+                    course.setFees(new BigDecimal("45000"));
+                }
+                if (placeholder) {
+                    course.setDescription("IPC theory and consultancy practice for working professionals.");
+                }
+            }
+            if (name.toLowerCase().contains("data analytics")) {
+                if (placeholder) {
+                    course.setDescription("Excel, SQL, Power BI, and Python for working with real business data — live classes, recordings, and placement support.");
+                }
+                if (course.getFeesAlt() == null || course.getFeesAlt().signum() <= 0) {
+                    course.setValidityType("MULTIPLE");
+                    course.setValidityValue(course.getDurationMonths() == null ? 4 : course.getDurationMonths());
+                    course.setValidityUnit("MONTH");
+                    course.setFeesAlt(new BigDecimal("42000"));
+                    course.setValidityAltValue(12);
+                    course.setValidityAltUnit("MONTH");
+                }
+            }
+            if (name.toLowerCase().contains("java") && placeholder) {
+                course.setDescription("Java, Spring Boot, REST APIs, and PostgreSQL — live classes, recordings, and placement support.");
+            }
+            if (("JFS".equals(course.getCode()) || "DA".equals(course.getCode())) && !course.isPublished()) {
+                course.setPublished(true);
+                course.setActive(true);
+            }
+            store.save(course);
+        }
+        for (LiveSession live : store.list(LiveSession.class, oid)) {
+            String url = live.getMeetingUrl() == null ? "" : live.getMeetingUrl();
+            if (url.contains("zoom.us/j/demo") || url.isBlank()) {
+                live.setProvider("JITSI");
+                live.setMeetingUrl("https://meet.jit.si/NiyamstackJpamapping");
+                store.save(live);
+            }
+        }
+        if (store.list(OneToOneSession.class, oid).isEmpty()) {
+            OneToOneSession oneToOne = new OneToOneSession();
+            oneToOne.setOrganizationId(oid);
+            oneToOne.setTitle("Career counselling call");
+            oneToOne.setMentorName("Faculty desk");
+            oneToOne.setDurationMinutes(30);
+            oneToOne.setPrice(new BigDecimal("499"));
+            oneToOne.setMeetingUrl("https://meet.jit.si/NiyamstackCareerCall");
+            oneToOne.setStatus("OPEN");
+            store.save(oneToOne);
+        }
+    }
+
+    private void remapDemoEmails(UUID oid) {
+        for (AppUser user : store.listUsers(oid)) {
+            String email = user.getEmail() == null ? "" : user.getEmail();
+            if (email.endsWith("@aarohan.demo") || email.endsWith("@leads.demo") || email.endsWith("@demo.test")) {
+                String local = email.substring(0, email.indexOf('@'));
+                user.setEmail(local + "@yopmail.com");
+                store.save(user);
+            }
+        }
+        for (Student student : store.list(Student.class, oid)) {
+            String email = student.getEmail() == null ? "" : student.getEmail();
+            if (email.endsWith("@aarohan.demo") || email.endsWith("@leads.demo")) {
+                String local = student.getStudentCode() == null ? "student" : student.getStudentCode().toLowerCase();
+                student.setEmail(local + "@yopmail.com");
+                store.save(student);
+            }
+        }
+        for (Inquiry inquiry : store.list(Inquiry.class, oid)) {
+            String email = inquiry.getEmail() == null ? "" : inquiry.getEmail();
+            if (email.endsWith(".demo") || email.endsWith("@demo.test")) {
+                String local = inquiry.getFullName() == null ? "lead" : inquiry.getFullName().toLowerCase().replace(" ", ".");
+                inquiry.setEmail(local + "@yopmail.com");
+                store.save(inquiry);
+            }
+        }
     }
 
     private void phone(String email, String mobile) {
@@ -670,7 +796,7 @@ public class DemoSeeder implements CommandLineRunner {
         i.setCenterId(centerId);
         i.setCourseId(courseId);
         i.setFullName(name);
-        i.setEmail(name.toLowerCase().replace(" ", ".") + "@leads.demo");
+        i.setEmail(name.toLowerCase().replace(" ", ".") + "@yopmail.com");
         i.setPhone("98" + Math.abs(name.hashCode() % 100000000));
         i.setSource(source);
         i.setStage(stage);
@@ -686,7 +812,7 @@ public class DemoSeeder implements CommandLineRunner {
         s.setUserId(userId);
         s.setStudentCode(code);
         s.setFullName(name);
-        s.setEmail(code.toLowerCase() + "@aarohan.demo");
+        s.setEmail(code.toLowerCase() + "@yopmail.com");
         s.setStatus("ACTIVE");
         s.setEnrollmentDate(LocalDate.of(2026, 6, 20));
         return store.save(s);

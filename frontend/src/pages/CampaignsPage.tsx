@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { createRecord, updateRecord } from "../ops";
+import { api } from "../api";
+import { createRecord } from "../ops";
+import { prettyLabel } from "../labels";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
 
 type Campaign = {
@@ -59,7 +61,7 @@ export function CampaignsPage() {
 
   async function launch(c: Campaign) {
     try {
-      await updateRecord(`/api/campaigns/${c.id}`, { ...c, status: "LIVE", sentCount: (c.sentCount || 0) + 1 });
+      await api(`/api/actions/campaigns/${c.id}/launch`, { method: "POST", body: "{}" });
       campaigns.reload();
     } catch (e) {
       setError((e as Error).message);
@@ -71,7 +73,7 @@ export function CampaignsPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-navy">Campaigns ({campaigns.data?.length ?? 0})</h1>
-          <p className="text-sm text-slate-500">Create targeted marketing campaigns and boost engagement.</p>
+          <p className="text-sm text-slate-500">Launch sends WhatsApp or email to students when those keys are saved in Integrations. Push uses WhatsApp if a mobile is on file, otherwise it stays in the student website.</p>
         </div>
         <PrimaryButton onClick={() => setStep("pick")}>Create New Campaign</PrimaryButton>
       </div>
@@ -141,15 +143,15 @@ export function CampaignsPage() {
       {step === "list" && (
         <Card title="Create & manage campaigns">
           {(campaigns.data?.length ?? 0) === 0 ? (
-            <p className="text-sm text-slate-500">0 campaigns created. Promote your content now and boost revenue.</p>
+            <p className="text-sm text-slate-500">No campaigns yet. Send a reminder when someone leaves checkout, or a one-time message about a new course.</p>
           ) : (
             <Table
               columns={["Name", "Type", "Channel", "Status", "Sent", ""]}
               rows={(campaigns.data ?? []).map((c) => [
                 c.name,
-                c.campaignType,
-                c.channel,
-                c.status,
+                c.campaignType === "ACTION" ? "When a student acts" : "One-time",
+                prettyLabel(c.channel),
+                prettyLabel(c.status),
                 String(c.sentCount ?? 0),
                 <button className="text-brand hover:underline" type="button" onClick={() => launch(c)} key={c.id}>
                   Launch

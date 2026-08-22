@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { uploadMedia } from "./ops";
 
 export function useApi<T>(path: string) {
   const [data, setData] = useState<T | null>(null);
@@ -36,9 +37,17 @@ export function Card({ title, children, action }: { title: string; children: Rea
   );
 }
 
-export function Table({ columns, rows }: { columns: string[]; rows: Array<Array<React.ReactNode>> }) {
+export function Table({
+  columns,
+  rows,
+  empty = "Nothing here yet.",
+}: {
+  columns: string[];
+  rows: Array<Array<React.ReactNode>>;
+  empty?: string;
+}) {
   if (rows.length === 0) {
-    return <p className="text-sm text-slate-500">Nothing here yet. Use the form above to add the first record.</p>;
+    return <p className="text-sm text-slate-500">{empty}</p>;
   }
   return (
     <div className="overflow-x-auto">
@@ -81,16 +90,29 @@ export function Field({
   type?: string;
   placeholder?: string;
 }) {
+  const [show, setShow] = useState(false);
+  const password = type === "password";
   return (
     <label className="block text-sm">
       <span className="text-slate-600">{label}</span>
-      <input
-        className="mt-1 w-full rounded-lg border border-line px-3 py-2"
-        value={value}
-        type={type}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-      />
+      <span className="relative mt-1 block">
+        <input
+          className="w-full rounded-lg border border-line px-3 py-2"
+          value={value}
+          type={password && show ? "text" : type}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        {password && (
+          <button
+            type="button"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-medium text-brand"
+            onClick={() => setShow((v) => !v)}
+          >
+            {show ? "Hide" : "Show"}
+          </button>
+        )}
+      </span>
     </label>
   );
 }
@@ -100,11 +122,13 @@ export function Select({
   value,
   onChange,
   options,
+  allowEmpty = true,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
+  allowEmpty?: boolean;
 }) {
   return (
     <label className="block text-sm">
@@ -114,13 +138,40 @@ export function Select({
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
-        <option value="">Select…</option>
+        {allowEmpty && <option value="">Select…</option>}
         {options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
       </select>
+    </label>
+  );
+}
+
+export function TextArea({
+  label,
+  value,
+  onChange,
+  rows = 6,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  rows?: number;
+  placeholder?: string;
+}) {
+  return (
+    <label className="block text-sm md:col-span-2 xl:col-span-4">
+      <span className="text-slate-600">{label}</span>
+      <textarea
+        className="mt-1 w-full rounded-lg border border-line px-3 py-2"
+        rows={rows}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </label>
   );
 }
@@ -167,12 +218,70 @@ export function formatDay(value?: string | null) {
   if (!value) return "";
   const d = new Date(value.length <= 10 ? `${value}T00:00:00` : value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
 export function formatWhen(value?: string | null) {
   if (!value) return "";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+export function formatInr(amount?: number | string | null) {
+  const n = Number(amount ?? 0);
+  if (!Number.isFinite(n)) return "₹0";
+  return `₹${n.toLocaleString("en-IN")}`;
+}
+
+export function FileUpload({
+  label,
+  value,
+  onChange,
+  accept = "image/*,.pdf",
+}: {
+  label: string;
+  value?: string;
+  onChange: (url: string) => void;
+  accept?: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block font-medium text-navy">{label}</span>
+      <input
+        type="file"
+        accept={accept}
+        disabled={busy}
+        className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-full file:border-0 file:bg-mist file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-navy"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          setBusy(true);
+          setError(null);
+          try {
+            const out = await uploadMedia(file);
+            onChange(out.url);
+          } catch (err) {
+            setError((err as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
+      {busy && <p className="mt-1 text-xs text-slate-500">Uploading…</p>}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {value ? (
+        value.match(/\.(png|jpe?g|gif|webp|svg)(\?|$)/i) || value.includes("/media/") ? (
+          <img src={value} alt="" className="mt-2 h-16 max-w-full rounded-lg object-contain" />
+        ) : (
+          <a className="mt-1 inline-block text-xs text-brand hover:underline" href={value} target="_blank" rel="noreferrer">
+            Uploaded file
+          </a>
+        )
+      ) : null}
+    </label>
+  );
 }

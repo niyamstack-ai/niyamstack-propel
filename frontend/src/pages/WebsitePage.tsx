@@ -1,7 +1,32 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import {
+  BookOpen,
+  HelpCircle,
+  Image as ImageIcon,
+  LayoutTemplate,
+  Megaphone,
+  Phone,
+  Quote,
+  Sparkles,
+  Type,
+  Video,
+  type LucideIcon,
+} from "lucide-react";
 import { createRecord, updateRecord } from "../ops";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Table, useApi } from "../ui";
+import { ErrorText, Field, PrimaryButton, formatInr, useApi } from "../ui";
+import { SectionView } from "../PageSections";
+import { fileSrc } from "../api";
+import { cleanHost, studentPreviewPath, studentPublicUrl } from "../siteHost";
+import {
+  BLOCKS,
+  newSection,
+  parseSections,
+  serializeSections,
+  starterSections,
+  type SectionType,
+  type SiteSection,
+} from "../websiteSections";
 
 type Page = {
   id: string;
@@ -9,9 +34,6 @@ type Page = {
   slug: string;
   pageType: string;
   body?: string;
-  metaTitle?: string;
-  metaDescription?: string;
-  previewImageUrl?: string;
   hidden: boolean;
   sortOrder: number;
 };
@@ -23,47 +45,105 @@ type Org = {
   customDomain?: string;
   websitePublished?: boolean;
   logoUrl?: string;
+  settingsJson?: string;
 };
 
+type Course = {
+  id: string;
+  name: string;
+  fees: number;
+  published?: boolean;
+  description?: string;
+  thumbnailUrl?: string;
+};
+
+const HOST_TARGET = "sites.niyamstack.com";
 const DEFAULT_PAGES = [
   { title: "Home", slug: "home", pageType: "HOME" },
   { title: "About Us", slug: "about-us", pageType: "ABOUT" },
   { title: "Courses", slug: "courses", pageType: "COURSES" },
-  { title: "Free Tests", slug: "free-tests", pageType: "FREE_TESTS" },
-  { title: "Free Content", slug: "free-content", pageType: "FREE_CONTENT" },
-  { title: "Testimonials", slug: "testimonials", pageType: "TESTIMONIALS" },
   { title: "Contact Us", slug: "contact-us", pageType: "CONTACT" },
+  { title: "Testimonials", slug: "testimonials", pageType: "TESTIMONIALS" },
   { title: "Policies", slug: "policies", pageType: "POLICIES" },
 ];
+
+const ICONS: Record<SectionType, LucideIcon> = {
+  hero: LayoutTemplate,
+  text: Type,
+  image: ImageIcon,
+  features: Sparkles,
+  courses: BookOpen,
+  cta: Megaphone,
+  testimonials: Quote,
+  video: Video,
+  faq: HelpCircle,
+  contact: Phone,
+};
 
 export function WebsitePage() {
   const pages = useApi<Page[]>("/api/website-pages");
   const org = useApi<Org>("/api/organization");
+  const courses = useApi<Course[]>("/api/courses");
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Page | null>(null);
-  const [metaTitle, setMetaTitle] = useState("");
-  const [metaDescription, setMetaDescription] = useState("");
-  const [previewImageUrl, setPreviewImageUrl] = useState("");
-  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [pageId, setPageId] = useState<string | null>(null);
+  const [sections, setSections] = useState<SiteSection[]>([]);
+  const [dirty, setDirty] = useState(false);
+  const [status, setStatus] = useState<"saved" | "saving" | "unsaved">("saved");
+  const [picked, setPicked] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   const [customDomain, setCustomDomain] = useState("");
-  const [tab, setTab] = useState<"pages" | "domain">("pages");
+  const [copied, setCopied] = useState(false);
+  const seeding = useRef(false);
+  const saveTimer = useRef<number>(0);
+  const sectionsRef = useRef(sections);
+  sectionsRef.current = sections;
 
   const sorted = useMemo(
     () => [...(pages.data ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
     [pages.data]
   );
+  const current = sorted.find((p) => p.id === pageId) || sorted[0] || null;
+  const previewPath = studentPreviewPath(org.data?.slug);
+  const liveUrl = studentPublicUrl(org.data);
+  const host = cleanHost(customDomain);
+  const institute = org.data?.name || "your institute";
+  const liveCourses = (courses.data ?? []).filter((c) => c.published !== false).slice(0, 4);
+
+  useEffect(() => {
+    if (org.data) setCustomDomain(org.data.customDomain || "");
+  }, [org.data]);
+
+  useEffect(() => {
+    if (!pages.data || pages.data.length > 0 || seeding.current) return;
+    seeding.current = true;
+    void seedDefaults();
+  }, [pages.data]);
+
+  useEffect(() => {
+    if (!current) return;
+    if (dirty && pageId === current.id) return;
+    setPageId(current.id);
+    const parsed = parseSections(current.body);
+    setSections(parsed.length ? parsed : starterSections(current.pageType, institute));
+    setPicked(null);
+    setDirty(!parsed.length);
+    setStatus(parsed.length ? "saved" : "unsaved");
+  }, [current?.id, current?.body, institute]);
+
+  function patch(next: SiteSection[]) {
+    setSections(next);
+    setDirty(true);
+    setStatus("unsaved");
+  }
 
   async function seedDefaults() {
-    setError(null);
     try {
       for (let i = 0; i < DEFAULT_PAGES.length; i++) {
         const d = DEFAULT_PAGES[i];
         if ((pages.data ?? []).some((p) => p.slug === d.slug)) continue;
         await createRecord("/api/website-pages", {
           ...d,
-          body: "",
-          metaTitle: `${d.title} | ${org.data?.name || "Institute"}`,
-          metaDescription: `${d.title} page for ${org.data?.name || "your institute"}`,
+          body: serializeSections(starterSections(d.pageType, institute)),
           hidden: false,
           sortOrder: i,
         });
@@ -74,178 +154,265 @@ export function WebsitePage() {
     }
   }
 
-  function openInfo(p: Page) {
-    setSelected(p);
-    setMetaTitle(p.metaTitle || "");
-    setMetaDescription(p.metaDescription || "");
-    setPreviewImageUrl(p.previewImageUrl || "");
-  }
-
-  async function saveInfo() {
-    if (!selected) return;
-    setError(null);
+  async function savePage() {
+    if (!current) return;
+    setStatus("saving");
     try {
-      await updateRecord(`/api/website-pages/${selected.id}`, {
-        ...selected,
-        metaTitle,
-        metaDescription,
-        previewImageUrl,
+      await updateRecord(`/api/website-pages/${current.id}`, {
+        ...current,
+        body: serializeSections(sectionsRef.current),
+        hidden: false,
       });
-      setSelected(null);
-      pages.reload();
+      setDirty(false);
+      setStatus("saved");
     } catch (e) {
       setError((e as Error).message);
+      setStatus("unsaved");
     }
   }
 
-  async function toggleHidden(p: Page) {
-    setError(null);
-    try {
-      await updateRecord(`/api/website-pages/${p.id}`, { ...p, hidden: !p.hidden });
-      pages.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    }
+  useEffect(() => {
+    if (!dirty || !current) return;
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => void savePage(), 900);
+    return () => window.clearTimeout(saveTimer.current);
+  }, [sections, dirty, current?.id]);
+
+  async function publish() {
+    if (!org.data) return;
+    await savePage();
+    await updateRecord("/api/organization", {
+      ...org.data,
+      websitePublished: true,
+      websiteUrl: org.data.websiteUrl || previewPath,
+    });
+    org.reload();
+    setShareOpen(true);
   }
 
   async function saveDomain() {
     if (!org.data) return;
-    setError(null);
-    try {
-      await updateRecord("/api/organization", {
-        ...org.data,
-        websiteUrl: websiteUrl || org.data.websiteUrl,
-        customDomain: customDomain || org.data.customDomain,
-        websitePublished: true,
-      });
-      org.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    }
+    const domain = cleanHost(customDomain);
+    const previous = (() => {
+      try {
+        return JSON.parse(org.data.settingsJson || "{}") as Record<string, unknown>;
+      } catch {
+        return {};
+      }
+    })();
+    await updateRecord("/api/organization", {
+      ...org.data,
+      customDomain: domain,
+      websiteUrl: domain ? `https://${domain}` : previewPath,
+      websitePublished: true,
+      settingsJson: JSON.stringify({ ...previous, domain: { hostTarget: HOST_TARGET, status: domain ? "PENDING" : "" } }),
+    });
+    org.reload();
   }
 
+  function addBlock(type: SectionType) {
+    const block = newSection(type, institute);
+    patch([...sections, block]);
+    setPicked(block.id);
+  }
+
+  function move(index: number, dir: -1 | 1) {
+    const to = index + dir;
+    if (to < 0 || to >= sections.length) return;
+    const next = [...sections];
+    const [row] = next.splice(index, 1);
+    next.splice(to, 0, row);
+    patch(next);
+  }
+
+  async function switchPage(id: string) {
+    if (dirty) await savePage();
+    setDirty(false);
+    setPageId(id);
+  }
+
+  async function copyLiveUrl() {
+    await navigator.clipboard.writeText(liveUrl).catch(() => undefined);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  }
+
+  const catalog = (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {liveCourses.length === 0 && <p className="text-sm text-slate-500">Publish a course and it will show here.</p>}
+      {liveCourses.map((c) => (
+        <div key={c.id} className="overflow-hidden rounded-2xl border border-line bg-white">
+          {c.thumbnailUrl && <img src={fileSrc(c.thumbnailUrl)} alt="" className="h-28 w-full object-cover" />}
+          <div className="p-4">
+            <p className="font-semibold text-navy">{c.name}</p>
+            <p className="mt-1 line-clamp-2 text-xs text-slate-500">{c.description}</p>
+            <p className="mt-2 text-sm font-bold text-navy">{formatInr(c.fees)}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-navy">Website</h1>
-          <p className="text-sm text-slate-500">Student website: published courses, purchase, login, and study.</p>
+    <div className="flex h-svh flex-col bg-[#eef2f7]">
+      <header className="flex flex-wrap items-center gap-3 border-b border-line bg-white px-4 py-2.5">
+        <Link to="/" className="rounded-lg px-2 py-1 text-sm text-slate-600 hover:bg-mist">
+          ← Back
+        </Link>
+        <p className="font-semibold text-navy">{institute}</p>
+        <nav className="flex min-w-0 flex-1 flex-wrap gap-1">
+          {sorted.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`rounded-full px-3 py-1 text-sm ${current?.id === p.id ? "bg-navy text-white" : "text-slate-600 hover:bg-mist"}`}
+              onClick={() => void switchPage(p.id)}
+            >
+              {p.title}
+            </button>
+          ))}
+        </nav>
+        <p className="text-xs text-slate-400">{status === "saving" ? "Saving…" : status === "unsaved" ? "Editing" : "Saved"}</p>
+        <button type="button" className="rounded-full border border-line px-3 py-1.5 text-sm" onClick={() => setShareOpen(true)}>
+          Share website
+        </button>
+        <PrimaryButton onClick={() => void publish()}>Publish</PrimaryButton>
+      </header>
+      {error && (
+        <div className="px-4 py-2">
+          <ErrorText error={error} />
         </div>
-        <div className="flex gap-2">
-          <button
-            className={`rounded-full px-3 py-1.5 text-sm ${tab === "pages" ? "bg-navy text-white" : "bg-mist"}`}
-            onClick={() => setTab("pages")}
-          >
-            Manage Pages
-          </button>
-          <button
-            className={`rounded-full px-3 py-1.5 text-sm ${tab === "domain" ? "bg-navy text-white" : "bg-mist"}`}
-            onClick={() => setTab("domain")}
-          >
-            Domain Integration
-          </button>
-        </div>
-      </div>
-      <ErrorText error={error} />
-
-      {tab === "pages" && (
-        <>
-          <Card
-            title="Manage your website pages"
-            action={
-              <PrimaryButton onClick={seedDefaults}>
-                {(pages.data?.length ?? 0) === 0 ? "Create default pages" : "Add missing defaults"}
-              </PrimaryButton>
-            }
-          >
-            <p className="mb-4 text-sm text-slate-500">You can add, hide, or edit SEO for all pages.</p>
-            <Table
-              columns={["Page", "Slug", "Status", "Actions"]}
-              rows={sorted.map((p) => [
-                p.title,
-                p.slug,
-                p.hidden ? "Hidden" : "Visible",
-                <span className="flex flex-wrap gap-2" key={p.id}>
-                  <button className="text-brand hover:underline" type="button" onClick={() => openInfo(p)}>
-                    Page Info
-                  </button>
-                  <button className="text-brand hover:underline" type="button" onClick={() => toggleHidden(p)}>
-                    {p.hidden ? "Unhide" : "Hide"}
-                  </button>
-                </span>,
-              ])}
-            />
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link
-                className="rounded-full border border-line px-4 py-2 text-sm"
-                to={`/s/${org.data?.slug || "aarohan"}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open student website
-              </Link>
-              <PrimaryButton
-                onClick={async () => {
-                  if (!org.data) return;
-                  await updateRecord("/api/organization", { ...org.data, websitePublished: true, websiteUrl: `/s/${org.data.slug || "aarohan"}` });
-                  org.reload();
-                }}
-              >
-                Publish website
-              </PrimaryButton>
-            </div>
-          </Card>
-
-          {selected && (
-            <Card title={`Page Info — ${selected.title}`} action={<button onClick={() => setSelected(null)}>Close</button>}>
-              <FormGrid>
-                <Field label="Page title / meta title" value={metaTitle} onChange={setMetaTitle} placeholder="Add meta title tags here" />
-                <Field label="Meta description" value={metaDescription} onChange={setMetaDescription} placeholder="Add meta description here" />
-                <Field label="Preview image URL (social)" value={previewImageUrl} onChange={setPreviewImageUrl} />
-              </FormGrid>
-              <div className="mt-3">
-                <PrimaryButton onClick={saveInfo}>Save Details</PrimaryButton>
-              </div>
-            </Card>
-          )}
-        </>
       )}
 
-      {tab === "domain" && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card title="Share your website">
-            <p className="mb-3 text-sm text-slate-500">Students can download and access your courses from this link.</p>
-            <p className="text-sm font-medium">
-              {org.data?.slug ? `${window.location.origin}/s/${org.data.slug}` : "Publish to get a student website URL"}
-            </p>
-            <p className="mt-2 text-xs text-slate-500">
-              {org.data?.websitePublished ? "Website marked live" : "Website not published yet"}
-            </p>
-            <div className="mt-4">
-              <Link to={`/s/${org.data?.slug || "aarohan"}`} className="text-sm text-brand hover:underline" target="_blank">
-                Open student website →
+      <div className="grid min-h-0 flex-1 grid-cols-[104px_minmax(0,1fr)]">
+        <aside className="overflow-y-auto border-r border-line bg-white p-2">
+          <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Add</p>
+          <div className="grid gap-1.5">
+            {BLOCKS.map((block) => {
+              const Icon = ICONS[block.type];
+              return (
+                <button
+                  key={block.type}
+                  type="button"
+                  title={block.hint}
+                  className="flex flex-col items-center gap-1 rounded-xl border border-line px-1 py-2 text-center hover:border-brand hover:bg-mist"
+                  onClick={() => addBlock(block.type)}
+                >
+                  <Icon className="h-5 w-5 text-navy" />
+                  <span className="text-[11px] font-medium leading-tight text-navy">{block.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+
+        <div className="min-h-0 overflow-auto p-6">
+          <div className="mx-auto min-h-full max-w-4xl rounded-2xl bg-white shadow-sm">
+            <header className="flex items-center justify-between border-b border-line px-6 py-4">
+              <div className="flex items-center gap-2">
+                {org.data?.logoUrl ? (
+                  <img src={fileSrc(org.data.logoUrl)} alt="" className="h-9 w-9 rounded-lg object-cover" />
+                ) : (
+                  <span className="grid h-9 w-9 place-items-center rounded-lg bg-navy text-xs font-bold text-white">
+                    {(institute[0] || "I").toUpperCase()}
+                  </span>
+                )}
+                <p className="font-bold text-navy">{institute}</p>
+              </div>
+              <div className="hidden gap-3 text-sm text-slate-500 sm:flex">
+                {sorted.slice(0, 5).map((p) => (
+                  <span key={p.id} className={p.id === current?.id ? "font-medium text-navy" : ""}>
+                    {p.title}
+                  </span>
+                ))}
+                <span className="rounded-full bg-brand px-3 py-1 text-xs font-semibold text-white">Login</span>
+              </div>
+            </header>
+            <div className="space-y-6 p-6">
+              {sections.length === 0 && (
+                <button
+                  type="button"
+                  className="grid h-48 w-full place-items-center rounded-2xl border-2 border-dashed border-slate-300 text-sm text-slate-500"
+                  onClick={() => addBlock("hero")}
+                >
+                  Click a block on the left to start this page
+                </button>
+              )}
+              {sections.map((section, index) => (
+                <div
+                  key={section.id}
+                  className={`relative rounded-2xl ${picked === section.id ? "ring-2 ring-brand" : "hover:ring-1 hover:ring-slate-200"}`}
+                  onClick={() => setPicked(section.id)}
+                >
+                  {picked === section.id && (
+                    <div className="absolute -top-3 right-3 z-10 flex gap-1">
+                      <button type="button" className="rounded bg-white px-2 py-0.5 text-[11px] shadow" onClick={() => move(index, -1)}>
+                        Up
+                      </button>
+                      <button type="button" className="rounded bg-white px-2 py-0.5 text-[11px] shadow" onClick={() => move(index, 1)}>
+                        Down
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded bg-white px-2 py-0.5 text-[11px] text-red-600 shadow"
+                        onClick={() => {
+                          patch(sections.filter((s) => s.id !== section.id));
+                          setPicked(null);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                  <SectionView
+                    section={section}
+                    catalog={catalog}
+                    onChange={(change) =>
+                      patch(sections.map((s) => (s.id === section.id ? { ...s, ...change } : s)))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {shareOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center" onClick={() => setShareOpen(false)}>
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-navy">Share your website</h2>
+            <p className="mt-2 text-sm text-slate-600">This is the student site. Send it on WhatsApp if you do not have a domain yet.</p>
+            <p className="mt-3 break-all rounded-lg bg-mist px-3 py-2 font-mono text-sm">{liveUrl}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <PrimaryButton onClick={() => void copyLiveUrl()}>{copied ? "Copied" : "Copy link"}</PrimaryButton>
+              <Link className="rounded-full border border-line px-4 py-2 text-sm" to={previewPath} target="_blank" rel="noreferrer">
+                Open website
               </Link>
             </div>
-          </Card>
-          <Card title="Domain integration">
-            <FormGrid>
-              <Field
-                label="Website URL"
-                value={websiteUrl || org.data?.websiteUrl || ""}
-                onChange={setWebsiteUrl}
-                placeholder="https://your-institute.propel.app"
-              />
-              <Field
-                label="Custom domain"
-                value={customDomain || org.data?.customDomain || ""}
-                onChange={setCustomDomain}
-                placeholder="www.yourinstitute.com"
-              />
-            </FormGrid>
+            <p className="mt-5 text-sm font-medium text-navy">Already have a domain?</p>
+            <p className="mt-1 text-sm text-slate-600">
+              On GoDaddy or Hostinger, point it here. CNAME to <span className="font-mono">{HOST_TARGET}</span>. We do not buy the domain for you.
+            </p>
             <div className="mt-3">
-              <PrimaryButton onClick={saveDomain}>Save & request domain</PrimaryButton>
+              <Field label="Your domain" value={customDomain} onChange={setCustomDomain} placeholder="demoweb.com" />
             </div>
-          </Card>
+            {host && (
+              <p className="mt-2 text-xs text-slate-500">
+                CNAME www → {HOST_TARGET}
+                <br />
+                CNAME {host} → {HOST_TARGET}
+              </p>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="rounded-full border border-line px-4 py-2 text-sm" onClick={() => setShareOpen(false)}>
+                Close
+              </button>
+              <button type="button" className="rounded-full bg-navy px-4 py-2 text-sm text-white" onClick={() => void saveDomain()}>
+                Save domain
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

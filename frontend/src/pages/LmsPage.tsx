@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, fileSrc } from "../api";
 import { createRecord, uploadSubmissionFile } from "../ops";
 import { useAuth } from "../auth";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatWhen, useApi } from "../ui";
+import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, formatWhen, useApi } from "../ui";
 
 type Content = { id: string; title: string; contentType: string; scormStandard?: string; published?: boolean; courseId?: string };
 type Assignment = { id: string; title: string; instructions: string; courseId?: string; batchId?: string; dueAt?: string; maxScore?: number };
@@ -251,7 +251,26 @@ export function StudentLms({
               <span className="text-slate-600">Code (optional)</span>
               <textarea className="mt-1 w-full rounded-lg border border-line px-3 py-2 font-mono text-sm" rows={4} value={code} onChange={(e) => setCode(e.target.value)} />
             </label>
-            <Field label="Screenshot or file link (optional)" value={shot} onChange={setShot} placeholder="Paste a URL" />
+            <Field label="Screenshot or file (optional)" value={shot} onChange={setShot} />
+            <label className="block text-sm">
+              <span className="text-slate-600">Upload screenshot</span>
+              <input
+                className="mt-1 block w-full text-sm"
+                type="file"
+                accept="image/*,.pdf"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!file) return;
+                  try {
+                    const stored = await uploadSubmissionFile(file);
+                    setShot(stored.url);
+                  } catch (err) {
+                    setError((err as Error).message);
+                  }
+                }}
+              />
+            </label>
           </FormGrid>
           <div className="mt-3">
             <PrimaryButton
@@ -425,6 +444,8 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
   const [attStatus, setAttStatus] = useState("PRESENT");
   const [doubtSub, setDoubtSub] = useState("");
   const [doubtBody, setDoubtBody] = useState("");
+  const [liveTitle, setLiveTitle] = useState("");
+  const [liveStarts, setLiveStarts] = useState("");
 
   const faculty = user?.role === "OWNER" || user?.role === "FACULTY";
   const student = user?.role === "STUDENT";
@@ -471,6 +492,7 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
                 ]}
               />
               <Field label="URL" value={url} onChange={setUrl} />
+              <FileUpload label="Or upload a file" value={url} onChange={setUrl} accept="image/*,.pdf,.doc,.docx,.mp4,.zip,video/*" />
               <Select label="Batch" value={batchId} onChange={setBatchId} options={(batches.data ?? []).map((b) => ({ value: b.id, label: b.name }))} />
             </FormGrid>
             <div className="mt-3">
@@ -624,7 +646,38 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
       </Card>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Live classes">
-          <ul className="text-sm">
+          {faculty && (
+            <>
+          <FormGrid>
+            <Field label="Class title" value={liveTitle} onChange={setLiveTitle} placeholder="Evening doubt class" />
+            <Field label="Starts at" value={liveStarts} onChange={setLiveStarts} type="datetime-local" />
+            <Select label="Batch" value={batchId} onChange={setBatchId} options={(batches.data ?? []).map((b) => ({ value: b.id, label: b.name }))} />
+          </FormGrid>
+          <div className="mt-3">
+            <PrimaryButton
+              disabled={!liveTitle}
+              onClick={() =>
+                run(async () => {
+                  await api("/api/actions/live-sessions/schedule", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      title: liveTitle,
+                      batchId: batchId || undefined,
+                      startsAt: liveStarts ? new Date(liveStarts).toISOString() : undefined,
+                    }),
+                  });
+                  setLiveTitle("");
+                  setLiveStarts("");
+                  live.reload();
+                })
+              }
+            >
+              Open Jitsi room
+            </PrimaryButton>
+          </div>
+            </>
+          )}
+          <ul className="mt-4 text-sm">
             {(live.data ?? []).map((l, i) => (
               <li key={i}>
                 {l.title} ({l.provider}){" "}

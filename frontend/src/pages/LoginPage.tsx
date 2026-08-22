@@ -45,7 +45,7 @@ function AuthShell({ children }: { children: ReactNode }) {
             Run your institute from one portal.
           </h2>
           <p className="mt-4 max-w-md text-base text-slate-300">
-            Owners create the institute. Students and staff use the login link you share with them.
+            Owners work in this portal. Students log in on your institute website after you connect a domain.
           </p>
         </div>
       </aside>
@@ -108,7 +108,7 @@ function OtpLoginView() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-navy">Login</h1>
-      <p className="mt-2 text-sm text-slate-500">Institute owners sign in here. Students and staff use the link from their institute.</p>
+      <p className="mt-2 text-sm text-slate-500">Institute owners sign in here. Students should open your institute website, not this page.</p>
       {!sent ? (
         <form className="mt-8" onSubmit={sendOtp}>
           <label className="block text-sm font-medium text-navy">Mobile Number</label>
@@ -117,7 +117,7 @@ function OtpLoginView() {
             <input
               className="w-full rounded-r-lg border border-line px-3 py-2.5 outline-none focus:border-brand"
               inputMode="numeric"
-              placeholder="999 888 7777"
+              placeholder="10-digit mobile"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
             />
@@ -130,7 +130,7 @@ function OtpLoginView() {
       ) : (
         <form className="mt-8" onSubmit={verify}>
           <p className="text-sm text-slate-500">OTP sent to +91 {sent.phone || phone}</p>
-          {sent.devOtp && <p className="mt-1 text-xs text-slate-400">Dev OTP: {sent.devOtp}</p>}
+          {sent.devOtp && <p className="mt-1 text-xs text-slate-400">Local OTP: {sent.devOtp}</p>}
           <label className="mt-4 block text-sm font-medium text-navy">OTP</label>
           <input
             className="mt-1 w-full rounded-lg border border-line px-3 py-2.5 tracking-[0.4em] outline-none focus:border-brand"
@@ -195,7 +195,7 @@ function EmailLoginView() {
         </label>
         <label className="mt-4 block text-sm font-medium text-navy">
           Password
-          <input className="mt-1 w-full rounded-lg border border-line px-3 py-2.5 outline-none focus:border-brand" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <PasswordField value={password} onChange={setPassword} />
         </label>
         <div className="mt-2 text-right">
           <Link className="text-sm text-brand" to="/forgot">
@@ -272,7 +272,7 @@ function SignupView() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-navy">Create your institute</h1>
-      <p className="mt-2 text-sm text-slate-500">You will get a demo workspace until you subscribe and we activate you.</p>
+      <p className="mt-2 text-sm text-slate-500">Create your institute. Students will later log in on your own website.</p>
       {!sent ? (
         <form className="mt-6 space-y-3" onSubmit={createInstitute}>
           <Field label="Institute name" value={instituteName} onChange={setInstituteName} />
@@ -295,13 +295,13 @@ function SignupView() {
         </form>
       ) : (
         <form className="mt-6" onSubmit={verify}>
-          <p className="text-sm text-slate-500">Verify your mobile to open the demo workspace.</p>
-          {sent.devOtp && <p className="mt-1 text-xs text-slate-400">Dev OTP: {sent.devOtp}</p>}
+          <p className="text-sm text-slate-500">Verify your mobile to open your institute.</p>
+          {sent.devOtp && <p className="mt-1 text-xs text-slate-400">Local OTP: {sent.devOtp}</p>}
           <label className="mt-4 block text-sm font-medium text-navy">OTP</label>
           <input className="mt-1 w-full rounded-lg border border-line px-3 py-2.5 tracking-[0.4em]" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value)} />
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
           <button className="mt-6 w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
-            {busy ? "Opening…" : "Enter demo"}
+            {busy ? "Opening…" : "Create institute"}
           </button>
         </form>
       )}
@@ -447,7 +447,7 @@ function ForgotView() {
         </form>
       ) : (
         <form className="mt-6 space-y-3" onSubmit={savePassword}>
-          {"devOtp" in sent && sent.devOtp && <p className="text-xs text-slate-400">Dev OTP: {sent.devOtp}</p>}
+          {"devOtp" in sent && sent.devOtp && <p className="text-xs text-slate-400">Local OTP: {sent.devOtp}</p>}
           <Field label="OTP" value={otp} onChange={setOtp} />
           <Field label="New password" value={password} onChange={setPassword} type="password" />
           <Field label="Confirm password" value={confirm} onChange={setConfirm} type="password" />
@@ -488,16 +488,36 @@ function OrLine() {
 function Legal() {
   return (
     <p className="mt-8 text-center text-xs text-slate-400">
-      By continuing you agree to our <span className="text-brand">T&C</span> and <span className="text-brand">Privacy Policy</span>.
+      By continuing you agree to our{" "}
+      <Link className="text-brand" to="/legal/terms">
+        Terms
+      </Link>{" "}
+      and{" "}
+      <Link className="text-brand" to="/legal/privacy">
+        Privacy Policy
+      </Link>
+      .
     </p>
   );
 }
 
 function DevHint() {
-  if (!import.meta.env.DEV) return null;
+  return null;
+}
+
+function PasswordField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [show, setShow] = useState(false);
   return (
-    <p className="mt-6 text-center text-[11px] leading-relaxed text-slate-400">
-      Developer: owner mobile 9876500001, email deepak@yopmail.com, password Propel@123, OTP 123456.
-    </p>
+    <span className="relative mt-1 block">
+      <input
+        className="w-full rounded-lg border border-line px-3 py-2.5 outline-none focus:border-brand"
+        type={show ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-brand" onClick={() => setShow((v) => !v)}>
+        {show ? "Hide" : "Show"}
+      </button>
+    </span>
   );
 }

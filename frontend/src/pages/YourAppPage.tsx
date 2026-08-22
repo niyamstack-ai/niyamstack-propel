@@ -1,6 +1,7 @@
 import { useState } from "react";
+import { api } from "../api";
 import { createRecord, updateRecord } from "../ops";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
+import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
 
 type Org = { name: string; slug?: string; appShareUrl?: string; logoUrl?: string; brandPrimary?: string };
 type Banner = { id: string; title: string; imageUrl?: string; linkUrl?: string; live: boolean; sortOrder?: number };
@@ -47,12 +48,13 @@ export function YourAppPage() {
   async function addPush() {
     setError(null);
     try {
-      await createRecord("/api/app-pushes", {
-        title: pTitle,
-        body: pBody,
-        audience: pAudience,
-        status: "QUEUED",
-        scheduledAt: new Date().toISOString(),
+      await api("/api/actions/pushes/send", {
+        method: "POST",
+        body: JSON.stringify({
+          title: pTitle,
+          body: pBody,
+          audience: pAudience,
+        }),
       });
       setPTitle("");
       setPBody("");
@@ -66,15 +68,15 @@ export function YourAppPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-navy">Your App</h1>
-          <p className="text-sm text-slate-500">Configure branded app, banners, and push notifications.</p>
+          <h1 className="text-2xl font-bold text-navy">Student app</h1>
+          <p className="text-sm text-slate-500">A home-screen shortcut to your institute website. This is not a Play Store listing unless Niyamstack publishes one for you.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {(
             [
               ["configure", "Configure App"],
               ["banners", "Manage Banners"],
-              ["marketing", "Marketing Dashboard"],
+              ["marketing", "Notifications"],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -99,7 +101,7 @@ export function YourAppPage() {
                 label="App share URL"
                 value={appUrl || org.data?.appShareUrl || ""}
                 onChange={setAppUrl}
-                placeholder="https://play.google.com/store/apps/..."
+                placeholder="Share this website link, or a Play Store URL if you have one"
               />
             </FormGrid>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -113,7 +115,7 @@ export function YourAppPage() {
             <div className="mx-auto flex h-64 w-40 flex-col rounded-3xl border-4 border-navy bg-mist p-3">
               <div className="rounded-xl bg-white p-2 text-center text-xs font-bold text-navy">{org.data?.name || "App"}</div>
               <div className="mt-3 flex-1 rounded-xl bg-white/70" />
-              <p className="mt-2 text-center text-[10px] text-slate-500">Student app shell</p>
+          <p className="mt-2 text-center text-[10px] text-slate-500">Home screen of your website</p>
             </div>
           </Card>
         </div>
@@ -123,7 +125,7 @@ export function YourAppPage() {
         <Card title={`Manage Banners (${banners.data?.filter((b) => b.live).length ?? 0} live)`}>
           <FormGrid>
             <Field label="Title" value={bTitle} onChange={setBTitle} />
-            <Field label="Image URL" value={bImage} onChange={setBImage} />
+            <FileUpload label="Banner image" value={bImage} accept="image/*" onChange={setBImage} />
             <Field label="Link URL" value={bLink} onChange={setBLink} />
           </FormGrid>
           <div className="mt-3">
@@ -151,7 +153,7 @@ export function YourAppPage() {
               value={pAudience}
               onChange={setPAudience}
               options={[
-                { value: "ALL_USERS", label: "All users" },
+                  { value: "ALL_USERS", label: "Everyone" },
                 { value: "STUDENTS", label: "Students" },
                 { value: "COURSE_BUYERS", label: "Course buyers" },
               ]}

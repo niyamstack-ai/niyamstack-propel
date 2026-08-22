@@ -34,7 +34,11 @@ import { CampaignsPage } from "./pages/CampaignsPage";
 import { PeoplePage } from "./pages/PeoplePage";
 import { SelfServicePage } from "./pages/SelfServicePage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
-import { StorefrontAppPage, StorefrontCatalogPage, StorefrontChatsPage, StorefrontCoursePage, StorefrontFeesPage, StorefrontForgotPage, StorefrontJobsPage, StorefrontLayout, StorefrontLearnPage, StorefrontLoginPage, StorefrontNoticesPage, StorefrontProfilePage, StorefrontStudyPage } from "./pages/Storefront";
+import { StorefrontAppPage, StorefrontCatalogPage, StorefrontChatsPage, StorefrontCmsPage, StorefrontCoursePage, StorefrontFeesPage, StorefrontForgotPage, StorefrontJobsPage, StorefrontLayout, StorefrontLearnPage, StorefrontLoginPage, StorefrontNoticesPage, StorefrontProfilePage, StorefrontStudyPage } from "./pages/Storefront";
+import { LegalPage } from "./pages/LegalPage";
+import { isProductHost } from "./siteHost";
+import { useEffect, useState } from "react";
+import { api } from "./api";
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { token, ready } = useAuth();
@@ -66,25 +70,63 @@ function RoleGate() {
   return <Outlet />;
 }
 
+function storefrontChildRoutes() {
+  return (
+    <>
+      <Route index element={<StorefrontCatalogPage />} />
+      <Route path="courses/:courseId" element={<StorefrontCoursePage />} />
+      <Route path="login" element={<StorefrontLoginPage />} />
+      <Route path="forgot" element={<StorefrontForgotPage />} />
+      <Route path="app" element={<StorefrontAppPage />} />
+      <Route path="learn" element={<StorefrontLearnPage />} />
+      <Route path="learn/:courseId" element={<StorefrontStudyPage />} />
+      <Route path="profile" element={<StorefrontProfilePage />} />
+      <Route path="fees" element={<StorefrontFeesPage />} />
+      <Route path="jobs" element={<StorefrontJobsPage />} />
+      <Route path="notices" element={<StorefrontNoticesPage />} />
+      <Route path="chats" element={<StorefrontChatsPage />} />
+      <Route path="p/:pageSlug" element={<StorefrontCmsPage />} />
+    </>
+  );
+}
+
+function CustomDomainApp() {
+  const [slug, setSlug] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api<{ slug: string }>(`/api/public/sites/by-host?host=${encodeURIComponent(window.location.hostname)}`)
+      .then((site) => setSlug(site.slug))
+      .catch((err: Error) => setError(err.message));
+  }, []);
+  if (error) {
+    return (
+      <div className="p-10 text-center">
+        <h1 className="text-xl font-bold">Website not connected yet</h1>
+        <p className="mt-2 text-sm text-slate-500">{error}</p>
+      </div>
+    );
+  }
+  if (!slug) return <p className="p-6 text-sm text-slate-500">Loading…</p>;
+  return (
+    <Routes>
+      <Route element={<StorefrontLayout slug={slug} />}>{storefrontChildRoutes()}</Route>
+    </Routes>
+  );
+}
+
 export default function App() {
+  if (!isProductHost()) {
+    return <CustomDomainApp />;
+  }
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/forgot" element={<ForgotPage />} />
+      <Route path="/legal/terms" element={<LegalPage kind="terms" />} />
+      <Route path="/legal/privacy" element={<LegalPage kind="privacy" />} />
       <Route path="/s/:slug" element={<StorefrontLayout />}>
-        <Route index element={<StorefrontCatalogPage />} />
-        <Route path="courses/:courseId" element={<StorefrontCoursePage />} />
-        <Route path="login" element={<StorefrontLoginPage />} />
-        <Route path="forgot" element={<StorefrontForgotPage />} />
-        <Route path="app" element={<StorefrontAppPage />} />
-        <Route path="learn" element={<StorefrontLearnPage />} />
-        <Route path="learn/:courseId" element={<StorefrontStudyPage />} />
-        <Route path="profile" element={<StorefrontProfilePage />} />
-        <Route path="fees" element={<StorefrontFeesPage />} />
-        <Route path="jobs" element={<StorefrontJobsPage />} />
-        <Route path="notices" element={<StorefrontNoticesPage />} />
-        <Route path="chats" element={<StorefrontChatsPage />} />
+        {storefrontChildRoutes()}
       </Route>
       <Route path="/platform/login" element={<PlatformLoginPage />} />
       <Route

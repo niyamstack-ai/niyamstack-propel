@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { createRecord } from "../ops";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
+import { createRecord, deleteRecord } from "../ops";
+import { Card, ErrorText, Field, FileUpload, FormGrid, LinkButton, PrimaryButton, Select, Table, useApi } from "../ui";
+import { QuizBuilder, type AssessmentRow } from "./courseContent";
 
-type Assessment = { id: string; title: string; kind: string; published: boolean };
 type FreeMaterial = { id: string; title: string; materialType: string; url?: string; fileName?: string; published: boolean };
 
 export function ContentHubPage() {
-  const tests = useApi<Assessment[]>("/api/assessments");
+  const tests = useApi<AssessmentRow[]>("/api/assessments");
+  const courses = useApi<{ id: string; name: string }[]>("/api/courses");
   const materials = useApi<FreeMaterial[]>("/api/free-materials");
   const [tab, setTab] = useState<"tests" | "free">("tests");
   const [error, setError] = useState<string | null>(null);
@@ -16,6 +17,8 @@ export function ContentHubPage() {
   const [url, setUrl] = useState("");
   const [fileName, setFileName] = useState("");
   const [q, setQ] = useState("");
+  const [editTest, setEditTest] = useState<AssessmentRow | null>(null);
+  const [creating, setCreating] = useState(false);
 
   async function addMaterial() {
     setError(null);
@@ -36,6 +39,22 @@ export function ContentHubPage() {
     }
   }
 
+  async function removeTest(row: AssessmentRow) {
+    if (!window.confirm(`Delete test “${row.title}”?`)) return;
+    setError(null);
+    try {
+      await deleteRecord(`/api/assessments/${row.id}`);
+      tests.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function courseName(id?: string) {
+    if (!id) return "Unassigned";
+    return (courses.data ?? []).find((c) => c.id === id)?.name || "Course";
+  }
+
   const filteredTests = (tests.data ?? []).filter((t) => !q || t.title.toLowerCase().includes(q.toLowerCase()));
 
   return (
@@ -43,7 +62,7 @@ export function ContentHubPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-navy">Content</h1>
-          <p className="text-sm text-slate-500">Test portal and free materials for visitors.</p>
+          <p className="text-sm text-slate-500">Tests and free notes students see on your website. Upload a file or paste a YouTube link.</p>
         </div>
         <div className="flex gap-2">
           <button className={`rounded-full px-3 py-1.5 text-sm ${tab === "tests" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => setTab("tests")}>
@@ -60,17 +79,40 @@ export function ContentHubPage() {
         <Card
           title={`Test Portal (${tests.data?.length ?? 0})`}
           action={
-            <Link to="/courses">
-              <PrimaryButton>Go to course learning</PrimaryButton>
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              <PrimaryButton onClick={() => setCreating(true)}>Create test</PrimaryButton>
+              <Link to="/courses">
+                <PrimaryButton>Go to course learning</PrimaryButton>
+              </Link>
+            </div>
           }
         >
-          <p className="mb-3 text-sm text-slate-500">Only published tests are shown here. Create online tests and assign them to courses.</p>
+          <p className="mb-3 text-sm text-slate-500">Open a test to change its name, questions, and settings. Create tests here or inside a course.</p>
           <Field label="Search online tests" value={q} onChange={setQ} placeholder="Search online tests" />
           <div className="mt-4">
             <Table
-              columns={["Test / Folder", "Kind", "Published"]}
-              rows={filteredTests.map((t) => [t.title, t.kind, t.published ? "Yes" : "No"])}
+              empty="No tests yet. Create a test here or from a course."
+              columns={["Test", "Kind", "Course", "Published", ""]}
+              rows={filteredTests.map((t) => [
+                <button type="button" className="text-left font-medium text-navy hover:text-brand" onClick={() => setEditTest(t)}>
+                  {t.title}
+                </button>,
+                t.kind,
+                t.courseId ? (
+                  <Link className="text-brand hover:underline" to={`/courses/${t.courseId}`}>
+                    {courseName(t.courseId)}
+                  </Link>
+                ) : (
+                  "Unassigned"
+                ),
+                t.published ? "Yes" : "No",
+                <span className="flex flex-wrap gap-3">
+                  <LinkButton onClick={() => setEditTest(t)}>Edit</LinkButton>
+                  <button type="button" className="text-sm font-medium text-red-600 hover:underline" onClick={() => void removeTest(t)}>
+                    Delete
+                  </button>
+                </span>,
+              ])}
             />
           </div>
         </Card>
@@ -104,8 +146,8 @@ export function ContentHubPage() {
                 { value: "TEST", label: "Test" },
               ]}
             />
-            <Field label="URL" value={url} onChange={setUrl} />
-            <Field label="File name" value={fileName} onChange={setFileName} />
+            <FileUpload label="Upload file" value={url} onChange={(v) => { setUrl(v); setFileName(v.split("/").pop() || fileName); }} accept="image/*,.pdf,.doc,.docx,.mp4,video/*,.zip" />
+            <Field label="Or YouTube / file URL" value={url} onChange={setUrl} />
           </FormGrid>
           <div className="mt-3">
             <PrimaryButton disabled={!title} onClick={addMaterial}>
@@ -119,6 +161,28 @@ export function ContentHubPage() {
             />
           </div>
         </Card>
+      )}
+
+      {creating && (
+        <QuizBuilder
+          onClose={() => setCreating(false)}
+          onSaved={() => {
+            setCreating(false);
+            tests.reload();
+          }}
+        />
+      )}
+      {editTest && (
+        <QuizBuilder
+          courseId={editTest.courseId}
+          folderId={editTest.parentFolderId ?? null}
+          existing={editTest}
+          onClose={() => setEditTest(null)}
+          onSaved={() => {
+            setEditTest(null);
+            tests.reload();
+          }}
+        />
       )}
     </div>
   );

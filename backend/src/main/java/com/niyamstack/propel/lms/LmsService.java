@@ -571,6 +571,7 @@ public class LmsService {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class CourseQuizInput {
         public UUID id;
+        public UUID courseId;
         public String title;
         public String kind;
         public UUID parentFolderId;
@@ -603,9 +604,11 @@ public class LmsService {
         if (Roles.STUDENT.equals(user.role())) {
             throw new ApiException(HttpStatus.FORBIDDEN, "Students cannot create tests");
         }
-        store.getOwned(Course.class, courseId, user.organizationId());
         if (body == null || body.title == null || body.title.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a test name.");
+        }
+        if (courseId == null) {
+            courseId = body.courseId;
         }
         List<QuizQuestionInput> questions = body.questions == null ? List.of() : body.questions.stream()
                 .filter(q -> q != null && q.prompt != null && !q.prompt.isBlank())
@@ -616,7 +619,10 @@ public class LmsService {
         Assessment exam;
         if (body.id != null) {
             exam = store.getOwned(Assessment.class, body.id, user.organizationId());
-            if (exam.getCourseId() != null && !courseId.equals(exam.getCourseId())) {
+            if (courseId == null) {
+                courseId = exam.getCourseId();
+            }
+            if (exam.getCourseId() != null && courseId != null && !courseId.equals(exam.getCourseId())) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "This test belongs to another course.");
             }
         } else {
@@ -624,7 +630,10 @@ public class LmsService {
             exam.setOrganizationId(user.organizationId());
             exam.setSortOrder(nextSortOrder(user.organizationId(), courseId, body.parentFolderId));
         }
-        exam.setCourseId(courseId);
+        if (courseId != null) {
+            store.getOwned(Course.class, courseId, user.organizationId());
+            exam.setCourseId(courseId);
+        }
         exam.setTitle(body.title.trim());
         exam.setKind(body.kind == null || body.kind.isBlank() ? "MCQ" : body.kind);
         exam.setParentFolderId(body.parentFolderId);
@@ -665,8 +674,12 @@ public class LmsService {
                 row.setAnswerKey(q.answerKey == null ? "" : q.answerKey);
             }
             if ("CODE".equals(type) && (row.getLanguage() == null || row.getLanguage().isBlank())) {
-                Course course = store.getOwned(Course.class, courseId, user.organizationId());
-                row.setLanguage(CodeRunner.inferLanguage(course.getName(), course.getCategory()));
+                if (courseId != null) {
+                    Course course = store.getOwned(Course.class, courseId, user.organizationId());
+                    row.setLanguage(CodeRunner.inferLanguage(course.getName(), course.getCategory()));
+                } else {
+                    row.setLanguage(CodeRunner.inferLanguage(null, null));
+                }
             }
             if ("CODE".equals(type) && (row.getStarterCode() == null || row.getStarterCode().isBlank())) {
                 row.setStarterCode(CodeRunner.starter(row.getLanguage()));

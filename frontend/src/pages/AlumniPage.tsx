@@ -111,7 +111,7 @@ export function AlumniPage({ embedded }: { embedded?: boolean } = {}) {
           <ul className="text-sm">
             {(industry.data ?? []).map((n, i) => (
               <li key={i}>
-                {n.name} {n.mou ? "(MoU)" : ""}
+                {n.name} {n.mou ? "(signed agreement)" : ""}
               </li>
             ))}
           </ul>

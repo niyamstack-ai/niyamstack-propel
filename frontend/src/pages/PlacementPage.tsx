@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../api";
 import { createRecord } from "../ops";
 import { useAuth } from "../auth";
+import { prettyLabel } from "../labels";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatDay, useApi } from "../ui";
 
 type Drive = { id: string; title: string; packageLpa: number; status: string; locations: string; minAttendancePct?: number; companyId?: string; jobDescription?: string; deadline?: string };
@@ -86,6 +87,7 @@ function StaffPlacement() {
   const students = useApi<Student[]>("/api/students");
   const benches = useApi<{ role: string; city: string; medianLpa: number }[]>("/api/actions/salary-benchmarks");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [coName, setCoName] = useState("");
   const [industry, setIndustry] = useState("IT Services");
   const [companyId, setCompanyId] = useState("");
@@ -107,9 +109,10 @@ function StaffPlacement() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-navy">Placement operations</h1>
-        <p className="text-sm text-slate-500">Companies, drives, eligibility, ATS rounds, and offers.</p>
+        <p className="text-sm text-slate-500">Companies, job drives, who can sit, interview rounds, and offers. ATS means the list of applications and which round they are in.</p>
       </div>
       <ErrorText error={error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       <Card title="Add company">
         <FormGrid>
           <Field label="Company" value={coName} onChange={setCoName} />
@@ -173,9 +176,9 @@ function StaffPlacement() {
           columns={["Drive", "Package", "Min attendance", "Status", "Eligibility"]}
           rows={(drives.data ?? []).map((d) => [
             d.title,
-            `${d.packageLpa} LPA`,
+            `${d.packageLpa} LPA (₹ lakh per year)`,
             d.minAttendancePct ? `${d.minAttendancePct}%` : "—",
-            d.status,
+            prettyLabel(d.status),
             <PrimaryButton
               onClick={() =>
                 run(async () => {
@@ -184,7 +187,7 @@ function StaffPlacement() {
                   const result = await api<{ eligible: boolean; reason: string; attendancePct: number }>(
                     `/api/actions/eligibility/${d.id}/${studentId}`
                   );
-                  alert(`${result.eligible ? "Eligible" : "Not eligible"} — ${result.reason} (attendance ${result.attendancePct}%)`);
+                  setNotice(`${result.eligible ? "Eligible" : "Not eligible"} — ${result.reason} (attendance ${result.attendancePct}%).`);
                 })
               }
             >

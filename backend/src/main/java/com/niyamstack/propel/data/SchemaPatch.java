@@ -144,7 +144,35 @@ public class SchemaPatch {
                 "ALTER TABLE questions ADD COLUMN IF NOT EXISTS tests_json TEXT",
                 "UPDATE courses SET description = 'IPC theory and consultancy practice for working professionals.' WHERE description = 'dkjagskjdk'",
                 "UPDATE assessments SET title = 'IPC basics check' WHERE title = 'abc'",
-                "UPDATE questions SET prompt = 'Choose the correct option.' WHERE prompt = 'fff'"
+                "UPDATE questions SET prompt = 'Choose the correct option.' WHERE prompt = 'fff'",
+                "ALTER TABLE courses ADD COLUMN IF NOT EXISTS bundle_csv VARCHAR(1000)",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS course_id UUID",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS buyer_gstin VARCHAR(20)",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS place_of_supply VARCHAR(80)",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sac_code VARCHAR(20)",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS series_prefix VARCHAR(20)",
+                "ALTER TABLE courses ADD COLUMN IF NOT EXISTS fees_alt NUMERIC(12,2)",
+                "ALTER TABLE courses ADD COLUMN IF NOT EXISTS validity_alt_value INTEGER",
+                "ALTER TABLE courses ADD COLUMN IF NOT EXISTS validity_alt_unit VARCHAR(20)",
+                "ALTER TABLE refunds ADD COLUMN IF NOT EXISTS credit_note_no VARCHAR(40)",
+                "ALTER TABLE refunds ADD COLUMN IF NOT EXISTS gateway_refund_ref VARCHAR(80)",
+                """
+                CREATE TABLE IF NOT EXISTS site_hits (
+                    id UUID PRIMARY KEY,
+                    organization_id UUID NOT NULL,
+                    kind VARCHAR(40) NOT NULL,
+                    path VARCHAR(200),
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+                )
+                """,
+                "UPDATE courses SET fees = 45000 WHERE fees IS NOT NULL AND fees < 5000 AND (LOWER(TRIM(name)) LIKE '%ipc%' OR LOWER(CAST(description AS VARCHAR(4000))) LIKE '%ipc%')",
+                "UPDATE courses SET name = TRIM(name) WHERE name IS NOT NULL AND name <> TRIM(name)",
+                "UPDATE courses SET description = 'Excel, SQL, Power BI, and Python for working with real business data — live classes, recordings, and placement support.' WHERE LOWER(name) LIKE '%data analytics%' AND (description IS NULL OR LOWER(CAST(description AS VARCHAR(4000))) LIKE '%open this course%')",
+                "UPDATE courses SET description = 'Java, Spring Boot, REST APIs, and PostgreSQL — live classes, recordings, and placement support.' WHERE LOWER(name) LIKE '%java%' AND (description IS NULL OR LOWER(CAST(description AS VARCHAR(4000))) LIKE '%open this course%')",
+                "UPDATE courses SET validity_type = 'MULTIPLE', validity_value = 4, validity_unit = 'MONTH', fees_alt = 42000, validity_alt_value = 12, validity_alt_unit = 'MONTH' WHERE LOWER(name) LIKE '%data analytics%' AND (fees_alt IS NULL OR fees_alt = 0)",
+                "UPDATE live_sessions SET provider = 'JITSI', meeting_url = 'https://meet.jit.si/NiyamstackJpamapping' WHERE meeting_url LIKE '%zoom.us/j/demo%'",
+                "UPDATE users SET failed_logins = 0, locked_until = NULL WHERE LOWER(email) IN ('deepak@yopmail.com', 'owner@aarohan.demo') OR phone = '9876500001'"
         );
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
             for (String sql : statements) {

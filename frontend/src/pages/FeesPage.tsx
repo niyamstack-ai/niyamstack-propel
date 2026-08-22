@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { api } from "../api";
+import { collectInvoice } from "../razorpay";
 import { createRecord } from "../ops";
 import { useAuth } from "../auth";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatDay, useApi } from "../ui";
+import { prettyLabel } from "../labels";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatDay, formatInr, useApi } from "../ui";
 
-type Invoice = { id: string; invoiceNo: string; amount: number; paidAmount?: number; status: string; cgst?: number; sgst?: number; dueDate?: string; feePlanId?: string };
+type Invoice = { id: string; invoiceNo: string; amount: number; paidAmount?: number; status: string; cgst?: number; sgst?: number; igst?: number; dueDate?: string; feePlanId?: string };
 type Payment = { id: string; gatewayRef: string; method: string; amount: number; receiptNo?: string };
-type Refund = { id: string; amount: number; status: string; reason?: string };
+type Refund = { id: string; amount: number; status: string; reason?: string; creditNoteNo?: string; gatewayRefundRef?: string };
 type Student = { id: string; fullName: string };
 type Plan = { id: string; name: string; totalAmount: number; gstRate?: number; installmentCount?: number };
 
@@ -89,7 +91,7 @@ function MyFees() {
                 onClick={async () => {
                   setError(null);
                   try {
-                    await api(`/api/actions/invoices/${inv.id}/collect`, { method: "POST", body: JSON.stringify({ method: "UPI" }) });
+                    await collectInvoice(inv.id);
                     invoices.reload();
                     payments.reload();
                     receipts.reload();
@@ -144,6 +146,10 @@ function StaffFees() {
   const [invStudent, setInvStudent] = useState("");
   const [invAmt, setInvAmt] = useState("");
   const [invNo, setInvNo] = useState("");
+  const [buyerGstin, setBuyerGstin] = useState("");
+  const [placeOfSupply, setPlaceOfSupply] = useState("");
+  const [sacCode, setSacCode] = useState("999293");
+  const [invGst, setInvGst] = useState("18");
   const [schedPlan, setSchedPlan] = useState("");
   const [schedStudent, setSchedStudent] = useState("");
 
@@ -164,11 +170,32 @@ function StaffFees() {
       <div>
         <h1 className="text-2xl font-bold text-navy">Fees & finance</h1>
         <p className="text-sm text-slate-500">
-          Build plans, raise invoices, collect, issue receipts, and approve refunds. Gateway: {provider}
-          {live ? " (live credentials configured)" : " (demo adapter — not a live capture)"}.
+          Build plans, raise invoices, collect, and approve refunds. Gateway: {prettyLabel(provider)}
+          {live ? " — live Razorpay Checkout opens when you Collect or Pay." : " — collections are recorded here until you paste Razorpay keys in Integrations."}
         </p>
       </div>
       <ErrorText error={error} />
+      <div>
+        <button
+          type="button"
+          className="text-sm text-brand hover:underline"
+          onClick={() =>
+            run(async () => {
+              const rows = await api<Record<string, string | number>[]>("/api/actions/gstr1");
+              const headers = ["docType", "invoiceNo", "date", "buyerGstin", "placeOfSupply", "taxable", "cgst", "sgst", "igst", "sac", "hsn"];
+              const csv = [headers.join(","), ...rows.map((r) => headers.map((h) => JSON.stringify(r[h] ?? "")).join(","))].join("\n");
+              const blob = new Blob([csv], { type: "text/csv" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "gstr1.csv";
+              a.click();
+            })
+          }
+        >
+          Download GSTR-1 CSV
+        </button>
+      </div>
       <Card title="Create fee plan">
         <FormGrid>
           <Field label="Plan name" value={planName} onChange={setPlanName} />
@@ -189,6 +216,7 @@ function StaffFees() {
                   installmentCount: Number(inst),
                   courseId: courseId || null,
                   hsn: "9992",
+                  sacCode: "999293",
                 });
                 setPlanName("");
                 plans.reload();
@@ -201,7 +229,7 @@ function StaffFees() {
         <ul className="mt-3 text-sm">
           {(plans.data ?? []).map((p) => (
             <li key={p.id}>
-              {p.name}: ₹{p.totalAmount}
+              {p.name}: {formatInr(p.totalAmount)}
               {p.gstRate ? ` · GST ${p.gstRate}%` : ""} · {p.installmentCount || 1} installments
             </li>
           ))}
@@ -241,17 +269,26 @@ function StaffFees() {
             options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))}
           />
           <Field label="Invoice no" value={invNo} onChange={setInvNo} placeholder="Auto if blank" />
-          <Field label="Amount" value={invAmt} onChange={setInvAmt} />
+          <Field label="Amount (before GST)" value={invAmt} onChange={setInvAmt} />
+          <Field label="GST %" value={invGst} onChange={setInvGst} />
+          <Field label="Buyer GSTIN" value={buyerGstin} onChange={setBuyerGstin} placeholder="Optional" />
+          <Field label="Place of supply (state)" value={placeOfSupply} onChange={setPlaceOfSupply} placeholder="Maharashtra" />
+          <Field label="SAC" value={sacCode} onChange={setSacCode} />
           <div className="flex items-end">
             <PrimaryButton
               disabled={!invStudent || !invAmt}
               onClick={() =>
                 run(async () => {
+                  const st = (students.data ?? []).find((s) => s.id === invStudent);
                   await createRecord("/api/invoices", {
                     studentId: invStudent,
-                    invoiceNo: invNo || `INV-${Date.now().toString().slice(-8)}`,
+                    invoiceNo: invNo || undefined,
                     amount: Number(invAmt),
-                    taxAmount: 0,
+                    gstRate: Number(invGst),
+                    buyerName: st?.fullName,
+                    buyerGstin,
+                    placeOfSupply,
+                    sacCode,
                     paidAmount: 0,
                     status: "DUE",
                     dueDate: new Date().toISOString().slice(0, 10),
@@ -269,35 +306,83 @@ function StaffFees() {
       </Card>
       <Card title="Installments">
         <Table
+          empty="No instalments yet. Pick a fee plan and student above, then generate invoices."
           columns={["#", "Amount", "Due", "Status"]}
-          rows={(installments.data ?? []).map((i) => [String(i.seqNo), `₹${i.amount}`, i.dueDate, i.status])}
+          rows={(installments.data ?? []).map((i) => [String(i.seqNo), formatInr(i.amount), i.dueDate, prettyLabel(i.status)])}
         />
       </Card>
       <Card title="Invoices & collection">
+        <p className="mb-3 text-xs text-slate-500">Tax invoices show GSTIN, SAC 999293, place of supply, and CGST/SGST or IGST. Same-state uses CGST+SGST; other state uses IGST when you set GST state in Integrations.</p>
         <Table
-          columns={["Invoice", "Amount", "Paid", "CGST/SGST", "Status", "Action"]}
+          empty="No invoices yet."
+          columns={["Invoice", "Amount", "Paid", "Tax", "Status", ""]}
           rows={(invoices.data ?? []).map((inv) => [
             inv.invoiceNo,
-            `₹${inv.amount}`,
-            `₹${inv.paidAmount ?? 0}`,
-            `₹${inv.cgst ?? 0} / ₹${inv.sgst ?? 0}`,
-            inv.status,
-            inv.status === "PAID" ? (
-              "Settled"
-            ) : (
-              <PrimaryButton
+            formatInr(inv.amount),
+            formatInr(inv.paidAmount ?? 0),
+            formatInr((inv.cgst ?? 0) + (inv.sgst ?? 0) + (inv.igst ?? 0)),
+            prettyLabel(inv.status),
+            <span key={inv.id} className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="text-sm text-brand hover:underline"
                 onClick={() =>
                   run(async () => {
-                    await api(`/api/actions/invoices/${inv.id}/collect`, { method: "POST", body: JSON.stringify({ method: "UPI" }) });
-                    invoices.reload();
-                    payments.reload();
-                    receipts.reload();
+                    const rec = await api<{
+                      invoiceNo: string;
+                      instituteName?: string;
+                      instituteGstin?: string;
+                      instituteAddress?: string;
+                      buyerName?: string;
+                      buyerGstin?: string;
+                      placeOfSupply?: string;
+                      sacCode?: string;
+                      hsn?: string;
+                      amount: number;
+                      taxAmount?: number;
+                      cgst?: number;
+                      sgst?: number;
+                      igst?: number;
+                      gstRate?: number;
+                      dueDate?: string;
+                    }>(`/api/actions/invoices/${inv.id}/tax`);
+                    const win = window.open("", "_blank");
+                    if (!win) throw new Error("Allow pop-ups to print the tax invoice.");
+                    win.document.write(`<!doctype html><html><head><title>${escHtml(rec.invoiceNo)}</title>
+                      <style>body{font-family:sans-serif;padding:32px;color:#071a33}h1{margin:0 0 8px}table{width:100%;border-collapse:collapse;margin-top:16px}td,th{border:1px solid #cbd5e1;padding:8px;text-align:left}</style></head>
+                      <body>
+                        <h1>Tax invoice</h1>
+                        <p>${escHtml(rec.instituteName || "")}</p>
+                        ${rec.instituteGstin ? `<p>GSTIN ${escHtml(rec.instituteGstin)}</p>` : ""}
+                        ${rec.instituteAddress ? `<p>${escHtml(rec.instituteAddress)}</p>` : ""}
+                        <p>Invoice ${escHtml(rec.invoiceNo)}</p>
+                        <p>Bill to ${escHtml(rec.buyerName || "")}${rec.buyerGstin ? ` · GSTIN ${escHtml(rec.buyerGstin)}` : ""}</p>
+                        <p>Place of supply ${escHtml(rec.placeOfSupply || "—")} · SAC ${escHtml(rec.sacCode || "999293")} · HSN ${escHtml(rec.hsn || "9992")}</p>
+                        <table><tr><th>Taxable</th><th>GST ${escHtml(rec.gstRate ?? 0)}%</th><th>CGST</th><th>SGST</th><th>IGST</th></tr>
+                        <tr><td>₹${escHtml(rec.amount)}</td><td>₹${escHtml(rec.taxAmount ?? 0)}</td><td>₹${escHtml(rec.cgst ?? 0)}</td><td>₹${escHtml(rec.sgst ?? 0)}</td><td>₹${escHtml(rec.igst ?? 0)}</td></tr></table>
+                        <script>window.print()<\/script>
+                      </body></html>`);
+                    win.document.close();
                   })
                 }
               >
-                Collect
-              </PrimaryButton>
-            ),
+                Print GST invoice
+              </button>
+              {inv.status !== "PAID" && (
+                <PrimaryButton
+                  onClick={() =>
+                    run(async () => {
+                      await collectInvoice(inv.id);
+                      invoices.reload();
+                      payments.reload();
+                      receipts.reload();
+                    })
+                  }
+                >
+                  Collect
+                </PrimaryButton>
+              )}
+            </span>,
           ])}
         />
       </Card>
@@ -308,17 +393,22 @@ function StaffFees() {
             p.gatewayRef,
             p.receiptNo || "—",
             p.method,
-            `₹${p.amount}`,
-            <PrimaryButton
-              onClick={() =>
-                run(async () => {
-                  await api(`/api/actions/payments/${p.id}/refunds`, { method: "POST", body: JSON.stringify({ reason: "Student request" }) });
-                  refunds.reload();
-                })
-              }
-            >
-              Request refund
-            </PrimaryButton>,
+            formatInr(p.amount),
+            p.method === "UPI" || p.method === "CARD" ? (
+              <PrimaryButton
+                onClick={() =>
+                  run(async () => {
+                    if (!window.confirm(`Request a refund of ${formatInr(p.amount)}?`)) return;
+                    await api(`/api/actions/payments/${p.id}/refunds`, { method: "POST", body: JSON.stringify({ reason: "Student request" }) });
+                    refunds.reload();
+                  })
+                }
+              >
+                Request refund
+              </PrimaryButton>
+            ) : (
+              "—"
+            ),
           ])}
         />
       </Card>
@@ -326,7 +416,9 @@ function StaffFees() {
         <ul className="space-y-2 text-sm">
           {(refunds.data ?? []).map((r) => (
             <li key={r.id}>
-              ₹{r.amount} — {r.status} {r.reason ? `· ${r.reason}` : ""}
+              {formatInr(r.amount)} — {prettyLabel(r.status)} {r.reason ? `· ${r.reason}` : ""}
+              {r.creditNoteNo ? ` · Credit note ${r.creditNoteNo}` : ""}
+              {r.gatewayRefundRef ? " · refunded on Razorpay" : ""}
               {r.status === "REQUESTED" && (
                 <span className="ml-2 space-x-2">
                   <PrimaryButton
@@ -340,6 +432,18 @@ function StaffFees() {
                   >
                     Approve
                   </PrimaryButton>
+                  <button
+                    type="button"
+                    className="text-sm text-red-600"
+                    onClick={() =>
+                      run(async () => {
+                        await api(`/api/actions/refunds/${r.id}/decide`, { method: "POST", body: JSON.stringify({ approve: "false" }) });
+                        refunds.reload();
+                      })
+                    }
+                  >
+                    Reject
+                  </button>
                 </span>
               )}
             </li>

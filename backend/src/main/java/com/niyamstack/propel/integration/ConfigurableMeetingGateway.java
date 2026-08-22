@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Map;
 
 @Service
@@ -17,14 +18,14 @@ public class ConfigurableMeetingGateway implements MeetingGateway {
             @Value("${app.integrations.meetings.zoom-client-id:}") String zoomClientId,
             @Value("${app.integrations.meetings.zoom-client-secret:}") String zoomClientSecret
     ) {
-        this.provider = provider;
-        this.zoomClientId = zoomClientId;
-        this.zoomClientSecret = zoomClientSecret;
+        this.provider = provider == null ? "demo" : provider;
+        this.zoomClientId = zoomClientId == null ? "" : zoomClientId.trim();
+        this.zoomClientSecret = zoomClientSecret == null ? "" : zoomClientSecret.trim();
     }
 
     @Override
     public String provider() {
-        return live() ? provider : "demo";
+        return live() ? provider : "jitsi";
     }
 
     @Override
@@ -35,11 +36,14 @@ public class ConfigurableMeetingGateway implements MeetingGateway {
 
     @Override
     public Meeting create(String title, Instant startsAt) {
-        if (!live()) {
-            return new Meeting("https://meet.demo.niyamstack.local/" + title.hashCode(), "demo", false,
-                    Map.of("note", "Zoom/Meet OAuth is not configured"));
+        String room = "Niyamstack-" + (title == null ? "class" : title).replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
+        if (room.length() < 8) {
+            room = room + Math.abs((title == null ? "class" : title).hashCode());
         }
-        return new Meeting("https://zoom.us/j/pending-oauth", provider, true,
-                Map.of("note", "OAuth client present; meeting create API not called until OAuth tokens are stored"));
+        String url = "https://meet.jit.si/" + room;
+        if (live() && "zoom".equalsIgnoreCase(provider)) {
+            return new Meeting(url, "jitsi", true, Map.of("note", "Zoom OAuth is not completed; a Jitsi room was opened instead"));
+        }
+        return new Meeting(url, "jitsi", true, Map.of("note", "Jitsi meeting room"));
     }
 }

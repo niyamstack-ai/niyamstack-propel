@@ -44,6 +44,14 @@ export async function uploadContentFile<T = { id: string; url?: string; title?: 
 }
 
 export async function uploadSubmissionFile(file: File): Promise<{ url: string; fileName: string }> {
+  return uploadTo("/api/actions/submissions/upload", file);
+}
+
+export async function uploadMedia(file: File): Promise<{ url: string; fileName: string }> {
+  return uploadTo("/api/actions/media/upload", file);
+}
+
+async function uploadTo(path: string, file: File): Promise<{ url: string; fileName: string }> {
   const form = new FormData();
   form.append("file", file);
   const headers = new Headers();
@@ -51,7 +59,7 @@ export async function uploadSubmissionFile(file: File): Promise<{ url: string; f
   if (token) headers.set("Authorization", `Bearer ${token}`);
   let res: Response;
   try {
-    res = await fetch("/api/actions/submissions/upload", { method: "POST", headers, body: form });
+    res = await fetch(path, { method: "POST", headers, body: form });
   } catch {
     throw new Error("Cannot reach the API. Start the backend, then try again.");
   }

@@ -786,7 +786,7 @@ function UploadModal({
   );
 }
 
-function QuizBuilder({
+export function QuizBuilder({
   courseId,
   folderId,
   kind = "ONLINE_TEST",
@@ -794,8 +794,8 @@ function QuizBuilder({
   onClose,
   onSaved,
 }: {
-  courseId: string;
-  folderId: string | null;
+  courseId?: string;
+  folderId?: string | null;
   kind?: AddKind;
   existing?: AssessmentRow;
   onClose: () => void;
@@ -803,7 +803,7 @@ function QuizBuilder({
 }) {
   const questionsApi = useApi<QuestionRow[]>("/api/questions");
   const langsApi = useApi<{ languages: LangInfo[]; suggested?: string; starter?: string; courseName?: string }>(
-    `/api/actions/code/languages?courseId=${courseId}`,
+    courseId ? `/api/actions/code/languages?courseId=${courseId}` : "/api/actions/code/languages",
   );
   const langs = langsApi.data?.languages ?? [];
   const suggested = langsApi.data?.suggested || "java";
@@ -893,10 +893,12 @@ function QuizBuilder({
     setError(null);
     setBusy(true);
     try {
-      await api(`/api/actions/courses/${courseId}/quizzes`, {
+      const cid = courseId || existing?.courseId;
+      await api(cid ? `/api/actions/courses/${cid}/quizzes` : "/api/actions/quizzes", {
         method: "POST",
         body: JSON.stringify({
           id: existing?.id,
+          courseId: cid || undefined,
           title: title.trim(),
           kind: existing?.kind || (kind === "SUBJECTIVE" ? "SUBJECTIVE" : kind === "PRACTICE" ? "PRACTICE" : "MCQ"),
           parentFolderId: folderId || undefined,
@@ -932,8 +934,10 @@ function QuizBuilder({
       <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold text-navy">{existing ? "Edit test" : "Create test"}</h3>
         <p className="mt-1 text-sm text-slate-500">
-          Mix MCQ, written, matching, and coding in one test. Coding questions open the {languageLabel(suggested, langs)} runner for this course
-          {langsApi.data?.courseName ? ` (${langsApi.data.courseName})` : ""}.
+          Mix MCQ, written, matching, and coding in one test.
+          {langsApi.data?.courseName
+            ? ` Coding questions open the ${languageLabel(suggested, langs)} runner for ${langsApi.data.courseName}.`
+            : ` Coding questions use the ${languageLabel(suggested, langs)} runner.`}
         </p>
         <ErrorText error={error} />
         <div className="mt-4 grid gap-3 sm:grid-cols-2">

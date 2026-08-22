@@ -6,18 +6,24 @@ import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model;
 import com.niyamstack.propel.domain.Model.*;
 import com.niyamstack.propel.domain.TenantEntity;
+import com.niyamstack.propel.fees.FeeService;
 import com.niyamstack.propel.lms.LmsService;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.DataScope;
 import com.niyamstack.propel.security.PropelUser;
+import com.niyamstack.propel.security.PasswordPolicy;
+import com.niyamstack.propel.security.Phones;
 import com.niyamstack.propel.security.Roles;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -26,11 +32,15 @@ public class ResourceController {
     private final Store store;
     private final DataScope scope;
     private final LmsService lms;
+    private final PasswordEncoder encoder;
+    private final FeeService fees;
 
-    public ResourceController(Store store, DataScope scope, LmsService lms) {
+    public ResourceController(Store store, DataScope scope, LmsService lms, PasswordEncoder encoder, FeeService fees) {
         this.store = store;
         this.scope = scope;
         this.lms = lms;
+        this.encoder = encoder;
+        this.fees = fees;
     }
 
     @GetMapping("/features")
@@ -67,7 +77,9 @@ public class ResourceController {
         existing.setAppShareUrl(body.getAppShareUrl());
         existing.setCustomDomain(body.getCustomDomain());
         existing.setWebsitePublished(body.isWebsitePublished());
-        existing.setSettingsJson(body.getSettingsJson());
+        if (body.getSettingsJson() != null) {
+            existing.setSettingsJson(body.getSettingsJson());
+        }
         return store.save(existing);
     }
 
@@ -194,7 +206,7 @@ public class ResourceController {
     @PostMapping("/fee-plans") public FeePlan createPlan(@RequestBody FeePlan body) { return create(body, "FEES"); }
 
     @GetMapping("/invoices") public List<Invoice> invoices() { return list(Invoice.class); }
-    @PostMapping("/invoices") public Invoice createInvoice(@RequestBody Invoice body) { return create(body, "FEES"); }
+    @PostMapping("/invoices") public Invoice createInvoice(@RequestBody Invoice body) { return fees.finalizeInvoice(create(body, "FEES")); }
 
     @GetMapping("/payments") public List<Payment> payments() { return list(Payment.class); }
     @PostMapping("/payments") public Payment createPayment(@RequestBody Payment body) { return create(body, "FEES"); }
@@ -348,6 +360,11 @@ public class ResourceController {
     @PostMapping("/integration-connections") public IntegrationConnection createIntegrationConnection(@RequestBody IntegrationConnection body) { return create(body, "GROWTH"); }
     @PutMapping("/integration-connections/{id}") public IntegrationConnection updateIntegrationConnection(@PathVariable UUID id, @RequestBody IntegrationConnection body) { return update(IntegrationConnection.class, id, body, "GROWTH"); }
 
+    private static final Set<String> INSTITUTE_STAFF = Set.of(
+            Roles.OWNER, Roles.PLACEMENT_HEAD, Roles.FACULTY, Roles.COUNSELOR, Roles.ACCOUNTANT);
+
+    public record StaffInvite(String fullName, String email, String phone, String role) {}
+
     @GetMapping("/staff")
     public List<Map<String, Object>> staff() {
         Access.requireTenant(Auth.current());
@@ -356,6 +373,7 @@ public class ResourceController {
                 .setParameter("o", Auth.current().organizationId())
                 .getResultList()
                 .stream()
+                .filter(u -> INSTITUTE_STAFF.contains(u.getRole()))
                 .map(u -> Map.<String, Object>of(
                         "id", u.getId(),
                         "fullName", u.getFullName(),
@@ -365,6 +383,52 @@ public class ResourceController {
                         "active", u.isActive()
                 ))
                 .toList();
+    }
+
+    @PostMapping("/staff")
+    public Map<String, Object> createStaff(@RequestBody StaffInvite body) {
+        Access.requireTenant(Auth.current());
+        Access.requireWrite(Auth.current(), "SETUP");
+        if (body.fullName() == null || body.fullName().isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Name is required");
+        }
+        if (body.email() == null || body.email().isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Email is required so they can log in");
+        }
+        String email = body.email().trim().toLowerCase();
+        if (store.findUserByEmail(email) != null) {
+            throw new ApiException(HttpStatus.CONFLICT, "That email already has an account");
+        }
+        String role = body.role() == null || body.role().isBlank() ? Roles.FACULTY : body.role();
+        if (!INSTITUTE_STAFF.contains(role) || Roles.OWNER.equals(role)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Choose faculty, counselor, accountant, or placement head");
+        }
+        String phone = body.phone() == null ? "" : Phones.normalize(body.phone());
+        if (!phone.isBlank()) {
+            AppUser byPhone = store.findUserByPhone(phone);
+            if (byPhone != null) {
+                throw new ApiException(HttpStatus.CONFLICT, "That mobile already has an account");
+            }
+        }
+        String temp = "Welcome@" + (System.currentTimeMillis() % 100000);
+        PasswordPolicy.validate(temp);
+        AppUser user = new AppUser();
+        user.setOrganizationId(Auth.current().organizationId());
+        user.setFullName(body.fullName().trim());
+        user.setEmail(email);
+        user.setPhone(phone);
+        user.setRole(role);
+        user.setActive(true);
+        user.setPasswordHash(encoder.encode(temp));
+        user.setPasswordChangedAt(Instant.now());
+        user = store.save(user);
+        return Map.of(
+                "id", user.getId(),
+                "fullName", user.getFullName(),
+                "email", user.getEmail(),
+                "role", user.getRole(),
+                "tempPassword", temp
+        );
     }
 
     private void validateCoupon(Coupon body, UUID ignoreId) {

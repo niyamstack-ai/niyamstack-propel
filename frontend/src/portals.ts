@@ -27,7 +27,7 @@ export function portalTitle(role?: string) {
     case "ACCOUNTANT":
       return { name: "Accounts portal", blurb: "Fees, receipts, refunds" };
     default:
-      return { name: "Institute OS", blurb: "Grow and run the institute" };
+      return { name: "My institute", blurb: "Grow and run the institute" };
   }
 }
 
@@ -101,8 +101,8 @@ export function navForRole(role?: string): NavEntry[] {
         {
           label: "Courses",
           items: [
-            { to: "/courses", label: "Catalog" },
-            { to: "/content-hub", label: "Tests & free content" },
+            { to: "/courses", label: "Courses" },
+            { to: "/content-hub", label: "Tests" },
           ],
         },
         {
@@ -122,7 +122,7 @@ export function navForRole(role?: string): NavEntry[] {
           ],
         },
         {
-          label: "Careers",
+          label: "Placements",
           items: [
             { to: "/placement", label: "Placement" },
             { to: "/readiness", label: "Readiness" },

@@ -23,16 +23,6 @@ function SidebarNav({
   const { user } = useAuth();
   const location = useLocation();
   const nav = navForRole(user?.role);
-  const [openGroup, setOpenGroup] = useState<string | null>(null);
-
-  useEffect(() => {
-    const match = navForRole(user?.role).find((entry) => isNavGroup(entry) && groupContainsPath(entry, location.pathname));
-    setOpenGroup(match && isNavGroup(match) ? match.label : null);
-  }, [location.pathname, user?.role]);
-
-  function toggleGroup(label: string) {
-    setOpenGroup((current) => (current === label ? null : label));
-  }
 
   return (
     <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-6">
@@ -50,43 +40,26 @@ function SidebarNav({
             </NavLink>
           );
         }
-        const open = openGroup === entry.label;
         const active = groupContainsPath(entry, location.pathname);
         return (
-          <div key={entry.label} className="pt-1">
-            <button
-              type="button"
-              aria-expanded={open}
-              onClick={() => toggleGroup(entry.label)}
-              className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.14em] ${
-                active || open ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
-              }`}
-            >
-              <span>{entry.label}</span>
-              <svg
-                viewBox="0 0 20 20"
-                className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
-                aria-hidden
-              >
-                <path fill="currentColor" d="M7.3 4.7a1 1 0 0 1 1.4 0l5 5a1 1 0 0 1 0 1.4l-5 5a1 1 0 1 1-1.4-1.4L11.6 10 7.3 6.1a1 1 0 0 1 0-1.4Z" />
-              </svg>
-            </button>
-            {open && (
-              <div className="mt-0.5 space-y-0.5">
-                {entry.items.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    onClick={onNavigate}
-                    className={({ isActive }) =>
-                      linkClass(isActive || (item.to !== "/" && location.pathname.startsWith(item.to + "/")), true)
-                    }
-                  >
-                    {item.label}
-                  </NavLink>
-                ))}
-              </div>
-            )}
+          <div key={entry.label} className="pt-2">
+            <p className={`px-3 pb-1 text-left text-xs font-semibold ${active ? "text-white" : "text-slate-400"}`}>
+              {entry.label}
+            </p>
+            <div className="space-y-0.5">
+              {entry.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  onClick={onNavigate}
+                  className={({ isActive }) =>
+                    linkClass(isActive || (item.to !== "/" && location.pathname.startsWith(item.to + "/")))
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
           </div>
         );
       })}
@@ -116,16 +89,29 @@ function isCourseChrome(path: string) {
   return path === "/courses" || path.startsWith("/courses/");
 }
 
+function isWebsiteBuilder(path: string) {
+  return path === "/website" || path.startsWith("/website/");
+}
+
 export function Shell() {
   const { user } = useAuth();
   const location = useLocation();
   const portal = portalTitle(user?.role);
   const [menuOpen, setMenuOpen] = useState(false);
   const courseChrome = isCourseChrome(location.pathname);
+  const websiteBuilder = isWebsiteBuilder(location.pathname);
 
   useEffect(() => {
     setMenuOpen(false);
   }, [location.pathname]);
+
+  if (websiteBuilder) {
+    return (
+      <div className="h-svh overflow-hidden bg-mist">
+        <Outlet />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-svh bg-mist">
@@ -152,7 +138,7 @@ export function Shell() {
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
               <path d="M4 4h16v12H5.2L4 17.2V4Zm2 4.4 6 3.6 6-3.6V6H6v2.4Z" />
             </svg>
-            Help & Support
+            Email support
           </a>
         </div>
       </aside>
@@ -186,7 +172,6 @@ export function Shell() {
                   Menu
                 </button>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">{user?.name}</p>
                   <p className="text-xs text-slate-500">{portal.name}</p>
                 </div>
               </div>
@@ -194,7 +179,7 @@ export function Shell() {
             </div>
           </header>
         )}
-        <main className={courseChrome ? "min-w-0 overflow-x-hidden px-4 py-4 sm:px-6 sm:py-6" : "min-w-0 p-4 sm:p-6"}>
+        <main className={courseChrome ? "min-w-0 overflow-x-hidden px-4 py-4 sm:px-6 sm:py-6" : "min-w-0 overflow-x-hidden p-4 sm:p-6"}>
           <Outlet />
         </main>
       </div>

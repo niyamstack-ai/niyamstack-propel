@@ -136,6 +136,30 @@ public class Store {
         return rows.getFirst();
     }
 
+    public Organization findOrgByCustomDomain(String host) {
+        if (host == null || host.isBlank()) {
+            return null;
+        }
+        String cleaned = host.trim().toLowerCase()
+                .replaceFirst("^https?://", "")
+                .replaceFirst("/.*$", "")
+                .replaceFirst("^www\\.", "");
+        List<Organization> rows = em.createQuery(
+                        "select o from Organization o where o.customDomain is not null and o.customDomain <> ''",
+                        Organization.class)
+                .getResultList();
+        for (Organization org : rows) {
+            String stored = org.getCustomDomain() == null ? "" : org.getCustomDomain().trim().toLowerCase()
+                    .replaceFirst("^https?://", "")
+                    .replaceFirst("/.*$", "")
+                    .replaceFirst("^www\\.", "");
+            if (cleaned.equals(stored)) {
+                return org;
+            }
+        }
+        return null;
+    }
+
     public boolean slugTaken(String slug) {
         try {
             Long n = em.createQuery("select count(o) from Organization o where o.slug = :s", Long.class)
@@ -164,6 +188,13 @@ public class Store {
     public void deleteOwned(Class<? extends TenantEntity> type, UUID id, UUID orgId) {
         TenantEntity entity = getOwned(type, id, orgId);
         em.remove(entity);
+    }
+
+    public List<AppUser> listUsers(UUID orgId) {
+        return em.createQuery("select u from AppUser u where u.organizationId = :o order by u.createdAt desc", AppUser.class)
+                .setParameter("o", orgId)
+                .setMaxResults(500)
+                .getResultList();
     }
 
     public EntityManager em() {

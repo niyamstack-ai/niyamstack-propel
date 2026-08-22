@@ -48,7 +48,7 @@ export function ShareLinkBar({
   }
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm">
-      <span className="shrink-0 font-semibold text-navy">Share with students</span>
+      <span className="shrink-0 font-semibold text-navy">Student buy link</span>
       <code className="min-w-0 flex-1 truncate rounded-lg bg-white px-2 py-1 text-xs text-slate-600">{url}</code>
       <button type="button" className="rounded-lg border border-brand px-3 py-1.5 text-sm font-medium text-brand" onClick={copy}>
         {copyError ? "Copy failed" : copied ? "Copied" : "Copy link"}
