@@ -1,4 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { clearInstituteSession } from "../../api";
 import { NiyamstackLogo } from "../../brand/NiyamstackLogo";
 import { hasCap, usePlatformAuth } from "../../platformAuth";
 
@@ -7,6 +8,7 @@ const nav = [
   { to: "/platform/institutes", label: "Institutes", end: false, cap: "VIEW_INSTITUTES" },
   { to: "/platform/employees", label: "Niyamstack staff", end: false, cap: "MANAGE_EMPLOYEES" },
   { to: "/platform/settings", label: "Settings", end: false, cap: "*" },
+  { to: "/platform/features", label: "License map", end: false, cap: "VIEW_DASHBOARD" },
 ];
 
 export function PlatformShell() {
@@ -54,6 +56,8 @@ export function PlatformShell() {
               className="rounded-full border border-line px-3 py-1.5 text-sm"
               onClick={() => {
                 logout();
+                clearInstituteSession();
+                window.dispatchEvent(new Event("propel:unauthorized"));
                 navigate("/platform/login");
               }}
             >

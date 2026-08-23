@@ -10,6 +10,8 @@ type Session = {
   price: number;
   meetingUrl?: string;
   status: string;
+  studentId?: string;
+  startsAt?: string;
 };
 
 export function OneToOnePage() {
@@ -62,16 +64,21 @@ export function OneToOnePage() {
           </PrimaryButton>
         </div>
       </Card>
-      <Card title="Open sessions">
+      <Card title="Open offerings">
         <Table
           columns={["Title", "Mentor", "Duration", "Price", "Status"]}
-          rows={(sessions.data ?? []).map((s) => [
-            s.title,
-            s.mentorName || "—",
-            `${s.durationMinutes} min`,
-            `₹${s.price}`,
-            s.status,
-          ])}
+          rows={(sessions.data ?? [])
+            .filter((s) => !s.studentId)
+            .map((s) => [s.title, s.mentorName || "—", `${s.durationMinutes} min`, `₹${s.price}`, s.status])}
+        />
+      </Card>
+      <Card title="Bookings">
+        <Table
+          empty="No student bookings yet. They book from the institute website → 1:1."
+          columns={["Title", "When", "Status"]}
+          rows={(sessions.data ?? [])
+            .filter((s) => s.studentId)
+            .map((s) => [s.title, s.startsAt || "—", s.status])}
         />
       </Card>
     </div>

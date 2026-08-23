@@ -53,10 +53,11 @@ export async function openRazorpay(order: CheckoutOrder): Promise<{ orderId: str
   });
 }
 
-export async function collectInvoice(invoiceId: string) {
+export async function collectInvoice(invoiceId: string, opts?: { method?: string; amount?: string; reference?: string }) {
+  const method = opts?.method || "UPI";
   const order = await api<CheckoutOrder>(`/api/actions/invoices/${invoiceId}/collect`, {
     method: "POST",
-    body: JSON.stringify({ method: "UPI" }),
+    body: JSON.stringify({ method, amount: opts?.amount, reference: opts?.reference }),
   });
   if (!order.checkout) {
     return order;

@@ -7,12 +7,16 @@ import com.niyamstack.propel.comms.OutreachService;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.*;
+import com.niyamstack.propel.grow.GrowService;
+import com.niyamstack.propel.ess.EssService;
 import com.niyamstack.propel.fees.FeeService;
+import com.niyamstack.propel.sis.SisService;
 import com.niyamstack.propel.integration.IntegrationStatusService;
 import com.niyamstack.propel.integration.ObjectStorage;
 import com.niyamstack.propel.integration.OrgSecrets;
 import com.niyamstack.propel.lms.LmsService;
 import com.niyamstack.propel.placement.PlacementService;
+import com.niyamstack.propel.scale.ScaleService;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.Roles;
@@ -42,11 +46,15 @@ public class ActionsController {
     private final StorefrontService storefront;
     private final ObjectStorage storage;
     private final OutreachService outreach;
+    private final EssService ess;
+    private final SisService sis;
+    private final GrowService grow;
+    private final ScaleService scale;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public ActionsController(Store store, FeeService fees, LmsService lms, PlacementService placement,
                              IntegrationStatusService integrations, StorefrontService storefront, ObjectStorage storage,
-                             OutreachService outreach) {
+                             OutreachService outreach, EssService ess, SisService sis, GrowService grow, ScaleService scale) {
         this.store = store;
         this.fees = fees;
         this.lms = lms;
@@ -55,6 +63,10 @@ public class ActionsController {
         this.storefront = storefront;
         this.storage = storage;
         this.outreach = outreach;
+        this.ess = ess;
+        this.sis = sis;
+        this.grow = grow;
+        this.scale = scale;
     }
 
     @GetMapping("/my-courses")
@@ -75,37 +87,39 @@ public class ActionsController {
     }
 
     @PostMapping("/inquiries/{id}/convert")
-    public Student convert(@PathVariable UUID id, @RequestBody Map<String, String> body) {
-        Access.requireWrite(Auth.current(), "CRM");
-        var org = Auth.current().organizationId();
-        Inquiry inquiry = store.getOwned(Inquiry.class, id, org);
-        Student student = new Student();
-        student.setOrganizationId(org);
-        student.setCenterId(inquiry.getCenterId());
-        student.setCourseId(inquiry.getCourseId());
-        if (body.get("courseId") != null && !body.get("courseId").isBlank()) {
-            student.setCourseId(UUID.fromString(body.get("courseId")));
-        }
-        if (body.get("batchId") != null && !body.get("batchId").isBlank()) {
-            student.setBatchId(UUID.fromString(body.get("batchId")));
-        }
-        student.setStudentCode("STU-" + System.currentTimeMillis() % 100000);
-        student.setFullName(inquiry.getFullName());
-        student.setEmail(inquiry.getEmail());
-        student.setPhone(inquiry.getPhone());
-        student.setStatus("ENROLLED");
-        student.setEnrollmentDate(LocalDate.now());
-        student = store.save(student);
-        inquiry.setStage("CONVERTED");
-        inquiry.setStudentId(student.getId());
-        store.save(inquiry);
-        return student;
+    public Map<String, Object> convert(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> body) {
+        return grow.convert(id, body == null ? Map.of() : body);
+    }
+
+    @PostMapping("/inquiries/{id}/stage")
+    public Inquiry setStage(@PathVariable UUID id, @RequestBody Map<String, String> body) {
+        return grow.setStage(id, body.get("stage"), body.get("note"));
+    }
+
+    @PostMapping("/grow/notes")
+    public CounselingNote growNote(@RequestBody Map<String, Object> body) {
+        return grow.addNote(body);
+    }
+
+    @PostMapping("/grow/referrals")
+    public Referral issueReferral(@RequestBody Map<String, Object> body) {
+        return grow.issueReferral(body);
+    }
+
+    @PostMapping("/grow/scholarships")
+    public Scholarship requestScholarship(@RequestBody Map<String, Object> body) {
+        return grow.requestScholarship(body);
+    }
+
+    @PostMapping("/one-to-one/{id}/book")
+    public Map<String, Object> bookOneToOne(@PathVariable UUID id, @RequestBody(required = false) Map<String, Object> body) {
+        return grow.bookSession(id, body == null ? Map.of() : body);
     }
 
     @PostMapping("/invoices/{id}/collect")
     public Map<String, Object> collect(@PathVariable UUID id, @RequestBody Map<String, String> body) {
         BigDecimal amount = body.get("amount") == null ? null : new BigDecimal(body.get("amount"));
-        return fees.collect(id, amount, body.getOrDefault("method", "UPI"));
+        return fees.collect(id, amount, body.getOrDefault("method", "UPI"), body.get("reference"));
     }
 
     @PostMapping("/invoices/{id}/confirm")
@@ -118,6 +132,17 @@ public class ActionsController {
         LocalDate start = from == null || from.isBlank() ? null : LocalDate.parse(from);
         LocalDate end = to == null || to.isBlank() ? null : LocalDate.parse(to);
         return fees.gstr1(start, end);
+    }
+
+    @GetMapping("/accounting-export")
+    public Map<String, Object> accountingExport(
+            @RequestParam(defaultValue = "csv") String format,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to
+    ) {
+        LocalDate start = from == null || from.isBlank() ? null : LocalDate.parse(from);
+        LocalDate end = to == null || to.isBlank() ? null : LocalDate.parse(to);
+        return fees.accountingExport(format, start, end);
     }
 
     @PostMapping("/campaigns/{id}/launch")
@@ -143,6 +168,31 @@ public class ActionsController {
     @GetMapping("/dues")
     public List<Invoice> dues() {
         return fees.dues();
+    }
+
+    @GetMapping("/ledger")
+    public List<Map<String, Object>> ledger() {
+        return fees.ledger();
+    }
+
+    @GetMapping("/reconciliation")
+    public List<Map<String, Object>> reconciliation() {
+        return fees.reconciliation();
+    }
+
+    @PostMapping("/invoices/{id}/remind")
+    public Map<String, Object> remindInvoice(@PathVariable UUID id) {
+        return fees.remindInvoice(id);
+    }
+
+    @PostMapping("/dues/remind")
+    public Map<String, Object> remindDues() {
+        return fees.remindOrgDues();
+    }
+
+    @GetMapping("/refunds/{id}/credit-note")
+    public Map<String, Object> creditNote(@PathVariable UUID id) {
+        return fees.creditNote(id);
     }
 
     @PostMapping("/payments/{id}/refunds")
@@ -274,9 +324,23 @@ public class ActionsController {
         return lms.examResult(id);
     }
 
-    @GetMapping("/progress/{studentId}")
-    public Map<String, Object> progress(@PathVariable UUID studentId) {
-        return lms.progress(studentId);
+    @GetMapping("/question-bank")
+    public List<Question> questionBank(
+            @RequestParam(required = false) String subject,
+            @RequestParam(required = false) String topic,
+            @RequestParam(required = false) String difficulty
+    ) {
+        return lms.questionBank(subject, topic, difficulty);
+    }
+
+    @PostMapping("/question-bank")
+    public Question saveBankQuestion(@RequestBody LmsService.QuizQuestionInput body) {
+        return lms.saveBankQuestion(body);
+    }
+
+    @GetMapping("/certificates/{id}")
+    public Map<String, Object> certificate(@PathVariable UUID id) {
+        return lms.certificate(id);
     }
 
     @PostMapping("/content/{id}/view")
@@ -307,13 +371,14 @@ public class ActionsController {
 
     @PostMapping("/applications/{id}/rounds")
     public InterviewRound recordRound(@PathVariable UUID id, @RequestBody Map<String, String> body) {
-        return placement.recordRound(id, body.getOrDefault("roundName", "Round"), body.get("outcome"), body.get("feedback"), body.get("panel"));
+        return placement.recordRound(id, body.getOrDefault("roundName", "Round"), body.get("outcome"), body.get("feedback"), body.get("panel"), body.get("scheduledAt"));
     }
 
     @PostMapping("/applications/{id}/offer")
     public Offer offer(@PathVariable UUID id, @RequestBody Map<String, String> body) {
         BigDecimal pkg = body.get("packageLpa") == null ? BigDecimal.ZERO : new BigDecimal(body.get("packageLpa"));
-        LocalDate joining = body.get("joiningDate") == null ? LocalDate.now().plusMonths(1) : LocalDate.parse(body.get("joiningDate"));
+        LocalDate joining = body.get("joiningDate") == null || body.get("joiningDate").isBlank()
+                ? LocalDate.now().plusMonths(1) : LocalDate.parse(body.get("joiningDate"));
         return placement.offer(id, pkg, joining, body.get("notes"));
     }
 
@@ -322,18 +387,211 @@ public class ActionsController {
         return placement.advance(id, body.getOrDefault("status", "SHORTLISTED"));
     }
 
+    @GetMapping("/placement/calendar")
+    public List<Map<String, Object>> placementCalendar(@RequestParam(required = false) Integer year,
+                                                       @RequestParam(required = false) Integer month) {
+        LocalDate now = LocalDate.now();
+        return placement.calendar(year == null ? now.getYear() : year, month == null ? now.getMonthValue() : month);
+    }
+
+    @PostMapping("/placement/recruiters")
+    public Map<String, Object> inviteRecruiter(@RequestBody Map<String, String> body) {
+        return placement.inviteRecruiter(body);
+    }
+
+    @PostMapping("/offers/{id}/accept")
+    public Offer acceptOffer(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> body) {
+        boolean accept = body == null || Boolean.parseBoolean(body.getOrDefault("accept", "true"));
+        return placement.acceptOffer(id, accept);
+    }
+
+    @PostMapping("/offers/{id}/join")
+    public Offer joinOffer(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> body) {
+        LocalDate joining = body == null || body.get("joiningDate") == null || body.get("joiningDate").isBlank()
+                ? null : LocalDate.parse(body.get("joiningDate"));
+        return placement.markJoined(id, joining);
+    }
+
+    @GetMapping("/offers/{id}/letter")
+    public Map<String, Object> offerLetter(@PathVariable UUID id) {
+        return placement.offerLetter(id);
+    }
+
+    @PostMapping("/placement/internships")
+    public Internship createInternshipAction(@RequestBody Map<String, String> body) {
+        return placement.saveInternship(body);
+    }
+
+    @PostMapping("/placement/internships/{id}/status")
+    public Internship internshipStatus(@PathVariable UUID id, @RequestBody Map<String, String> body) {
+        return placement.setInternshipStatus(id, body.get("status"));
+    }
+
+    @PostMapping("/placement/alumni-jobs/{id}/route")
+    public Drive routeAlumniJob(@PathVariable UUID id) {
+        return placement.routeAlumniJob(id);
+    }
+
+    @PostMapping("/placement/industry/{id}/mou")
+    public IndustryAccount toggleMou(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> body) {
+        boolean mou = body == null || Boolean.parseBoolean(body.getOrDefault("mou", "true"));
+        return placement.toggleMou(id, mou);
+    }
+
+    @PostMapping("/placement/events/{id}/attend")
+    public IndustryEvent attendEvent(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> body) {
+        int count = 1;
+        if (body != null && body.get("count") != null && !body.get("count").isBlank()) {
+            count = Integer.parseInt(body.get("count"));
+        }
+        return placement.markAttendance(id, count);
+    }
+
+    @PostMapping("/at-risk/{studentId}/follow-up")
+    public SupportTicket assignFollowUp(@PathVariable UUID studentId) {
+        return placement.assignFollowUp(studentId);
+    }
+
     @PostMapping("/attendance/biometric")
-    public AttendanceRecord biometric(@RequestBody Map<String, String> body) {
-        Access.requirePackage(Auth.current(), "ENTERPRISE");
-        Access.requireAny(Auth.current(), Roles.OWNER, Roles.FACULTY);
-        AttendanceRecord rec = new AttendanceRecord();
-        rec.setOrganizationId(Auth.current().organizationId());
-        rec.setStudentId(UUID.fromString(body.get("studentId")));
-        if (body.get("batchId") != null) rec.setBatchId(UUID.fromString(body.get("batchId")));
-        rec.setSessionDate(LocalDate.parse(body.getOrDefault("sessionDate", LocalDate.now().toString())));
-        rec.setStatus("PRESENT");
-        rec.setSource("BIOMETRIC");
-        return store.save(rec);
+    public Map<String, Object> biometric(@RequestBody Map<String, Object> body) {
+        return ess.biometric(body);
+    }
+
+    @PostMapping("/ess/attendance")
+    public Map<String, Object> staffAttendance(@RequestBody Map<String, Object> body) {
+        return ess.markAttendance(body);
+    }
+
+    @PostMapping("/ess/punches/import")
+    public List<Map<String, Object>> importPunches(@RequestBody Map<String, Object> body) {
+        return ess.importPunches(body);
+    }
+
+    @PostMapping("/ess/employees/{id}/login")
+    public Map<String, Object> employeeLogin(@PathVariable UUID id, @RequestBody(required = false) Map<String, Object> body) {
+        return ess.issueLogin(id, body == null ? Map.of() : body);
+    }
+
+    @PostMapping("/ess/leave")
+    public Map<String, Object> applyLeave(@RequestBody Map<String, Object> body) {
+        return ess.applyLeave(body);
+    }
+
+    @PostMapping("/ess/leave/{id}/decide")
+    public Map<String, Object> decideLeave(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return ess.decideLeave(id, body);
+    }
+
+    @GetMapping("/ess/leave/calendar")
+    public List<Map<String, Object>> leaveCalendar(@RequestParam(required = false) Integer year,
+                                                   @RequestParam(required = false) Integer month) {
+        LocalDate now = LocalDate.now();
+        return ess.leaveCalendar(year == null ? now.getYear() : year, month == null ? now.getMonthValue() : month);
+    }
+
+    @PostMapping("/ess/salary")
+    public Map<String, Object> saveSalary(@RequestBody Map<String, Object> body) {
+        return ess.saveStructure(body);
+    }
+
+    @PostMapping("/ess/payroll/run")
+    public List<Map<String, Object>> runPayroll(@RequestBody(required = false) Map<String, Object> body) {
+        return ess.runPayroll(body == null ? Map.of() : body);
+    }
+
+    @GetMapping("/ess/payslips/{id}")
+    public Map<String, Object> payslip(@PathVariable UUID id) {
+        return ess.payslip(id);
+    }
+
+    @PostMapping("/ess/candidates/{id}/advance")
+    public Map<String, Object> advanceCandidate(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return ess.advanceCandidate(id, body);
+    }
+
+    @PostMapping("/ess/candidates/{id}/hire")
+    public Map<String, Object> hireCandidate(@PathVariable UUID id, @RequestBody(required = false) Map<String, Object> body) {
+        return ess.hire(id, body == null ? Map.of() : body);
+    }
+
+    @PostMapping("/sis/import/students")
+    public Map<String, Object> importStudents(@RequestBody Map<String, Object> body) {
+        return sis.importStudents(body);
+    }
+
+    @PostMapping("/sis/import/employees")
+    public Map<String, Object> importEmployees(@RequestBody Map<String, Object> body) {
+        return sis.importEmployees(body);
+    }
+
+    @GetMapping("/sis/id-card/{kind}/{id}")
+    public Map<String, Object> idCard(@PathVariable String kind, @PathVariable UUID id) {
+        return sis.idCard(kind, id);
+    }
+
+    @PostMapping("/sis/parents/invite")
+    public Map<String, Object> inviteParent(@RequestBody Map<String, Object> body) {
+        return sis.inviteParent(body);
+    }
+
+    @PostMapping("/sis/custom/{entityType}/{id}")
+    public Map<String, Object> saveCustom(@PathVariable String entityType, @PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return sis.saveCustomValues(entityType, id, body);
+    }
+
+    @PostMapping("/sis/approvals")
+    public ApprovalRequest submitApproval(@RequestBody Map<String, Object> body) {
+        return sis.submitApproval(body);
+    }
+
+    @PostMapping("/sis/approvals/{id}/decide")
+    public ApprovalRequest decideApproval(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return sis.decideApproval(id, body);
+    }
+
+    @GetMapping("/sis/templates/{kind}")
+    public Map<String, Object> renderTemplate(@PathVariable String kind, @RequestParam(required = false) UUID entityId) {
+        return sis.renderTemplate(kind, entityId);
+    }
+
+    @GetMapping("/sis/live/{id}/roster")
+    public List<Map<String, Object>> liveRoster(@PathVariable UUID id) {
+        return sis.sessionRoster(id);
+    }
+
+    @PostMapping("/sis/live/{id}/attendance")
+    public Map<String, Object> liveAttendance(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return sis.takeSessionAttendance(id, body);
+    }
+
+    @PostMapping("/sis/live/{id}/recording")
+    public Recording attachRecording(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return sis.attachRecording(id, body);
+    }
+
+    @PostMapping("/sis/doubts/{id}/reply")
+    public DoubtTicket replyDoubt(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return sis.replyDoubt(id, body);
+    }
+
+    @GetMapping("/sis/doubts")
+    public List<Map<String, Object>> sisDoubts() {
+        return sis.doubts();
+    }
+
+    @GetMapping("/sis/workload")
+    public List<Map<String, Object>> workload() {
+        return sis.facultyWorkload();
+    }
+
+    @GetMapping("/sis/progress")
+    public List<Map<String, Object>> progressBoard() {
+        return sis.progressBoard();
+    }
+
+    @GetMapping("/progress/{studentId}")
+    public Map<String, Object> progress(@PathVariable UUID studentId) {
+        return sis.progressForStudent(studentId);
     }
 
     @GetMapping("/readiness/{studentId}")
@@ -355,61 +613,108 @@ public class ActionsController {
 
     @GetMapping("/at-risk")
     public List<Map<String, Object>> atRisk() {
-        UUID org = Auth.current().organizationId();
-        List<Student> students = store.list(Student.class, org);
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (Student s : students) {
-            Map<String, Object> r = readiness(s.getId());
-            int score = (int) r.get("score");
-            int attendance = (int) r.get("attendance");
-            List<AttendanceRecord> att = store.listBy(AttendanceRecord.class, org, "studentId", s.getId());
-            boolean lowAttendance = att.size() >= 3 && attendance < 75;
-            boolean lowReady = score < 60 && (att.size() >= 3 || ((int) r.get("mock")) > 0);
-            if (!lowAttendance && !lowReady) {
-                continue;
-            }
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("student", s);
-            row.put("readiness", r);
-            row.put("reason", lowAttendance ? "Marked present in under 75% of classes" : "Placement readiness is below 60");
-            out.add(row);
-        }
-        return out;
+        return placement.atRisk();
     }
 
     @PostMapping("/ai/resume")
     public Map<String, String> aiResume(@RequestBody Map<String, String> body) {
-        Access.requirePackage(Auth.current(), "ENTERPRISE");
-        return Map.of("suggestion",
-                "Tighten the summary to 3 lines. Lead with Java, Spring Boot, and PostgreSQL. Quantify projects (users, latency, test coverage). Add a skills inventory matching drive JDs. Keep education after experience.");
+        return scale.aiResume(body == null ? Map.of() : body);
     }
 
     @PostMapping("/ai/coach")
     public Map<String, String> aiCoach(@RequestBody Map<String, String> body) {
-        Access.requirePackage(Auth.current(), "ENTERPRISE");
-        String q = body.getOrDefault("question", "How do I prepare?");
-        return Map.of("answer",
-                "For '" + q + "': complete the current module assignment, revise last two recorded lectures, and attempt the aptitude set. Target roles: Java developer and QA automation. Next mock: DSA + HR.");
+        return scale.aiCoach(body == null ? Map.of() : body);
     }
 
     @PostMapping("/ai/career")
     public Map<String, Object> aiCareer(@RequestBody Map<String, String> body) {
-        Access.requirePackage(Auth.current(), "ENTERPRISE");
-        return Map.of(
-                "path", "Java Full Stack → Backend Engineer → Platform Engineer",
-                "skills", List.of("Spring Boot", "PostgreSQL", "Redis", "System design"),
-                "matches", List.of("Infosys SES", "TCS Digital", "Product-startup SDE-1")
-        );
+        return scale.aiCareer(body == null ? Map.of() : body);
+    }
+
+    @GetMapping("/ai/status")
+    public Map<String, Object> aiStatus() {
+        return scale.aiStatus();
+    }
+
+    @GetMapping("/mobile/home")
+    public Map<String, Object> mobileHome() {
+        return scale.mobileHome();
+    }
+
+    @GetMapping("/reports/datasets")
+    public List<Map<String, Object>> reportDatasets() {
+        return scale.datasets();
+    }
+
+    @PostMapping("/reports")
+    public ReportDefinition createReport(@RequestBody Map<String, String> body) {
+        return scale.saveReport(body);
+    }
+
+    @PostMapping("/reports/{id}/run")
+    public Map<String, Object> runReport(@PathVariable UUID id) {
+        return scale.runReport(id);
+    }
+
+    @PostMapping("/reports/{id}/schedule")
+    public ScheduledReport scheduleReport(@PathVariable UUID id, @RequestBody Map<String, String> body) {
+        return scale.schedule(id, body);
+    }
+
+    @PostMapping("/reports/{id}/send")
+    public Map<String, Object> sendReport(@PathVariable UUID id) {
+        return scale.sendReport(id);
+    }
+
+    @PostMapping("/reports/run-due")
+    public Map<String, Object> runDueReports() {
+        Access.requireAny(Auth.current(), Roles.OWNER);
+        return Map.of("sent", scale.runDueReports());
+    }
+
+    @GetMapping("/faculty-performance")
+    public List<Map<String, Object>> facultyPerformance() {
+        return scale.facultyPerformance();
+    }
+
+    @PostMapping("/xapi/statements")
+    public XapiStatement xapi(@RequestBody Map<String, String> body) {
+        return scale.recordXapi(body);
+    }
+
+    @GetMapping("/learning-outcomes")
+    public List<Map<String, Object>> learningOutcomes() {
+        return scale.learningOutcomes();
+    }
+
+    @GetMapping("/lms-packages/{id}/lti")
+    public Map<String, Object> lti(@PathVariable UUID id) {
+        return scale.ltiLaunch(id);
+    }
+
+    @PostMapping("/accreditation/folders")
+    public AccreditationFolder accreditationFolder(@RequestBody Map<String, String> body) {
+        return scale.saveFolder(body);
+    }
+
+    @PostMapping("/accreditation/evidence")
+    public AccreditationEvidence accreditationEvidence(@RequestBody Map<String, String> body) {
+        return scale.saveEvidence(body);
+    }
+
+    @PostMapping("/accreditation/evidence/{id}/submit")
+    public AccreditationEvidence submitEvidence(@PathVariable UUID id) {
+        return scale.submitEvidence(id);
+    }
+
+    @PostMapping("/offline/sync")
+    public Map<String, Object> offlineSync(@RequestBody(required = false) Map<String, Object> body) {
+        return scale.syncOffline(body == null ? Map.of() : body);
     }
 
     @GetMapping("/salary-benchmarks")
     public List<Map<String, Object>> benchmarks() {
-        Access.requirePackage(Auth.current(), "ENTERPRISE");
-        return List.of(
-                Map.of("role", "Java Developer", "city", "Pune", "medianLpa", 6.5, "course", "Java Full Stack"),
-                Map.of("role", "Data Analyst", "city", "Hyderabad", "medianLpa", 5.8, "course", "Data Analytics"),
-                Map.of("role", "QA Engineer", "city", "Bengaluru", "medianLpa", 5.2, "course", "Java Full Stack")
-        );
+        return placement.salaryBenchmarks();
     }
 
     @PostMapping("/media/upload")
@@ -456,6 +761,7 @@ public class ActionsController {
         out.put("smtpPort", OrgSecrets.live(org, "smtpPort"));
         out.put("smtpUser", OrgSecrets.live(org, "smtpUser"));
         out.put("smtpFrom", OrgSecrets.live(org, "smtpFrom"));
+        out.put("openai", OrgSecrets.has(org, "openaiApiKey"));
         return out;
     }
 
@@ -487,6 +793,9 @@ public class ActionsController {
         putIfPresent(live, body, "razorpayWebhookSecret");
         putIfPresent(live, body, "gstState");
         putIfPresent(live, body, "invoiceSeries");
+        putIfPresent(live, body, "openaiApiKey");
+        putIfPresent(live, body, "openaiBaseUrl");
+        putIfPresent(live, body, "openaiModel");
         try {
             org.setSettingsJson(mapper.writeValueAsString(root));
         } catch (Exception e) {
@@ -595,13 +904,18 @@ public class ActionsController {
         out.put("coursesTotal", store.list(Course.class, org).size());
         out.put("landingPages", store.list(LandingPage.class, org).size());
         out.put("campaigns", store.list(Campaign.class, org).size());
-        out.put("testsCreated", store.list(Assessment.class, org).size());
+        List<Assessment> assessments = store.list(Assessment.class, org);
+        out.put("testsTotal", assessments.size());
+        out.put("testsCreated", assessments.stream()
+                .filter(a -> a.isPublished() && !"PRACTICE_LAB".equalsIgnoreCase(a.getKind()))
+                .count());
         out.put("couponsLive", store.list(Coupon.class, org).stream().filter(Coupon::isLive).count());
         out.put("bannersLive", store.list(AppBanner.class, org).stream().filter(AppBanner::isLive).count());
         out.put("websiteSessions", hits.stream().filter(h -> "SESSION".equals(h.getKind())).count());
         out.put("buyNowClicks", hits.stream().filter(h -> "BUY_CLICK".equals(h.getKind())).count());
         out.put("transactions", payments.size());
         out.put("revenue", paid);
+        out.putAll(fees.financeDashboard(days));
         return out;
     }
 

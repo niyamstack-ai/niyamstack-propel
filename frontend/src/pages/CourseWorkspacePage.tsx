@@ -2,7 +2,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useState } from "react";
 import { useAuth } from "../auth";
 import { fileSrc } from "../api";
-import { deleteRecord, updateRecord } from "../ops";
+import { deleteRecord, ensureWebsitePublished, updateRecord } from "../ops";
 import { ShareLinkBar } from "../shareLink";
 import { ErrorText, useApi } from "../ui";
 import { UserMenu } from "../UserMenu";
@@ -56,6 +56,7 @@ export function CourseWorkspacePage() {
     setBusy(true);
     try {
       await updateRecord(`/api/courses/${selected.id}`, { ...selected, published: true });
+      await ensureWebsitePublished().catch(() => undefined);
       courses.reload();
     } catch (e) {
       setError((e as Error).message);

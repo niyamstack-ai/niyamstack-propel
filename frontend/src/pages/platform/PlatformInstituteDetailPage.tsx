@@ -1,17 +1,9 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../../api";
+import { MODULES, PACKS, modulesForPack, type PackId } from "../../packs";
+import { hasCap, usePlatformAuth } from "../../platformAuth";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, useApi } from "../../ui";
-
-const MODULES = [
-  { id: "STUDENTS", label: "Student management" },
-  { id: "CRM", label: "Admissions / CRM" },
-  { id: "LMS", label: "LMS" },
-  { id: "FEES", label: "Fees" },
-  { id: "PLACEMENT", label: "Placement" },
-  { id: "COMMS", label: "Communication" },
-  { id: "ANALYTICS", label: "Analytics" },
-];
 
 type Institute = {
   id: string;
@@ -21,6 +13,7 @@ type Institute = {
   accessStatus: string;
   paymentStatus: string;
   packageTier?: string;
+  productPack?: string;
   billingCycle?: string;
   dealAmount?: number;
   modulesCsv?: string;
@@ -32,14 +25,21 @@ type Institute = {
 
 export function PlatformInstituteDetailPage() {
   const { id } = useParams();
+  const { user } = usePlatformAuth();
   const rec = useApi<Institute>(`/api/platform/institutes/${id}`);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [acting, setActing] = useState<null | "paid" | "approve" | "failed" | "suspend">(null);
+  const canMarkPaid = hasCap(user, "MARK_PAID");
+  const canApprove = hasCap(user, "APPROVE");
+  const canSuspend = hasCap(user, "SUSPEND");
+  const canEditDeal = hasCap(user, "EDIT_DEAL");
   const [amount, setAmount] = useState("");
   const [cycle, setCycle] = useState("MONTHLY");
   const [tier, setTier] = useState("STARTER");
-  const [modules, setModules] = useState<string[]>(["STUDENTS"]);
+  const [pack, setPack] = useState<PackId>("FULL_OPS");
+  const [modules, setModules] = useState<string[]>(modulesForPack("FULL_OPS"));
   const [maxStudents, setMaxStudents] = useState("");
   const [maxCenters, setMaxCenters] = useState("");
   const [coupon, setCoupon] = useState("");
@@ -51,7 +51,9 @@ export function PlatformInstituteDetailPage() {
     setAmount(org.dealAmount != null ? String(org.dealAmount) : "");
     setCycle(org.billingCycle || "MONTHLY");
     setTier(org.packageTier || "STARTER");
-    setModules((org.modulesCsv || "STUDENTS").split(",").map((m) => m.trim()).filter(Boolean));
+    setPack((org.productPack as PackId) || "FULL_OPS");
+    const csv = org.modulesCsv || modulesForPack(org.productPack || "FULL_OPS").join(",");
+    setModules(csv.split(",").map((m) => m.trim()).filter(Boolean));
     setMaxStudents(org.maxStudents != null ? String(org.maxStudents) : "");
     setMaxCenters(org.maxCenters != null ? String(org.maxCenters) : "");
     setCoupon(org.couponCode || "");
@@ -60,7 +62,7 @@ export function PlatformInstituteDetailPage() {
 
   async function saveDeal(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
+    setSaving(true);
     setError(null);
     setNotice(null);
     try {
@@ -70,6 +72,7 @@ export function PlatformInstituteDetailPage() {
           dealAmount: amount.trim() ? Number(amount) : null,
           billingCycle: cycle || "MONTHLY",
           packageTier: tier || "STARTER",
+          productPack: pack,
           modulesCsv: modules.join(","),
           maxStudents: maxStudents.trim() ? Number(maxStudents) : null,
           maxCenters: maxCenters.trim() ? Number(maxCenters) : null,
@@ -82,12 +85,12 @@ export function PlatformInstituteDetailPage() {
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   }
 
-  async function action(path: string, ok: string) {
-    setBusy(true);
+  async function action(path: string, kind: NonNullable<typeof acting>, ok: string) {
+    setActing(kind);
     setError(null);
     setNotice(null);
     try {
@@ -97,7 +100,7 @@ export function PlatformInstituteDetailPage() {
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setBusy(false);
+      setActing(null);
     }
   }
 
@@ -121,28 +124,39 @@ export function PlatformInstituteDetailPage() {
       {rec.error && <p className="text-sm text-red-600">{rec.error}</p>}
       <ErrorText error={error} />
       {notice && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p>}
+      {(canMarkPaid || canApprove || canSuspend) && (
       <Card title="Lifecycle">
         <div className="flex flex-wrap gap-2">
-          <PrimaryButton disabled={busy} onClick={() => action("mark-paid", paid ? "Already marked paid." : "Payment marked received. You can now approve.")}>
-            Mark paid
-          </PrimaryButton>
-          <PrimaryButton
-            disabled={busy}
-            onClick={() => action("approve", active ? "Already active." : "Institute activated.")}
-          >
-            Approve / activate
-          </PrimaryButton>
-          <button type="button" className="rounded-full border border-line px-4 py-2 text-sm" disabled={busy} onClick={() => action("mark-failed", "Payment marked failed.")}>
-            Mark payment failed
-          </button>
-          <button type="button" className="rounded-full border border-red-200 px-4 py-2 text-sm text-red-700" disabled={busy} onClick={() => action("suspend", "Institute suspended.")}>
-            Suspend
-          </button>
+          {canMarkPaid && (
+            <PrimaryButton disabled={saving || !!acting} onClick={() => action("mark-paid", "paid", paid ? "Already marked paid." : "Payment marked received. You can now approve.")}>
+              {acting === "paid" ? "Marking paid…" : "Mark paid"}
+            </PrimaryButton>
+          )}
+          {canApprove && (
+            <PrimaryButton
+              disabled={saving || !!acting}
+              onClick={() => action("approve", "approve", active ? "Already active." : "Institute activated.")}
+            >
+              {acting === "approve" ? "Approving…" : "Approve / activate"}
+            </PrimaryButton>
+          )}
+          {canMarkPaid && (
+            <button type="button" className="rounded-full border border-line px-4 py-2 text-sm" disabled={saving || !!acting} onClick={() => action("mark-failed", "failed", "Payment marked failed.")}>
+              {acting === "failed" ? "Updating…" : "Mark payment failed"}
+            </button>
+          )}
+          {canSuspend && (
+            <button type="button" className="rounded-full border border-red-200 px-4 py-2 text-sm text-red-700" disabled={saving || !!acting} onClick={() => action("suspend", "suspend", "Institute suspended.")}>
+              {acting === "suspend" ? "Suspending…" : "Suspend"}
+            </button>
+          )}
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          {paid ? "Payment is already marked received." : "Mark paid first, then approve."} Razorpay sync comes next.
+          {paid ? "Payment is already marked received." : "Mark paid first, then approve."} Student fee collect uses Razorpay keys on the institute Integrations page.
         </p>
       </Card>
+      )}
+      {canEditDeal && (
       <Card title="Customer deal">
         <form className="space-y-4" onSubmit={saveDeal}>
           <FormGrid>
@@ -158,7 +172,18 @@ export function PlatformInstituteDetailPage() {
               ]}
             />
             <Select
-              label="Package template"
+              label="Product pack"
+              value={pack}
+              onChange={(v) => {
+                const next = v as PackId;
+                setPack(next);
+                setModules(modulesForPack(next));
+              }}
+              options={PACKS.map((p) => ({ value: p.id, label: p.name }))}
+              allowEmpty={false}
+            />
+            <Select
+              label="Catalog tier"
               value={tier}
               onChange={setTier}
               options={[
@@ -193,11 +218,12 @@ export function PlatformInstituteDetailPage() {
             <span className="text-slate-600">Notes</span>
             <textarea className="mt-1 w-full rounded-lg border border-line px-3 py-2" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </label>
-          <button className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={busy}>
-            {busy ? "Saving…" : "Save deal"}
+          <button className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={saving || !!acting}>
+            {saving ? "Saving…" : "Save deal"}
           </button>
         </form>
       </Card>
+      )}
     </div>
   );
 }

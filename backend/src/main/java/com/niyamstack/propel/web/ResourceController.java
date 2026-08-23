@@ -1,26 +1,35 @@
 package com.niyamstack.propel.web;
 
 import com.niyamstack.propel.catalog.Features;
+import com.niyamstack.propel.catalog.Packs;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model;
 import com.niyamstack.propel.domain.Model.*;
 import com.niyamstack.propel.domain.TenantEntity;
+import com.niyamstack.propel.ess.EssService;
 import com.niyamstack.propel.fees.FeeService;
 import com.niyamstack.propel.lms.LmsService;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.DataScope;
+import com.niyamstack.propel.security.Gstins;
 import com.niyamstack.propel.security.PropelUser;
 import com.niyamstack.propel.security.PasswordPolicy;
 import com.niyamstack.propel.security.Phones;
 import com.niyamstack.propel.security.Roles;
+import com.niyamstack.propel.security.SessionService;
+import com.niyamstack.propel.security.LicenseService;
+import com.niyamstack.propel.grow.GrowService;
+import com.niyamstack.propel.sis.SisService;
+import com.niyamstack.propel.sis.StudentAccountService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -34,13 +43,27 @@ public class ResourceController {
     private final LmsService lms;
     private final PasswordEncoder encoder;
     private final FeeService fees;
+    private final StudentAccountService studentAccounts;
+    private final SessionService sessions;
+    private final LicenseService licenses;
+    private final EssService ess;
+    private final SisService sis;
+    private final GrowService grow;
 
-    public ResourceController(Store store, DataScope scope, LmsService lms, PasswordEncoder encoder, FeeService fees) {
+    public ResourceController(Store store, DataScope scope, LmsService lms, PasswordEncoder encoder, FeeService fees,
+                              StudentAccountService studentAccounts, SessionService sessions, LicenseService licenses,
+                              EssService ess, SisService sis, GrowService grow) {
         this.store = store;
         this.scope = scope;
         this.lms = lms;
         this.encoder = encoder;
         this.fees = fees;
+        this.studentAccounts = studentAccounts;
+        this.sessions = sessions;
+        this.licenses = licenses;
+        this.ess = ess;
+        this.sis = sis;
+        this.grow = grow;
     }
 
     @GetMapping("/features")
@@ -49,8 +72,9 @@ public class ResourceController {
     }
 
     @GetMapping("/me")
-    public PropelUser me() {
-        return Auth.current();
+    public Map<String, Object> me() {
+        AppUser user = store.get(AppUser.class, Auth.current().userId());
+        return sessions.profile(user);
     }
 
     @GetMapping("/organization")
@@ -66,7 +90,11 @@ public class ResourceController {
         Organization existing = store.get(Organization.class, Auth.current().organizationId());
         existing.setName(body.getName());
         existing.setLegalName(body.getLegalName());
-        existing.setGstin(body.getGstin());
+        Gstins.requireValid(body.getGstin());
+        existing.setGstin(Gstins.normalize(body.getGstin()));
+        if (existing.getGstin().isBlank()) {
+            existing.setGstin(null);
+        }
         existing.setEmail(body.getEmail());
         existing.setPhone(body.getPhone());
         existing.setWebsite(body.getWebsite());
@@ -76,7 +104,7 @@ public class ResourceController {
         existing.setWebsiteUrl(body.getWebsiteUrl());
         existing.setAppShareUrl(body.getAppShareUrl());
         existing.setCustomDomain(body.getCustomDomain());
-        existing.setWebsitePublished(body.isWebsitePublished());
+        existing.setWebsitePublished(body.isWebsitePublished() || existing.isWebsitePublished());
         if (body.getSettingsJson() != null) {
             existing.setSettingsJson(body.getSettingsJson());
         }
@@ -84,7 +112,10 @@ public class ResourceController {
     }
 
     @GetMapping("/centers") public List<Center> centers() { return list(Center.class); }
-    @PostMapping("/centers") public Center createCenter(@RequestBody Center body) { return create(body, "SETUP"); }
+    @PostMapping("/centers") public Center createCenter(@RequestBody Center body) {
+        licenses.requireCenterCapacity();
+        return create(body, "SETUP");
+    }
     @PutMapping("/centers/{id}") public Center updateCenter(@PathVariable UUID id, @RequestBody Center body) { return update(Center.class, id, body, "SETUP"); }
     @DeleteMapping("/centers/{id}") public void deleteCenter(@PathVariable UUID id) { delete(Center.class, id, "SETUP"); }
 
@@ -95,14 +126,17 @@ public class ResourceController {
     @PostMapping("/terms") public Term createTerm(@RequestBody Term body) { return create(body, "SETUP"); }
 
     @GetMapping("/courses") public List<Course> courses() { return list(Course.class); }
-    @PostMapping("/courses") public Course createCourse(@RequestBody Course body) { return create(body, "SETUP"); }
+    @PostMapping("/courses") public Course createCourse(@RequestBody Course body) {
+        body.setTermId(sis.resolveTermId(body.getTermId()));
+        return create(body, "SETUP");
+    }
     @PutMapping("/courses/{id}") public Course updateCourse(@PathVariable UUID id, @RequestBody Course body) { return update(Course.class, id, body, "SETUP"); }
     @DeleteMapping("/courses/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteCourse(@PathVariable UUID id) { lms.deleteCourse(id); }
 
     @GetMapping("/batches") public List<Batch> batches() { return list(Batch.class); }
-    @PostMapping("/batches") public Batch createBatch(@RequestBody Batch body) { return create(body, "SETUP"); }
+    @PostMapping("/batches") public Batch createBatch(@RequestBody Batch body) { return sis.createBatch(body); }
     @PutMapping("/batches/{id}") public Batch updateBatch(@PathVariable UUID id, @RequestBody Batch body) { return update(Batch.class, id, body, "SETUP"); }
 
     @GetMapping("/classrooms") public List<Classroom> classrooms() { return list(Classroom.class); }
@@ -114,6 +148,7 @@ public class ResourceController {
     @GetMapping("/workflows") public List<Workflow> workflows() { return list(Workflow.class); }
     @PostMapping("/workflows") public Workflow createWorkflow(@RequestBody Workflow body) { return create(body, "ADMIN"); }
 
+    @GetMapping("/approvals") public List<ApprovalRequest> approvals() { return list(ApprovalRequest.class); }
     @GetMapping("/templates") public List<DocumentTemplate> templates() { return list(DocumentTemplate.class); }
     @PostMapping("/templates") public DocumentTemplate createTemplate(@RequestBody DocumentTemplate body) { return create(body, "SETUP"); }
 
@@ -137,7 +172,8 @@ public class ResourceController {
     @PostMapping("/scholarships") public Scholarship createScholarship(@RequestBody Scholarship body) { return create(body, "CRM"); }
 
     @GetMapping("/students") public List<Student> students() { return list(Student.class); }
-    @PostMapping("/students") public Student createStudent(@RequestBody Student body) { return create(body, "SIS"); }
+    @PostMapping("/students") public Map<String, Object> createStudent(@RequestBody Student body) { return studentAccounts.enrollFromOwner(body); }
+    @PostMapping("/students/{id}/issue-login") public Map<String, Object> issueStudentLogin(@PathVariable UUID id) { return studentAccounts.issueLogin(id); }
     @PutMapping("/students/{id}") public Student updateStudent(@PathVariable UUID id, @RequestBody Student body) { return update(Student.class, id, body, "SIS"); }
 
     @GetMapping("/student-documents") public List<StudentDocument> docs() { return list(StudentDocument.class); }
@@ -147,10 +183,26 @@ public class ResourceController {
     @PostMapping("/guardians") public Guardian createGuardian(@RequestBody Guardian body) { return create(body, "SIS"); }
 
     @GetMapping("/timetable") public List<TimetableSlot> timetable() { return list(TimetableSlot.class); }
-    @PostMapping("/timetable") public TimetableSlot createSlot(@RequestBody TimetableSlot body) { return create(body, "LMS"); }
+    @PostMapping("/timetable") public TimetableSlot createSlot(@RequestBody TimetableSlot body) { return sis.saveSlot(body); }
 
     @GetMapping("/attendance") public List<AttendanceRecord> attendance() { return list(AttendanceRecord.class); }
     @PostMapping("/attendance") public AttendanceRecord markAttendance(@RequestBody AttendanceRecord body) { return create(body, "LMS"); }
+
+    @GetMapping("/employees") public List<Map<String, Object>> employees() { return ess.employees(); }
+    @PostMapping("/employees") public Map<String, Object> createEmployee(@RequestBody Map<String, Object> body) { return ess.createEmployee(body); }
+    @PutMapping("/employees/{id}") public Map<String, Object> updateEmployee(@PathVariable UUID id, @RequestBody Map<String, Object> body) { return ess.updateEmployee(id, body); }
+
+    @GetMapping("/staff-attendance") public List<Map<String, Object>> staffAttendance() { return ess.attendance(); }
+    @GetMapping("/biometric-punches") public List<Map<String, Object>> biometricPunches() { return ess.punches(); }
+    @GetMapping("/leave-requests") public List<Map<String, Object>> leaveRequests() { return ess.leaves(); }
+    @GetMapping("/leave-balances") public List<Map<String, Object>> leaveBalances() { return ess.balances(); }
+    @GetMapping("/salary-structures") public List<Map<String, Object>> salaryStructures() { return ess.structures(); }
+    @GetMapping("/payslips") public List<Map<String, Object>> payslips() { return ess.payslips(); }
+    @GetMapping("/staff-vacancies") public List<Map<String, Object>> staffVacancies() { return ess.vacancies(); }
+    @PostMapping("/staff-vacancies") public Map<String, Object> createVacancy(@RequestBody Map<String, Object> body) { return ess.createVacancy(body); }
+    @PutMapping("/staff-vacancies/{id}") public Map<String, Object> updateVacancy(@PathVariable UUID id, @RequestBody Map<String, Object> body) { return ess.updateVacancy(id, body); }
+    @GetMapping("/staff-candidates") public List<Map<String, Object>> staffCandidates() { return ess.candidates(); }
+    @PostMapping("/staff-candidates") public Map<String, Object> createCandidate(@RequestBody Map<String, Object> body) { return ess.createCandidate(body); }
 
     @GetMapping("/content") public List<ContentItem> content() { return list(ContentItem.class); }
     @PostMapping("/content") public ContentItem createContent(@RequestBody ContentItem body) { return create(body, "LMS"); }
@@ -203,7 +255,10 @@ public class ResourceController {
     @PostMapping("/certificates") public Certificate createCert(@RequestBody Certificate body) { return create(body, "LMS"); }
 
     @GetMapping("/fee-plans") public List<FeePlan> feePlans() { return list(FeePlan.class); }
-    @PostMapping("/fee-plans") public FeePlan createPlan(@RequestBody FeePlan body) { return create(body, "FEES"); }
+    @PostMapping("/fee-plans") public FeePlan createPlan(@RequestBody FeePlan body) {
+        body.setTermId(sis.resolveTermId(body.getTermId()));
+        return create(body, "FEES");
+    }
 
     @GetMapping("/invoices") public List<Invoice> invoices() { return list(Invoice.class); }
     @PostMapping("/invoices") public Invoice createInvoice(@RequestBody Invoice body) { return fees.finalizeInvoice(create(body, "FEES")); }
@@ -231,11 +286,22 @@ public class ResourceController {
     @GetMapping("/announcements") public List<Announcement> announcements() { return list(Announcement.class); }
     @PostMapping("/announcements") public Announcement createAnnouncement(@RequestBody Announcement body) { return create(body, "COMMS"); }
 
-    @GetMapping("/message-templates") public List<MessageTemplate> messageTemplates() { return list(MessageTemplate.class); }
+    @GetMapping("/message-templates") public List<MessageTemplate> messageTemplates() {
+        grow.ensureTemplates();
+        return list(MessageTemplate.class);
+    }
     @PostMapping("/message-templates") public MessageTemplate createMessageTemplate(@RequestBody MessageTemplate body) { return create(body, "COMMS"); }
 
     @GetMapping("/inbox") public List<InboxMessage> inbox() { return list(InboxMessage.class); }
     @PostMapping("/inbox") public InboxMessage createInbox(@RequestBody InboxMessage body) { return create(body, "COMMS"); }
+
+    @GetMapping("/report-definitions") public List<ReportDefinition> reportDefinitions() { return list(ReportDefinition.class); }
+    @GetMapping("/scheduled-reports") public List<ScheduledReport> scheduledReports() { return list(ScheduledReport.class); }
+    @GetMapping("/xapi-statements") public List<XapiStatement> xapiStatements() { return list(XapiStatement.class); }
+    @GetMapping("/accreditation-folders") public List<AccreditationFolder> accreditationFolders() { return list(AccreditationFolder.class); }
+    @PostMapping("/accreditation-folders") public AccreditationFolder createFolder(@RequestBody AccreditationFolder body) { return create(body, "LMS"); }
+    @GetMapping("/accreditation-evidence") public List<AccreditationEvidence> accreditationEvidence() { return list(AccreditationEvidence.class); }
+    @PostMapping("/accreditation-evidence") public AccreditationEvidence createEvidence(@RequestBody AccreditationEvidence body) { return create(body, "LMS"); }
 
     @GetMapping("/skills") public List<Skill> skills() { return list(Skill.class); }
     @PostMapping("/skills") public Skill createSkill(@RequestBody Skill body) { return create(body, "PLACEMENT"); }
@@ -363,25 +429,21 @@ public class ResourceController {
     private static final Set<String> INSTITUTE_STAFF = Set.of(
             Roles.OWNER, Roles.PLACEMENT_HEAD, Roles.FACULTY, Roles.COUNSELOR, Roles.ACCOUNTANT);
 
-    public record StaffInvite(String fullName, String email, String phone, String role) {}
+    public record StaffInvite(String fullName, String email, String phone, String role, String capabilitiesCsv, List<String> capabilities) {}
+
+    public record StaffUpdate(String capabilitiesCsv, List<String> capabilities, String role) {}
 
     @GetMapping("/staff")
     public List<Map<String, Object>> staff() {
         Access.requireTenant(Auth.current());
+        Access.requireAnyModule(Auth.current(), "STAFF");
         Access.requireAny(Auth.current(), Roles.OWNER, Roles.PLACEMENT_HEAD, Roles.FACULTY, Roles.COUNSELOR, Roles.ACCOUNTANT);
         return store.em().createQuery("select u from AppUser u where u.organizationId = :o", AppUser.class)
                 .setParameter("o", Auth.current().organizationId())
                 .getResultList()
                 .stream()
                 .filter(u -> INSTITUTE_STAFF.contains(u.getRole()))
-                .map(u -> Map.<String, Object>of(
-                        "id", u.getId(),
-                        "fullName", u.getFullName(),
-                        "email", u.getEmail(),
-                        "role", u.getRole(),
-                        "centerId", u.getCenterId() == null ? "" : u.getCenterId(),
-                        "active", u.isActive()
-                ))
+                .map(this::staffView)
                 .toList();
     }
 
@@ -389,6 +451,7 @@ public class ResourceController {
     public Map<String, Object> createStaff(@RequestBody StaffInvite body) {
         Access.requireTenant(Auth.current());
         Access.requireWrite(Auth.current(), "SETUP");
+        Access.requireAnyModule(Auth.current(), "STAFF");
         if (body.fullName() == null || body.fullName().isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Name is required");
         }
@@ -410,7 +473,7 @@ public class ResourceController {
                 throw new ApiException(HttpStatus.CONFLICT, "That mobile already has an account");
             }
         }
-        String temp = "Welcome@" + (System.currentTimeMillis() % 100000);
+        String temp = PasswordPolicy.temporary();
         PasswordPolicy.validate(temp);
         AppUser user = new AppUser();
         user.setOrganizationId(Auth.current().organizationId());
@@ -419,16 +482,59 @@ public class ResourceController {
         user.setPhone(phone);
         user.setRole(role);
         user.setActive(true);
+        user.setCapabilitiesCsv(capsCsv(body.capabilitiesCsv(), body.capabilities(), role));
         user.setPasswordHash(encoder.encode(temp));
         user.setPasswordChangedAt(Instant.now());
         user = store.save(user);
-        return Map.of(
-                "id", user.getId(),
-                "fullName", user.getFullName(),
-                "email", user.getEmail(),
-                "role", user.getRole(),
-                "tempPassword", temp
-        );
+        Map<String, Object> out = new LinkedHashMap<>(staffView(user));
+        out.put("tempPassword", temp);
+        return out;
+    }
+
+    @PutMapping("/staff/{id}")
+    public Map<String, Object> updateStaff(@PathVariable UUID id, @RequestBody StaffUpdate body) {
+        Access.requireTenant(Auth.current());
+        Access.requireWrite(Auth.current(), "SETUP");
+        Access.requireAnyModule(Auth.current(), "STAFF");
+        AppUser user = store.get(AppUser.class, id);
+        if (user.getOrganizationId() == null || !user.getOrganizationId().equals(Auth.current().organizationId())) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Staff member not found");
+        }
+        if (!INSTITUTE_STAFF.contains(user.getRole()) || Roles.OWNER.equals(user.getRole())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Only faculty, counselor, accountant, or placement head rights can be edited");
+        }
+        if (body.role() != null && !body.role().isBlank()) {
+            String role = body.role();
+            if (!INSTITUTE_STAFF.contains(role) || Roles.OWNER.equals(role)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Choose faculty, counselor, accountant, or placement head");
+            }
+            user.setRole(role);
+        }
+        user.setCapabilitiesCsv(capsCsv(body.capabilitiesCsv(), body.capabilities(), user.getRole()));
+        return staffView(store.save(user));
+    }
+
+    private Map<String, Object> staffView(AppUser u) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", u.getId());
+        row.put("fullName", u.getFullName());
+        row.put("email", u.getEmail());
+        row.put("role", u.getRole());
+        row.put("centerId", u.getCenterId() == null ? "" : u.getCenterId());
+        row.put("active", u.isActive());
+        row.put("capabilitiesCsv", u.getCapabilitiesCsv() == null ? "" : u.getCapabilitiesCsv());
+        row.put("capabilities", Packs.capsFor(u.getRole(), u.getCapabilitiesCsv()));
+        return row;
+    }
+
+    private static String capsCsv(String csv, List<String> caps, String role) {
+        if (caps != null && !caps.isEmpty()) {
+            return String.join(",", caps.stream().map(c -> c.trim().toUpperCase()).filter(c -> !c.isEmpty()).toList());
+        }
+        if (csv != null && !csv.isBlank()) {
+            return csv.trim().toUpperCase();
+        }
+        return String.join(",", Packs.defaultCaps(role));
     }
 
     private void validateCoupon(Coupon body, UUID ignoreId) {
@@ -458,11 +564,13 @@ public class ResourceController {
     private <T extends TenantEntity> List<T> list(Class<T> type) {
         PropelUser user = Auth.current();
         Access.requireTenant(user);
+        Access.requireEntityModule(user, type);
         return scope.restrict(type, store.list(type, user.organizationId()), user);
     }
 
     private <T extends TenantEntity> T create(T body, String area) {
         Access.requireTenant(Auth.current());
+        Access.requireEntityModule(Auth.current(), body.getClass());
         boolean student = Roles.STUDENT.equals(Auth.current().role());
         boolean studentWrite = student && (body instanceof DoubtTicket || body instanceof ChatThread || body instanceof ChatMessage);
         if (!studentWrite) {
@@ -505,6 +613,7 @@ public class ResourceController {
 
     private <T extends TenantEntity> T update(Class<T> type, UUID id, T body, String area) {
         Access.requireTenant(Auth.current());
+        Access.requireEntityModule(Auth.current(), type);
         Access.requireWrite(Auth.current(), area);
         if (Roles.STUDENT.equals(Auth.current().role())) {
             throw new ApiException(HttpStatus.FORBIDDEN, "Students cannot edit this record");
@@ -518,6 +627,7 @@ public class ResourceController {
 
     private void delete(Class<? extends TenantEntity> type, UUID id, String area) {
         Access.requireTenant(Auth.current());
+        Access.requireEntityModule(Auth.current(), type);
         Access.requireWrite(Auth.current(), area);
         Access.requireAny(Auth.current(), Roles.OWNER, Roles.FACULTY);
         if (Roles.STUDENT.equals(Auth.current().role())) {

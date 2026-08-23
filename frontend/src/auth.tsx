@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, getToken, setToken } from "./api";
+import { api, clearPlatformSession, getToken, setToken } from "./api";
 
 export type SessionUser = {
   id: string;
@@ -10,8 +10,12 @@ export type SessionUser = {
   organizationId: string;
   packageTier: string;
   accessStatus?: string;
+  paymentStatus?: string;
   orgSlug?: string;
   orgName?: string;
+  productPack?: string;
+  modules?: string[];
+  capabilities?: string[];
 };
 
 type SessionResponse = { token: string; user: SessionUser };
@@ -53,7 +57,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     let cancelled = false;
-    api("/api/me")
+    api<SessionUser>("/api/me")
+      .then((me) => {
+        if (cancelled) return;
+        localStorage.setItem("propel.user", JSON.stringify(me));
+        setUser(me);
+      })
       .catch(() => {
         /* api() expires a dead session */
       })
@@ -71,6 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       ready,
       applySession(res: SessionResponse) {
+        clearPlatformSession();
+        window.dispatchEvent(new Event("propel:platform-unauthorized"));
         setToken(res.token);
         localStorage.setItem("propel.user", JSON.stringify(res.user));
         setTok(res.token);
@@ -81,6 +92,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           method: "POST",
           body: JSON.stringify({ email, password }),
         });
+        clearPlatformSession();
+        window.dispatchEvent(new Event("propel:platform-unauthorized"));
         setToken(res.token);
         localStorage.setItem("propel.user", JSON.stringify(res.user));
         setTok(res.token);
@@ -91,6 +104,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           method: "POST",
           body: JSON.stringify({ phone, otp }),
         });
+        clearPlatformSession();
+        window.dispatchEvent(new Event("propel:platform-unauthorized"));
         setToken(res.token);
         localStorage.setItem("propel.user", JSON.stringify(res.user));
         setTok(res.token);

@@ -13,6 +13,10 @@ public final class PasswordPolicy {
 
     private PasswordPolicy() {}
 
+    public static String temporary() {
+        return "Welcome@" + String.format("%05d", System.currentTimeMillis() % 100_000);
+    }
+
     public static void validate(String password) {
         if (password == null || password.length() < 10) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Password must be at least 10 characters");

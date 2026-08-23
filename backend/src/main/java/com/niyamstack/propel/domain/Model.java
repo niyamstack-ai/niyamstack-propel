@@ -25,6 +25,7 @@ public final class Model {
         private String phone;
         private String website;
         private String packageTier;
+        private String productPack;
         private String slug;
         private String accessStatus;
         private String logoUrl;
@@ -33,6 +34,7 @@ public final class Model {
         private String websiteUrl;
         private String appShareUrl;
         private String customDomain;
+        @JsonProperty("websitePublished")
         private boolean websitePublished;
         private String settingsJson;
         private String paymentStatus;
@@ -76,6 +78,9 @@ public final class Model {
         private int failedLogins;
         private Instant lockedUntil;
         private Instant passwordChangedAt;
+        @Column(length = 500)
+        private String capabilitiesCsv;
+        private UUID companyId;
     }
 
     @Entity(name = "AcademicYear") @Table(name = "academic_years") @Getter @Setter
@@ -110,7 +115,7 @@ public final class Model {
         private String validityUnit = "MONTH";
         @Column(precision = 12, scale = 2)
         private BigDecimal discount = BigDecimal.ZERO;
-        private boolean published = true;
+        private boolean published = false;
         private boolean featured = false;
         private boolean allowOffline;
         private boolean allowTrial;
@@ -127,6 +132,7 @@ public final class Model {
         private BigDecimal feesAlt;
         private Integer validityAltValue;
         private String validityAltUnit = "MONTH";
+        private UUID termId;
         private boolean active = true;
     }
 
@@ -135,6 +141,7 @@ public final class Model {
         private UUID centerId;
         private UUID courseId;
         private UUID academicYearId;
+        private UUID termId;
         private String name;
         private Integer capacity;
         private UUID facultyUserId;
@@ -158,6 +165,8 @@ public final class Model {
         private String label;
         private String fieldType;
         private boolean required;
+        @Column(length = 1000)
+        private String optionsJson;
     }
 
     @Entity(name = "Workflow") @Table(name = "workflows") @Getter @Setter
@@ -175,6 +184,24 @@ public final class Model {
         private String body;
     }
 
+    @Entity(name = "ApprovalRequest") @Table(name = "approval_requests") @Getter @Setter
+    public static class ApprovalRequest extends TenantEntity {
+        private String kind;
+        private String status = "PENDING";
+        private UUID studentId;
+        private UUID inquiryId;
+        private UUID offerId;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal amount;
+        @Column(length = 1000)
+        private String note;
+        private UUID requestedBy;
+        private UUID decidedBy;
+        private Instant decidedAt;
+        @Column(length = 2000)
+        private String payloadJson;
+    }
+
     @Entity(name = "Inquiry") @Table(name = "inquiries") @Getter @Setter
     public static class Inquiry extends TenantEntity {
         private UUID centerId;
@@ -187,6 +214,10 @@ public final class Model {
         private UUID counselorUserId;
         private String notes;
         private UUID studentId;
+        private UUID landingPageId;
+        private String referralCode;
+        @Column(columnDefinition = "TEXT")
+        private String customJson;
     }
 
     @Entity(name = "CounselingNote") @Table(name = "counseling_notes") @Getter @Setter
@@ -220,6 +251,8 @@ public final class Model {
     public static class Referral extends TenantEntity {
         private String referrerName;
         private String referrerType;
+        private String code;
+        private UUID studentId;
         private UUID inquiryId;
         private BigDecimal incentiveAmount;
         private String status;
@@ -231,6 +264,9 @@ public final class Model {
         private BigDecimal percent;
         private BigDecimal amount;
         private String approvalStatus;
+        private UUID studentId;
+        private UUID invoiceId;
+        private UUID approvalRequestId;
     }
 
     @Entity(name = "Student") @Table(name = "students") @Getter @Setter
@@ -253,6 +289,8 @@ public final class Model {
         private String instituteName;
         private String permanentAddress;
         private String photoUrl;
+        @Column(columnDefinition = "TEXT")
+        private String customJson;
     }
 
     @Entity(name = "CourseEnrollment") @Table(name = "course_enrollments") @Getter @Setter
@@ -301,6 +339,7 @@ public final class Model {
         private LocalDate sessionDate;
         private String status;
         private String source;
+        private UUID liveSessionId;
     }
 
     @Entity(name = "ContentItem") @Table(name = "content_items") @Getter @Setter
@@ -334,11 +373,15 @@ public final class Model {
         private String provider;
         private String meetingUrl;
         private Instant startsAt;
+        private Instant endsAt;
+        private String recordingUrl;
+        private String status = "SCHEDULED";
     }
 
     @Entity(name = "Recording") @Table(name = "recordings") @Getter @Setter
     public static class Recording extends TenantEntity {
         private UUID batchId;
+        private UUID liveSessionId;
         private String title;
         private String videoUrl;
     }
@@ -376,6 +419,7 @@ public final class Model {
         private Integer durationMinutes;
         private boolean published;
         private boolean proctoring;
+        private boolean scoresPublished = true;
         private Integer passingScore;
         private Integer totalMarks;
         private UUID parentFolderId;
@@ -413,12 +457,16 @@ public final class Model {
         private String body;
         private String status;
         private String facultyReply;
+        private Integer slaHours = 24;
+        private Instant firstResponseAt;
     }
 
     @Entity(name = "Certificate") @Table(name = "certificates") @Getter @Setter
     public static class Certificate extends TenantEntity {
         private UUID studentId;
+        private UUID courseId;
         private String title;
+        private String certificateNo;
         private LocalDate issuedOn;
     }
 
@@ -433,6 +481,7 @@ public final class Model {
         private Integer installmentCount;
         private String hsn;
         private String sacCode;
+        private UUID termId;
     }
 
     @Entity(name = "Invoice") @Table(name = "invoices") @Getter @Setter
@@ -457,6 +506,7 @@ public final class Model {
         private String placeOfSupply;
         private String sacCode;
         private String seriesPrefix;
+        private Instant lastRemindedAt;
     }
 
     @Entity(name = "Payment") @Table(name = "payments") @Getter @Setter
@@ -485,11 +535,14 @@ public final class Model {
 
     @Entity(name = "Notification") @Table(name = "notifications") @Getter @Setter
     public static class Notification extends TenantEntity {
+        private UUID studentId;
         private String channel;
         private String audience;
         private String title;
         private String body;
         private String status;
+        @Column(length = 1000)
+        private String detail;
     }
 
     @Entity(name = "Announcement") @Table(name = "announcements") @Getter @Setter
@@ -792,6 +845,9 @@ public final class Model {
         private String status = "DRAFT";
         private Instant scheduledAt;
         private Integer sentCount = 0;
+        private String lastSendStatus;
+        @Column(length = 1000)
+        private String lastSendDetail;
     }
 
     @Entity(name = "AppBanner") @Table(name = "app_banners") @Getter @Setter
@@ -850,6 +906,10 @@ public final class Model {
         private BigDecimal price = BigDecimal.ZERO;
         private String meetingUrl;
         private String status = "OPEN";
+        private UUID offeringId;
+        private UUID studentId;
+        private Instant startsAt;
+        private UUID invoiceId;
     }
 
     @Entity(name = "BackendAddition") @Table(name = "backend_additions") @Getter @Setter
@@ -877,9 +937,193 @@ public final class Model {
         private String path;
     }
 
+    @Entity(name = "Employee") @Table(name = "employees") @Getter @Setter
+    public static class Employee extends TenantEntity {
+        private String employeeCode;
+        private String fullName;
+        private String email;
+        private String phone;
+        private String department;
+        private String designation;
+        private LocalDate joiningDate;
+        private UUID centerId;
+        private UUID managerId;
+        private UUID userId;
+        private String status = "ACTIVE";
+        private String employmentType = "SUPPORT";
+        @Column(columnDefinition = "TEXT")
+        private String customJson;
+    }
+
+    @Entity(name = "StaffAttendance") @Table(name = "staff_attendance") @Getter @Setter
+    public static class StaffAttendance extends TenantEntity {
+        private UUID employeeId;
+        private LocalDate workDate;
+        private String shift = "FULL";
+        private String status = "PRESENT";
+        private String source = "MANUAL";
+        private LocalTime inTime;
+        private LocalTime outTime;
+    }
+
+    @Entity(name = "BiometricPunch") @Table(name = "biometric_punches") @Getter @Setter
+    public static class BiometricPunch extends TenantEntity {
+        private UUID employeeId;
+        private UUID studentId;
+        private String deviceId;
+        private Instant punchAt;
+        private String punchType = "IN";
+        private String rawRef;
+    }
+
+    @Entity(name = "LeaveBalance") @Table(name = "leave_balances") @Getter @Setter
+    public static class LeaveBalance extends TenantEntity {
+        private UUID employeeId;
+        private Integer leaveYear;
+        @Column(precision = 8, scale = 1)
+        private BigDecimal cl = BigDecimal.ZERO;
+        @Column(precision = 8, scale = 1)
+        private BigDecimal sl = BigDecimal.ZERO;
+        @Column(precision = 8, scale = 1)
+        private BigDecimal el = BigDecimal.ZERO;
+    }
+
+    @Entity(name = "LeaveRequest") @Table(name = "leave_requests") @Getter @Setter
+    public static class LeaveRequest extends TenantEntity {
+        private UUID employeeId;
+        private String leaveType;
+        private LocalDate fromDate;
+        private LocalDate toDate;
+        @Column(precision = 8, scale = 1)
+        private BigDecimal days;
+        @Column(length = 1000)
+        private String reason;
+        private String status = "PENDING";
+        private UUID decidedBy;
+        private Instant decidedAt;
+    }
+
+    @Entity(name = "SalaryStructure") @Table(name = "salary_structures") @Getter @Setter
+    public static class SalaryStructure extends TenantEntity {
+        private UUID employeeId;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal basic = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal hra = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal special = BigDecimal.ZERO;
+        private LocalDate effectiveFrom;
+    }
+
+    @Entity(name = "Payslip") @Table(name = "payslips") @Getter @Setter
+    public static class Payslip extends TenantEntity {
+        private UUID employeeId;
+        private Integer payYear;
+        private Integer payMonth;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal basic = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal hra = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal special = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal gross = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal pfEmployee = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal esiEmployee = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal pfEmployer = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal esiEmployer = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal deductions = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal net = BigDecimal.ZERO;
+        private String status = "DRAFT";
+        private Instant paidAt;
+    }
+
+    @Entity(name = "StaffVacancy") @Table(name = "staff_vacancies") @Getter @Setter
+    public static class StaffVacancy extends TenantEntity {
+        private String title;
+        private String department;
+        private Integer openings = 1;
+        private String status = "OPEN";
+        @Column(length = 2000)
+        private String description;
+    }
+
+    @Entity(name = "StaffCandidate") @Table(name = "staff_candidates") @Getter @Setter
+    public static class StaffCandidate extends TenantEntity {
+        private UUID vacancyId;
+        private String fullName;
+        private String email;
+        private String phone;
+        private String status = "APPLIED";
+        private Instant interviewAt;
+        @Column(length = 1000)
+        private String interviewNotes;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal offerCtc;
+        private LocalDate offerJoiningDate;
+        private UUID hiredEmployeeId;
+    }
+
     @Entity(name = "PlatformUserRole") @Table(name = "platform_user_roles") @Getter @Setter
     public static class PlatformUserRole extends BaseEntity {
         private UUID userId;
         private UUID roleId;
+    }
+
+    @Entity(name = "ReportDefinition") @Table(name = "report_definitions") @Getter @Setter
+    public static class ReportDefinition extends TenantEntity {
+        private String name;
+        private String dataset;
+        @Column(length = 2000)
+        private String columnsCsv;
+        @Column(columnDefinition = "TEXT")
+        private String filtersJson;
+        private UUID createdBy;
+    }
+
+    @Entity(name = "ScheduledReport") @Table(name = "scheduled_reports") @Getter @Setter
+    public static class ScheduledReport extends TenantEntity {
+        private UUID reportId;
+        private String cadence;
+        private String emailTo;
+        private Instant lastRunAt;
+        private Instant nextRunAt;
+        private boolean enabled = true;
+        private String lastStatus;
+    }
+
+    @Entity(name = "XapiStatement") @Table(name = "xapi_statements") @Getter @Setter
+    public static class XapiStatement extends TenantEntity {
+        private UUID studentId;
+        private UUID courseId;
+        private String verb;
+        private String objectId;
+        @Column(columnDefinition = "TEXT")
+        private String resultJson;
+        private Instant statementAt;
+    }
+
+    @Entity(name = "AccreditationFolder") @Table(name = "accreditation_folders") @Getter @Setter
+    public static class AccreditationFolder extends TenantEntity {
+        private String framework;
+        private String title;
+        private String status = "OPEN";
+    }
+
+    @Entity(name = "AccreditationEvidence") @Table(name = "accreditation_evidence") @Getter @Setter
+    public static class AccreditationEvidence extends TenantEntity {
+        private UUID folderId;
+        private String title;
+        private String fileUrl;
+        @Column(length = 2000)
+        private String note;
+        private String status = "DRAFT";
+        private UUID approvalRequestId;
     }
 }

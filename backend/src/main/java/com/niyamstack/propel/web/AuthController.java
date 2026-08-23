@@ -71,7 +71,8 @@ public class AuthController {
             @NotBlank String fullName,
             @NotBlank @Email String email,
             @NotBlank String phone,
-            @NotBlank String password
+            @NotBlank String password,
+            String productPack
     ) {}
 
     public record ForgotEmailRequest(@NotBlank @Email String email) {}
@@ -152,9 +153,10 @@ public class AuthController {
         org.setEmail(email);
         org.setPhone(phone);
         org.setPackageTier("STARTER");
+        org.setProductPack(com.niyamstack.propel.catalog.Packs.normalizePack(body.productPack()));
         org.setAccessStatus("DEMO");
         org.setPaymentStatus("UNPAID");
-        org.setModulesCsv(com.niyamstack.propel.platform.PlatformService.DEFAULT_MODULES);
+        org.setModulesCsv(com.niyamstack.propel.catalog.Packs.modulesCsvForPack(org.getProductPack()));
         org.setSlug(uniqueSlug(body.instituteName()));
         org.setBrandPrimary("#0078f0");
         org.setBrandSecondary("#071a33");

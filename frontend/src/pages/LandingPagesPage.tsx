@@ -22,6 +22,7 @@ type Course = { id: string; name: string };
 export function LandingPagesPage() {
   const pages = useApi<Landing[]>("/api/landing-pages");
   const courses = useApi<Course[]>("/api/courses");
+  const org = useApi<{ slug?: string }>("/api/organization");
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<"pick" | "form">("pick");
   const [kind, setKind] = useState("WEBINAR");
@@ -132,14 +133,21 @@ export function LandingPagesPage() {
       <Card title={`Your landing pages (${pages.data?.length ?? 0})`}>
         <Table
           empty="No landing pages yet."
-          columns={["Name", "Type", "Views", "Leads", "Status", ""]}
+          columns={["Name", "Type", "Link", "Views", "Leads", "Status", ""]}
           rows={(pages.data ?? []).map((p) => [
             p.name,
             prettyLabel(p.pageKind),
+            p.published && org.data?.slug && p.slug ? (
+              <a key={p.id} className="text-brand hover:underline" href={`/s/${org.data.slug}/l/${p.slug}`} target="_blank" rel="noreferrer">
+                /s/{org.data.slug}/l/{p.slug}
+              </a>
+            ) : (
+              "Publish to share"
+            ),
             String(p.viewsCount ?? 0),
             String(p.leadsCount ?? 0),
             p.published ? "Published" : "Draft",
-            <button className="text-brand hover:underline" type="button" onClick={() => publish(p)} key={p.id}>
+            <button className="text-brand hover:underline" type="button" onClick={() => publish(p)} key={`${p.id}-pub`}>
               {p.published ? "Unpublish" : "Publish"}
             </button>,
           ])}

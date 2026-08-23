@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../api";
+import { hasCap, usePlatformAuth } from "../../platformAuth";
 import { Card, ErrorText, Field, useApi } from "../../ui";
 
 type Cap = { id: string; label: string };
@@ -8,7 +9,9 @@ type Role = { id: string; name: string; capabilities: string[] };
 type Catalog = { capabilities: Cap[]; roles: Role[] };
 
 export function PlatformSettingsPage() {
-  const catalog = useApi<Catalog>("/api/platform/roles");
+  const { user } = usePlatformAuth();
+  const canManageRights = hasCap(user, "MANAGE_RIGHTS");
+  const catalog = useApi<Catalog>(canManageRights ? "/api/platform/roles" : "");
   const [newName, setNewName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -103,29 +106,43 @@ export function PlatformSettingsPage() {
       <div>
         <h1 className="text-2xl font-bold text-navy">Settings</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Create role names here (Sales, HR, Support, or any name you want) and tick what that role can do. Then on{" "}
-          <Link className="font-medium text-brand" to="/platform/employees">
-            Employee management
-          </Link>{" "}
-          assign one or more of those roles to a person.
+          {canManageRights ? (
+            <>
+              Create role names here (Sales, HR, Support, or any name you want) and tick what that role can do. Then on{" "}
+              {hasCap(user, "MANAGE_EMPLOYEES") ? (
+                <Link className="font-medium text-brand" to="/platform/employees">
+                  Employee management
+                </Link>
+              ) : (
+                "Employee management"
+              )}{" "}
+              assign one or more of those roles to a person.
+            </>
+          ) : (
+            "Change the password for this Niyamstack staff account."
+          )}
         </p>
       </div>
       {catalog.error && <p className="text-sm text-red-600">{catalog.error}</p>}
       <ErrorText error={error} />
       {done && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{done}</p>}
-      <Card title="Create a role">
-        <form className="flex flex-wrap items-end gap-3" onSubmit={createRole}>
-          <div className="w-64">
-            <Field label="Role name" value={newName} onChange={setNewName} placeholder="e.g. Sales" />
-          </div>
-          <button className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={busy || !newName.trim()}>
-            Add role
-          </button>
-        </form>
-      </Card>
-      {roles.map((role) => (
-        <RoleCard key={role.id} role={role} caps={caps} busy={busy} onSave={saveRole} onDelete={removeRole} />
-      ))}
+      {canManageRights && (
+        <>
+          <Card title="Create a role">
+            <form className="flex flex-wrap items-end gap-3" onSubmit={createRole}>
+              <div className="w-64">
+                <Field label="Role name" value={newName} onChange={setNewName} placeholder="e.g. Sales" />
+              </div>
+              <button className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={busy || !newName.trim()}>
+                Add role
+              </button>
+            </form>
+          </Card>
+          {roles.map((role) => (
+            <RoleCard key={role.id} role={role} caps={caps} busy={busy} onSave={saveRole} onDelete={removeRole} />
+          ))}
+        </>
+      )}
       <Card title="Your password">
         <form className="max-w-md space-y-3" onSubmit={savePassword}>
           <Field label="Current password" value={currentPassword} onChange={setCurrent} type="password" />
@@ -176,7 +193,7 @@ function RoleCard({
       <div className="grid gap-2 sm:grid-cols-2">
         {caps.map((cap) => (
           <label key={cap.id} className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={selected.includes(cap.id)} onChange={() => toggle(cap.id)} />
+            <input type="checkbox" className="cursor-pointer" checked={selected.includes(cap.id)} onChange={() => toggle(cap.id)} />
             {cap.label}
           </label>
         ))}

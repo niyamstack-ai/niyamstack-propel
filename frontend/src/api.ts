@@ -29,6 +29,16 @@ export function setPlatformToken(token: string | null) {
   else localStorage.removeItem(PLATFORM_TOKEN_KEY);
 }
 
+export function clearInstituteSession() {
+  setToken(null);
+  localStorage.removeItem("propel.user");
+}
+
+export function clearPlatformSession() {
+  setPlatformToken(null);
+  localStorage.removeItem("propel.platform.user");
+}
+
 function tokenFor(path: string) {
   return path.startsWith("/api/platform") ? getPlatformToken() : getToken();
 }

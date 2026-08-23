@@ -2,14 +2,17 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { fileSrc } from "./api";
 import { uploadMedia } from "./ops";
 import { pairLines, parseSections, youtubeId, type SiteSection } from "./websiteSections";
+import { EnquireForm } from "./EnquireForm";
+import { Link } from "react-router-dom";
+import { isProductHost } from "./siteHost";
 
-export function PageSections({ body, catalog }: { body?: string; catalog?: ReactNode }) {
+export function PageSections({ body, catalog, slug }: { body?: string; catalog?: ReactNode; slug?: string }) {
   const sections = parseSections(body);
   if (sections.length === 0) return catalog ? <>{catalog}</> : null;
   return (
     <div className="space-y-8">
       {sections.map((s) => (
-        <SectionView key={s.id} section={s} catalog={catalog} />
+        <SectionView key={s.id} section={s} catalog={catalog} slug={slug} />
       ))}
     </div>
   );
@@ -75,10 +78,12 @@ export function SectionView({
   section,
   catalog,
   onChange,
+  slug,
 }: {
   section: SiteSection;
   catalog?: ReactNode;
   onChange?: (change: Partial<SiteSection>) => void;
+  slug?: string;
 }) {
   const edit = onChange
     ? (field: keyof SiteSection) => (value: string) => onChange({ [field]: value })
@@ -106,7 +111,15 @@ export function SectionView({
         <LiveText tag="h1" className="text-3xl font-bold md:text-4xl" value={section.heading} placeholder="Your institute name" onChange={edit?.("heading")} />
         <LiveText tag="p" className="mt-3 max-w-2xl text-sm leading-6 text-sky-100 whitespace-pre-wrap" value={section.text} placeholder="A short line about your coaching" onChange={edit?.("text")} />
         {(section.buttonLabel || onChange) && (
-          <LiveText tag="span" className="mt-5 inline-block rounded-full bg-brand px-5 py-2 text-sm font-semibold" value={section.buttonLabel} placeholder="View courses" onChange={edit?.("buttonLabel")} />
+          onChange ? (
+            <LiveText tag="span" className="mt-5 inline-block rounded-full bg-brand px-5 py-2 text-sm font-semibold" value={section.buttonLabel} placeholder="View courses" onChange={edit?.("buttonLabel")} />
+          ) : slug ? (
+            <Link className="mt-5 inline-block rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white" to={isProductHost() ? `/s/${slug}` : "/"}>
+              {section.buttonLabel || "View courses"}
+            </Link>
+          ) : (
+            <span className="mt-5 inline-block rounded-full bg-brand px-5 py-2 text-sm font-semibold">{section.buttonLabel || "View courses"}</span>
+          )
         )}
       </div>
     );
@@ -159,6 +172,11 @@ export function SectionView({
             <LiveText tag="span" value={section.address} placeholder="address" onChange={edit?.("address")} />
           </li>
         </ul>
+        {onChange ? (
+          <p className="mt-4 text-xs text-slate-400">Students see an enquiry form here on the live website.</p>
+        ) : (
+          <EnquireForm slug={slug} />
+        )}
       </div>
     );
   }
@@ -195,7 +213,15 @@ export function SectionView({
       <div className="rounded-2xl bg-brand p-8 text-center text-white">
         <LiveText tag="h2" className="text-2xl font-bold" value={section.heading} placeholder="Ready to join?" onChange={edit?.("heading")} />
         <LiveText tag="p" className="mx-auto mt-2 max-w-lg text-sm text-sky-50" value={section.text} placeholder="Invite students to enrol" onChange={edit?.("text")} />
-        <LiveText tag="span" className="mt-5 inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand" value={section.buttonLabel} placeholder="Get started" onChange={edit?.("buttonLabel")} />
+        {onChange ? (
+          <LiveText tag="span" className="mt-5 inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand" value={section.buttonLabel} placeholder="Get started" onChange={edit?.("buttonLabel")} />
+        ) : slug ? (
+          <Link className="mt-5 inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand" to={isProductHost() ? `/s/${slug}/register` : "/register"}>
+            {section.buttonLabel || "Get started"}
+          </Link>
+        ) : (
+          <span className="mt-5 inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand">{section.buttonLabel || "Get started"}</span>
+        )}
       </div>
     );
   }

@@ -105,6 +105,7 @@ export function WebsitePage() {
   const current = sorted.find((p) => p.id === pageId) || sorted[0] || null;
   const previewPath = studentPreviewPath(org.data?.slug);
   const liveUrl = studentPublicUrl(org.data);
+  const siteLive = org.data?.websitePublished === true;
   const host = cleanHost(customDomain);
   const institute = org.data?.name || "your institute";
   const liveCourses = (courses.data ?? []).filter((c) => c.published !== false).slice(0, 4);
@@ -180,14 +181,19 @@ export function WebsitePage() {
 
   async function publish() {
     if (!org.data) return;
-    await savePage();
-    await updateRecord("/api/organization", {
-      ...org.data,
-      websitePublished: true,
-      websiteUrl: org.data.websiteUrl || previewPath,
-    });
-    org.reload();
-    setShareOpen(true);
+    setError(null);
+    try {
+      await savePage();
+      await updateRecord("/api/organization", {
+        ...org.data,
+        websitePublished: true,
+        websiteUrl: org.data.websiteUrl || previewPath,
+      });
+      org.reload();
+      setShareOpen(true);
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
 
   async function saveDomain() {
@@ -274,7 +280,7 @@ export function WebsitePage() {
         </nav>
         <p className="text-xs text-slate-400">{status === "saving" ? "Saving…" : status === "unsaved" ? "Editing" : "Saved"}</p>
         <button type="button" className="rounded-full border border-line px-3 py-1.5 text-sm" onClick={() => setShareOpen(true)}>
-          Share website
+          {siteLive ? "Share website" : "Preview link"}
         </button>
         <PrimaryButton onClick={() => void publish()}>Publish</PrimaryButton>
       </header>
@@ -381,13 +387,17 @@ export function WebsitePage() {
       {shareOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center" onClick={() => setShareOpen(false)}>
           <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-navy">Share your website</h2>
-            <p className="mt-2 text-sm text-slate-600">This is the student site. Send it on WhatsApp if you do not have a domain yet.</p>
+            <h2 className="text-lg font-bold text-navy">{siteLive ? "Share your website" : "Preview (not live yet)"}</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              {siteLive
+                ? "This is the student site. Send it on WhatsApp if you do not have a domain yet."
+                : "This link is a draft preview. Click Publish before you send it to students. Until then they see that the site is not live."}
+            </p>
             <p className="mt-3 break-all rounded-lg bg-mist px-3 py-2 font-mono text-sm">{liveUrl}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <PrimaryButton onClick={() => void copyLiveUrl()}>{copied ? "Copied" : "Copy link"}</PrimaryButton>
               <Link className="rounded-full border border-line px-4 py-2 text-sm" to={previewPath} target="_blank" rel="noreferrer">
-                Open website
+                {siteLive ? "Open website" : "Open draft"}
               </Link>
             </div>
             <p className="mt-5 text-sm font-medium text-navy">Already have a domain?</p>

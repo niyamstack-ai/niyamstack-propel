@@ -1,3 +1,5 @@
+import { pathAllowed } from "./packs";
+
 export type NavItem = { to: string; label: string };
 export type NavGroup = { label: string; items: NavItem[] };
 export type NavEntry = NavItem | NavGroup;
@@ -31,7 +33,19 @@ export function portalTitle(role?: string) {
   }
 }
 
-export function navForRole(role?: string): NavEntry[] {
+export function navForRole(role?: string, modules?: string[], capabilities?: string[]): NavEntry[] {
+  const caps = capabilities ?? [];
+  const base = roleNav(role);
+  if (role === "FACULTY" && (caps.includes("VIEW_FEES") || caps.includes("REFUND"))) {
+    base.push({ to: "/fees", label: "Fees" });
+  }
+  if (role === "FACULTY" && caps.includes("STUDENTS") && !flattenNav(base).some((i) => i.to === "/students" || i.to.startsWith("/people"))) {
+    base.push({ to: "/people/students", label: "Students" });
+  }
+  return filterNav(base, modules);
+}
+
+function roleNav(role?: string): NavEntry[] {
   switch (role) {
     case "STUDENT":
       return [
@@ -42,6 +56,7 @@ export function navForRole(role?: string): NavEntry[] {
         { to: "/readiness", label: "Readiness" },
         { to: "/comms", label: "Notices" },
         { to: "/chats", label: "Chats" },
+        { to: "/m", label: "Mobile app" },
       ];
     case "PARENT":
       return [
@@ -55,8 +70,11 @@ export function navForRole(role?: string): NavEntry[] {
         { to: "/", label: "Home" },
         { to: "/courses", label: "Courses" },
         { to: "/students", label: "My students" },
+        { to: "/academics", label: "Academics" },
         { to: "/comms", label: "Notices" },
         { to: "/chats", label: "Chats" },
+        { to: "/m", label: "Mobile app" },
+        { to: "/ess", label: "ESS" },
       ];
     case "PLACEMENT_HEAD":
       return [
@@ -85,6 +103,7 @@ export function navForRole(role?: string): NavEntry[] {
         { to: "/", label: "Home" },
         { to: "/fees", label: "Fees" },
         { to: "/students", label: "Students" },
+        { to: "/ess", label: "ESS" },
       ];
     default:
       return [
@@ -94,6 +113,7 @@ export function navForRole(role?: string): NavEntry[] {
           items: [
             { to: "/website", label: "Website" },
             { to: "/your-app", label: "Your App" },
+            { to: "/m", label: "Mobile apps" },
             { to: "/landing-pages", label: "Landing Pages" },
             { to: "/campaigns", label: "Campaigns" },
           ],
@@ -103,6 +123,8 @@ export function navForRole(role?: string): NavEntry[] {
           items: [
             { to: "/courses", label: "Courses" },
             { to: "/content-hub", label: "Tests" },
+            { to: "/lms", label: "LMS" },
+            { to: "/academics", label: "Academics" },
           ],
         },
         {
@@ -111,6 +133,7 @@ export function navForRole(role?: string): NavEntry[] {
             { to: "/people/students", label: "Students" },
             { to: "/people/staff", label: "Staff" },
             { to: "/people/alumni", label: "Alumni" },
+            { to: "/ess", label: "ESS" },
           ],
         },
         { to: "/crm", label: "Admissions" },
@@ -141,15 +164,30 @@ export function navForRole(role?: string): NavEntry[] {
           items: [
             { to: "/institute", label: "Institute" },
             { to: "/integrations", label: "Integrations" },
+            { to: "/features", label: "License map" },
           ],
         },
       ];
   }
 }
 
-export function canOpen(role: string | undefined, path: string) {
-  if (path === "/") return true;
-  const nav = flattenNav(navForRole(role));
+function filterNav(entries: NavEntry[], modules?: string[]): NavEntry[] {
+  const out: NavEntry[] = [];
+  for (const entry of entries) {
+    if (isNavGroup(entry)) {
+      const items = entry.items.filter((item) => pathAllowed(item.to, modules));
+      if (items.length) out.push({ ...entry, items });
+    } else if (pathAllowed(entry.to, modules)) {
+      out.push(entry);
+    }
+  }
+  return out;
+}
+
+export function canOpen(role: string | undefined, path: string, modules?: string[], capabilities?: string[]) {
+  if (path === "/" || path === "/m" || path.startsWith("/m/")) return true;
+  if (!pathAllowed(path, modules)) return false;
+  const nav = flattenNav(navForRole(role, modules, capabilities));
   if (nav.some((item) => path === item.to || (item.to !== "/" && path.startsWith(item.to + "/")))) return true;
   if (!role || role === "OWNER") {
     const prefixes = [
@@ -167,13 +205,25 @@ export function canOpen(role: string | undefined, path: string) {
       "/coupons",
       "/backend-addition",
       "/lms",
+      "/features",
       "/students",
       "/alumni",
+      "/ess",
+      "/academics",
     ];
     return prefixes.some((p) => path === p || path.startsWith(p + "/"));
   }
   if (role === "STUDENT" || role === "FACULTY") {
-    return path === "/lms" || path.startsWith("/courses/");
+    if (path === "/lms" || path.startsWith("/courses/")) return pathAllowed(path, modules);
+    if (role === "FACULTY" && path.startsWith("/fees") && (capabilities ?? []).some((c) => c === "VIEW_FEES" || c === "REFUND")) {
+      return pathAllowed(path, modules);
+    }
+  }
+  if ((role === "FACULTY" || role === "ACCOUNTANT") && (path === "/ess" || path.startsWith("/ess/"))) {
+    return pathAllowed(path, modules);
+  }
+  if (role === "FACULTY" && (path === "/academics" || path.startsWith("/academics/"))) {
+    return pathAllowed(path, modules);
   }
   return false;
 }

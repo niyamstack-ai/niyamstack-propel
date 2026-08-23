@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
+import { pathAllowed } from "../packs";
 import { Card, PrimaryButton, formatInr, formatWhen, useApi } from "../ui";
 
 type Dash = {
@@ -38,6 +39,9 @@ function StudentHome() {
   const asg = useApi<Assignment[]>("/api/assignments");
   const drives = useApi<Drive[]>("/api/drives");
   const student = me.data?.[0];
+  const progress = useApi<{ syllabusPct?: number; homeworkDone?: number; homeworkTotal?: number; testsDone?: number; testsTotal?: number }>(
+    student?.id ? `/api/actions/progress/${student.id}` : "",
+  );
   const due = (invoices.data ?? []).filter((i) => i.status !== "PAID");
   return (
     <div className="space-y-6">
@@ -49,7 +53,16 @@ function StudentHome() {
         <HomeLink to="/courses" title="My courses" text={`${asg.data?.length ?? 0} assignments`} />
         <HomeLink to="/fees" title="Pay fees" text={`${due.length} due invoices`} />
         <HomeLink to="/placement" title="Apply to jobs" text={`${drives.data?.length ?? 0} open drives`} />
+        <HomeLink to="/m" title="Student app" text="Attendance, fees, and notices on a phone" />
       </div>
+      {progress.data && (
+        <Card title="My progress">
+          <p className="text-sm">
+            Syllabus {progress.data.syllabusPct ?? 0}% · Homework {progress.data.homeworkDone ?? 0}/
+            {progress.data.homeworkTotal ?? 0} · Tests {progress.data.testsDone ?? 0}/{progress.data.testsTotal ?? 0}
+          </p>
+        </Card>
+      )}
       <Card title="Due fees">
         {(due.length === 0 && <p className="text-sm text-slate-500">No dues right now.</p>) || (
           <ul className="text-sm">
@@ -68,6 +81,8 @@ function StudentHome() {
 function ParentHome() {
   const kids = useApi<Student[]>("/api/students");
   const invoices = useApi<Invoice[]>("/api/invoices");
+  const att = useApi<{ studentId?: string; sessionDate?: string; status?: string }[]>("/api/attendance");
+  const notices = useApi<{ title?: string; body?: string }[]>("/api/announcements");
   const due = (invoices.data ?? []).filter((i) => i.status !== "PAID");
   return (
     <div className="space-y-6">
@@ -82,21 +97,55 @@ function ParentHome() {
           ))}
         </ul>
       </Card>
+      <Card title="Attendance">
+        <ul className="text-sm">
+          {(att.data ?? []).slice(0, 20).map((a, i) => (
+            <li key={i}>
+              {a.sessionDate || "—"} — {a.status}
+            </li>
+          ))}
+          {(att.data ?? []).length === 0 && <li className="text-slate-500">No attendance marked yet.</li>}
+        </ul>
+      </Card>
+      <Card title="Notices">
+        <ul className="text-sm">
+          {(notices.data ?? []).map((n, i) => (
+            <li key={i}>{n.title || n.body}</li>
+          ))}
+          {(notices.data ?? []).length === 0 && <li className="text-slate-500">No notices yet.</li>}
+        </ul>
+      </Card>
       <HomeLink to="/fees" title="Fee dues" text={`${due.length} open`} />
     </div>
   );
 }
 
 function FacultyHome() {
+  const load = useApi<{ fullName: string; weeklyHours: number; batches: number }[]>("/api/actions/sis/workload");
+  const live = useApi<{ title: string; startsAt?: string }[]>("/api/live-sessions");
+  const mine = (load.data ?? [])[0];
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-navy">Faculty portal</h1>
       <p className="text-sm text-slate-500">Teach your batches. Accounts and admissions stay with other roles.</p>
+      <p className="text-sm">
+        {mine ? `${mine.weeklyHours} hrs this week · ${mine.batches} batches` : "Open courses to teach."}
+      </p>
       <div className="grid gap-3 sm:grid-cols-3">
         <HomeLink to="/courses" title="Courses" text="Content, attendance, grading inside each course" />
+        <HomeLink to="/m" title="Faculty app" text="Mark attendance and notices on a phone" />
         <HomeLink to="/students" title="My students" text="Batch roster" />
+        <HomeLink to="/academics" title="Academics" text="Timetable, workload, progress" />
         <HomeLink to="/comms" title="Notices" text="Announce to a batch" />
       </div>
+      <Card title="Upcoming live classes">
+        <ul className="text-sm">
+          {(live.data ?? []).slice(0, 5).map((l, i) => (
+            <li key={i}>{l.title}</li>
+          ))}
+          {(live.data ?? []).length === 0 && <li className="text-slate-500">No live classes scheduled.</li>}
+        </ul>
+      </Card>
     </div>
   );
 }
@@ -107,7 +156,13 @@ function AccountsHome() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-navy">Accounts portal</h1>
       <p className="text-sm text-slate-500">Collections, receipts, and refunds only.</p>
-      <p className="text-lg font-semibold">Due ₹{dash.data?.due ?? "…"} · Collected ₹{dash.data?.collected ?? "…"}</p>
+      <p className="text-lg font-semibold">
+        Due {formatInr(dash.data?.due)} · Collected {formatInr(dash.data?.collected)} · {dash.data?.collectionPct ?? 0}%
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <HomeLink to="/fees" title="Fee ledger" text="Collect, receipts, refunds" />
+        <HomeLink to="/analytics" title="Finance" text="Course and counsellor split" />
+      </div>
       <Link to="/fees">
         <PrimaryButton>Open fee ledger</PrimaryButton>
       </Link>
@@ -117,11 +172,26 @@ function AccountsHome() {
 
 function CounselorHome() {
   const dash = useApi<Dash>("/api/actions/dashboard");
+  const funnel = dash.data?.funnel || {};
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-navy">Admissions portal</h1>
       <p className="text-sm text-slate-500">Leads and conversions. Not LMS or accounts.</p>
       <p className="text-sm">{dash.data?.inquiries ?? 0} inquiries · {dash.data?.converted ?? 0} converted</p>
+      <Card title="Pipeline">
+        <ul className="text-sm">
+          {Object.entries(funnel).map(([k, v]) => (
+            <li key={k}>
+              {k}: {String(v)}
+            </li>
+          ))}
+          {Object.keys(funnel).length === 0 && <li className="text-slate-500">No leads yet.</li>}
+        </ul>
+      </Card>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <HomeLink to="/crm" title="Leads" text="Counselling stages" />
+        <HomeLink to="/students" title="Students" text="Enrol after convert" />
+      </div>
       <Link to="/crm">
         <PrimaryButton>Open pipeline</PrimaryButton>
       </Link>
@@ -146,11 +216,14 @@ function PlacementHome({ recruiter }: { recruiter: boolean }) {
 }
 
 function OwnerHome() {
+  const { user } = useAuth();
   const dash = useApi<Dash & {
     coursesPublished?: number;
+    coursesTotal?: number;
     landingPages?: number;
     campaigns?: number;
     testsCreated?: number;
+    testsTotal?: number;
     couponsLive?: number;
     bannersLive?: number;
     websiteSessions?: number;
@@ -161,14 +234,23 @@ function OwnerHome() {
   if (dash.error) return <p className="text-red-600">{dash.error}</p>;
   if (!dash.data) return <p>Loading…</p>;
   const data = dash.data;
-  const kpis = [
-    ["Inquiries", data.inquiries, "/crm"],
-    ["Students", data.students, "/people/students"],
-    ["Fee due", formatInr(data.due), "/fees"],
-    ["Collected", formatInr(data.collected), "/fees"],
-    ["Applications", data.applications, "/placement"],
-    ["Offers", data.offers, "/placement"],
-  ] as const;
+  const unpublished = Math.max(0, (data.coursesTotal ?? 0) - (data.coursesPublished ?? 0));
+  const courseCopy =
+    (data.coursesPublished ?? 0) === 0 && unpublished > 0
+      ? `${unpublished} unpublished — publish to sell`
+      : `${data.coursesPublished ?? 0} published${unpublished ? ` · ${unpublished} draft` : " — create and sell"}`;
+  const testCopy = `${data.testsCreated ?? 0} published tests${(data.testsTotal ?? 0) > (data.testsCreated ?? 0) ? ` · ${data.testsTotal} total` : ""}`;
+  const kpis = (
+    [
+      ["Inquiries", data.inquiries, "/crm"],
+      ["Students", data.students, "/people/students"],
+      ["Fee due", formatInr(data.due), "/fees"],
+      ["Collected", formatInr(data.collected), "/fees"],
+      ["Collection", `${data.collectionPct ?? 0}%`, "/fees"],
+      ["Applications", data.applications, "/placement"],
+      ["Offers", data.offers, "/placement"],
+    ] as [string, string | number, string][]
+  ).filter(([, , to]) => pathAllowed(to, user?.modules));
   return (
     <div className="space-y-6">
       <div>
@@ -176,16 +258,22 @@ function OwnerHome() {
         <p className="text-sm text-slate-500">Your institute website, courses, admissions, and fees — in one place.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <HomeLink to="/website" title="Student website" text="Build pages, then connect your domain. Students log in there." />
-        <HomeLink to="/your-app" title="Student app" text="Home-screen shortcut to the same website. Not a Play Store app." />
+        {pathAllowed("/website", user?.modules) && (
+          <HomeLink to="/website" title="Student website" text="Build pages, then connect your domain. Students log in there." />
+        )}
+        {pathAllowed("/your-app", user?.modules) && (
+          <HomeLink to="/m" title="Mobile apps" text="Student and faculty phones: attendance, fees, notices, mark class." />
+        )}
       </div>
       <div>
         <h2 className="mb-3 text-lg font-semibold text-navy">Grow the institute</h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <HomeLink to="/courses" title="Courses" text={`${data.coursesPublished ?? 0} published — create and sell`} />
-          <HomeLink to="/landing-pages" title="Landing pages" text={`${data.landingPages ?? 0} pages for ads and webinars`} />
-          <HomeLink to="/content-hub" title="Tests" text={`${data.testsCreated ?? 0} tests created`} />
-          <HomeLink to="/campaigns" title="Campaigns" text={`${data.campaigns ?? 0} campaigns`} />
+          {pathAllowed("/courses", user?.modules) && <HomeLink to="/courses" title="Courses" text={courseCopy} />}
+          {pathAllowed("/landing-pages", user?.modules) && (
+            <HomeLink to="/landing-pages" title="Landing pages" text={`${data.landingPages ?? 0} pages for ads and webinars`} />
+          )}
+          {pathAllowed("/content-hub", user?.modules) && <HomeLink to="/content-hub" title="Tests" text={testCopy} />}
+          {pathAllowed("/campaigns", user?.modules) && <HomeLink to="/campaigns" title="Campaigns" text={`${data.campaigns ?? 0} campaigns`} />}
         </div>
       </div>
       <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
@@ -212,7 +300,7 @@ function OwnerHome() {
                 <span>{data.bannersLive ?? 0} Live</span>
               </li>
               <li className="flex justify-between">
-                <Link to="/courses" className="hover:underline">
+                <Link to="/coupons" className="hover:underline">
                   Coupons
                 </Link>
                 <span>{data.couponsLive ?? 0} Live</span>
@@ -275,7 +363,7 @@ function UpcomingClasses() {
           ))}
         </ul>
       )}
-      <Link to="/lms">
+      <Link to="/lms#live">
         <PrimaryButton>Open live classes</PrimaryButton>
       </Link>
     </Card>

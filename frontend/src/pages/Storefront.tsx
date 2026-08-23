@@ -1,5 +1,5 @@
 import { FormEvent, createContext, useContext, useEffect, useMemo, useState } from "react";
-import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { UserMenu, initialsOf } from "../UserMenu";
@@ -11,6 +11,7 @@ import { PlacementPage } from "./PlacementPage";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, formatDay, formatInr, formatWhen, useApi } from "../ui";
 import { createRecord } from "../ops";
 import { PageSections } from "../PageSections";
+import { EnquireForm } from "../EnquireForm";
 import { isProductHost } from "../siteHost";
 import { openRazorpay, type CheckoutOrder } from "../razorpay";
 
@@ -24,6 +25,8 @@ type Site = {
   brandPrimary?: string;
   brandSecondary?: string;
   customDomain?: string;
+  websitePublished?: boolean;
+  live?: boolean;
   phone?: string;
   email?: string;
   facebookPixelId?: string;
@@ -137,12 +140,24 @@ export function StorefrontCmsPage() {
   return <CmsPageView />;
 }
 
+export function StorefrontLandingPage() {
+  return <LandingLeadPage />;
+}
+
+export function StorefrontOneToOnePage() {
+  return <OneToOneBookPage />;
+}
+
 export function StorefrontCoursePage() {
   return <CoursePage />;
 }
 
 export function StorefrontLoginPage() {
   return <StudentLoginPage />;
+}
+
+export function StorefrontRegisterPage() {
+  return <StudentRegisterPage />;
 }
 
 export function StorefrontAppPage() {
@@ -323,6 +338,7 @@ function StorefrontShell() {
   if (!site) return <p className="p-6 text-sm text-slate-500">Loading…</p>;
 
   const student = token && user?.role === "STUDENT";
+  const siteLive = site.live === true;
 
   return (
     <div className="min-h-svh bg-mist" style={{ ["--color-brand" as string]: accent }}>
@@ -352,6 +368,9 @@ function StorefrontShell() {
                   {p.title}
                 </Link>
               ))}
+            <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/one-to-one`} tabIndex={examLock ? -1 : 0}>
+              1:1
+            </Link>
             <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/app`} tabIndex={examLock ? -1 : 0}>
               Get the app
             </Link>
@@ -382,18 +401,29 @@ function StorefrontShell() {
                       { label: "Jobs", to: `${sitePath(slug)}/jobs` },
                       { label: "Notices", to: `${sitePath(slug)}/notices` },
                       { label: "Chat", to: `${sitePath(slug)}/chats` },
+                      { label: "1:1 sessions", to: `${sitePath(slug)}/one-to-one` },
                     ]}
                   />
                 </span>
               </>
             ) : (
-              <Link className="rounded-full bg-brand px-3 py-1.5 font-semibold text-white" to={`${sitePath(slug)}/login`}>
-                Login
-              </Link>
+              <span className="flex flex-wrap items-center gap-2">
+                <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/register`}>
+                  Register
+                </Link>
+                <Link className="rounded-full bg-brand px-3 py-1.5 font-semibold text-white" to={`${sitePath(slug)}/login`}>
+                  Login
+                </Link>
+              </span>
             )}
           </nav>
         </div>
       </header>
+      {!siteLive && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-900">
+          This website is a draft. Students cannot register or buy until the institute clicks Publish.
+        </div>
+      )}
       <main className="mx-auto max-w-5xl px-4 py-6">
         <Outlet context={site} />
       </main>
@@ -424,7 +454,7 @@ function CmsPageView() {
   }, [slug, pageSlug, site]);
   if (error) return <p className="text-sm text-red-600">{error}</p>;
   if (!page) return <p className="text-sm text-slate-500">Loading…</p>;
-  return <PageSections body={page.body} />;
+  return <PageSections body={page.body} slug={slug} />;
 }
 
 function CatalogPage() {
@@ -434,6 +464,7 @@ function CatalogPage() {
   const [owned, setOwned] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [home, setHome] = useState<CmsPage | null>(null);
+  const [banners, setBanners] = useState<{ id: string; title: string; imageUrl?: string; linkUrl?: string }[]>([]);
   const { site } = useSite(slug);
 
   useEffect(() => {
@@ -441,6 +472,9 @@ function CatalogPage() {
     api<PublicCourse[]>(`/api/public/sites/${slug}/courses`)
       .then(setCourses)
       .catch((err: Error) => setError(err.message));
+    api<{ id: string; title: string; imageUrl?: string; linkUrl?: string }[]>(`/api/public/sites/${slug}/banners`)
+      .then(setBanners)
+      .catch(() => setBanners([]));
     const pickHome = (rows: CmsPage[]) => rows.find((p) => p.slug === "home" || p.pageType === "HOME") || null;
     if (site?.pages) setHome(pickHome(site.pages));
     api<CmsPage[]>(`/api/public/sites/${slug}/pages`)
@@ -483,7 +517,17 @@ function CatalogPage() {
 
   return (
     <div className="space-y-6">
-      {home?.body ? <PageSections body={home.body} catalog={grid} /> : (
+      {banners.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {banners.map((b) => (
+            <a key={b.id} href={b.linkUrl || "#"} className="overflow-hidden rounded-2xl border border-line bg-white">
+              {b.imageUrl && <img src={b.imageUrl} alt="" className="h-28 w-full object-cover" />}
+              <p className="p-3 text-sm font-medium text-navy">{b.title}</p>
+            </a>
+          ))}
+        </div>
+      )}
+      {home?.body ? <PageSections body={home.body} catalog={grid} slug={slug} /> : (
         <>
           <h1 className="text-2xl font-bold text-navy">Courses</h1>
           {grid}
@@ -562,16 +606,18 @@ function CoursePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind: "BUY_CLICK", path: `/courses/${courseId}` }),
       }).catch(() => undefined);
-      const res = await api<CheckoutOrder & { token?: string; user?: { id: string; name: string; email: string; role: string; organizationId: string; packageTier: string } }>(
+      const res = await api<CheckoutOrder & { token?: string; user?: { id: string; name: string; email: string; role: string; organizationId: string; packageTier: string }; receiptNo?: string; loginHint?: string; phone?: string; invoiceId?: string }>(
         `/api/public/sites/${slug}/purchase`,
         {
           method: "POST",
           body: JSON.stringify({ fullName: name, email, phone, courseId, couponCode: couponOk || undefined, validityOption }),
         }
       );
+      let receiptNo = res.receiptNo;
+      let loginHint = res.loginHint;
       if (res.checkout) {
         const paid = await openRazorpay(res);
-        const done = await api<{ token: string; user: { id: string; name: string; email: string; role: string; organizationId: string; packageTier: string } }>(
+        const done = await api<{ token: string; user: { id: string; name: string; email: string; role: string; organizationId: string; packageTier: string }; receiptNo?: string; loginHint?: string }>(
           `/api/public/sites/${slug}/purchase/confirm`,
           {
             method: "POST",
@@ -579,6 +625,8 @@ function CoursePage() {
           }
         );
         applySession(done);
+        receiptNo = done.receiptNo || receiptNo;
+        loginHint = done.loginHint || loginHint;
       } else if (res.token && res.user) {
         applySession({ token: res.token, user: res.user });
       }
@@ -589,7 +637,11 @@ function CoursePage() {
       } catch {
         /* tracking is best-effort */
       }
-      navigate(`${sitePath(slug)}/learn/${courseId}`);
+      navigate(`${sitePath(slug)}/learn/${courseId}`, {
+        state: {
+          purchaseNotice: [receiptNo ? `Receipt ${receiptNo}.` : null, loginHint || `Log in later with ${phone} on this website (OTP).`].filter(Boolean).join(" "),
+        },
+      });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -850,7 +902,7 @@ function StudentLoginPage() {
   return (
     <div className="mx-auto max-w-md rounded-2xl border border-line bg-white p-6">
       <h1 className="text-xl font-bold text-navy">Student login</h1>
-      <p className="mt-1 text-sm text-slate-500">Use the mobile you purchased with.</p>
+      <p className="mt-1 text-sm text-slate-500">Use the mobile you registered, enrolled with, or purchased with.</p>
       <div className="mt-4 flex gap-2">
         <button type="button" className={`rounded-full px-3 py-1 text-sm ${mode === "otp" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => setMode("otp")}>
           Mobile OTP
@@ -900,6 +952,109 @@ function StudentLoginPage() {
           </p>
         </form>
       )}
+      <p className="mt-4 text-center text-sm text-slate-500">
+        New student?{" "}
+        <Link className="font-medium text-brand" to={`${sitePath(slug)}/register`}>
+          Register
+        </Link>
+      </p>
+    </div>
+  );
+}
+
+function StudentRegisterPage() {
+  const slug = useSlug();
+  const { token, user, applySession } = useAuth();
+  const { site } = useSite(slug);
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const courseId = params.get("course") || undefined;
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [sent, setSent] = useState<{ phone?: string; devOtp?: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  if (token && user?.role === "STUDENT") {
+    return <Navigate to={`${sitePath(slug)}/learn`} replace />;
+  }
+
+  if (site && site.live === false) {
+    return (
+      <div className="mx-auto max-w-md rounded-2xl border border-line bg-white p-6">
+        <h1 className="text-xl font-bold text-navy">Registration is not open yet</h1>
+        <p className="mt-2 text-sm text-slate-500">This institute still needs to publish the website. Ask them to click Publish, then register here.</p>
+      </div>
+    );
+  }
+
+  async function sendOtp(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api<{ phone?: string; devOtp?: string }>(`/api/public/sites/${slug}/register/otp`, {
+        method: "POST",
+        body: JSON.stringify({ fullName: name, phone, email, courseId }),
+      });
+      setSent(res);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verify(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api<{ token: string; user: { id: string; name: string; email: string; phone?: string; role: string; organizationId: string; packageTier: string } }>(
+        `/api/public/sites/${slug}/register/verify`,
+        { method: "POST", body: JSON.stringify({ phone, otp }) }
+      );
+      applySession(res);
+      navigate(`${sitePath(slug)}/learn`);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-md rounded-2xl border border-line bg-white p-6">
+      <h1 className="text-xl font-bold text-navy">Create your student account</h1>
+      <p className="mt-1 text-sm text-slate-500">Register with your mobile. You can buy a course after you log in.</p>
+      {!sent ? (
+        <form className="mt-4 space-y-3" onSubmit={sendOtp}>
+          <input className="w-full rounded-lg border border-line px-3 py-2" placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} required />
+          <input className="w-full rounded-lg border border-line px-3 py-2" placeholder="Mobile" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+          <input className="w-full rounded-lg border border-line px-3 py-2" type="email" placeholder="Email (optional)" value={email} onChange={(e) => setEmail(e.target.value)} />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy || !name.trim() || !phone.trim()}>
+            {busy ? "Sending…" : "Send OTP"}
+          </button>
+        </form>
+      ) : (
+        <form className="mt-4 space-y-3" onSubmit={verify}>
+          {sent.devOtp && <p className="text-xs text-slate-400">Local OTP: {sent.devOtp}</p>}
+          <input className="w-full rounded-lg border border-line px-3 py-2 tracking-[0.3em]" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="OTP" />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
+            {busy ? "Creating…" : "Create account"}
+          </button>
+        </form>
+      )}
+      <p className="mt-4 text-center text-sm text-slate-500">
+        Already have an account?{" "}
+        <Link className="font-medium text-brand" to={`${sitePath(slug)}/login`}>
+          Login
+        </Link>
+      </p>
     </div>
   );
 }
@@ -915,6 +1070,7 @@ function MyLearningPage() {
       tests?: { title: string; courseId?: string; lastScore?: number; attemptsLeft?: number | null; done?: boolean }[];
       fees?: { count: number; total: number; invoiceNo?: string };
       notice?: { title: string; body: string };
+      certificates?: { id: string; title: string; issuedOn?: string; certificateNo?: string }[];
     };
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1028,6 +1184,19 @@ function MyLearningPage() {
           );
         })}
       </div>
+      {(today.certificates ?? []).length > 0 && (
+        <div className="rounded-2xl border border-line bg-white p-5">
+          <p className="text-xs uppercase tracking-wide text-brand">Certificates</p>
+          <ul className="mt-2 space-y-1 text-sm">
+            {(today.certificates ?? []).map((c) => (
+              <li key={c.id}>
+                {c.title}
+                {c.issuedOn ? ` · ${formatDay(c.issuedOn)}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -1035,6 +1204,8 @@ function MyLearningPage() {
 function StudyPage() {
   const slug = useSlug();
   const { courseId } = useParams();
+  const location = useLocation();
+  const purchaseNotice = (location.state as { purchaseNotice?: string } | null)?.purchaseNotice;
   const [course, setCourse] = useState<PublicCourse | null>(null);
   const [enrolled, setEnrolled] = useState<boolean | null>(null);
   const [tab, setTab] = useState<StudySection>("contents");
@@ -1091,6 +1262,7 @@ function StudyPage() {
         ← My learning
       </Link>
       <h1 className="text-2xl font-bold text-navy">{course?.name || "Course"}</h1>
+      {purchaseNotice && <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{purchaseNotice}</p>}
       <div className="grid items-start gap-6 lg:grid-cols-[12.5rem_minmax(0,1fr)]">
         <nav className="flex gap-1 overflow-x-auto lg:sticky lg:top-20 lg:flex-col lg:overflow-visible">
           {nav.map((item) => (
@@ -1191,6 +1363,7 @@ function PracticeLab({ courseId }: { courseId: string }) {
           {(lab.languages ?? []).map((l) => (
             <option key={l.id} value={l.id}>
               {l.label}
+              {l.available === false ? " (runner not configured)" : ""}
             </option>
           ))}
         </select>
@@ -1475,11 +1648,92 @@ function StudentForgotPage() {
   );
 }
 
+function LandingLeadPage() {
+  const slug = useSlug();
+  const { pageSlug } = useParams();
+  const [page, setPage] = useState<{ headline?: string; body?: string; ctaLabel?: string; name?: string; slug?: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!slug || !pageSlug) return;
+    api<typeof page>(`/api/public/sites/${slug}/landing/${pageSlug}`)
+      .then(setPage)
+      .catch((e: Error) => setError(e.message));
+  }, [slug, pageSlug]);
+  if (error) return <p className="text-sm text-red-600">{error}</p>;
+  if (!page) return <p className="text-sm text-slate-500">Loading…</p>;
+  return (
+    <div className="mx-auto max-w-xl space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-navy">{page.headline || page.name}</h1>
+        {page.body && <p className="mt-3 whitespace-pre-wrap text-slate-600">{page.body}</p>}
+      </div>
+      <Card title={page.ctaLabel || "Register now"}>
+        <EnquireForm slug={slug} landingSlug={page.slug || pageSlug} />
+      </Card>
+    </div>
+  );
+}
+
+function OneToOneBookPage() {
+  const slug = useSlug();
+  const { token, user } = useAuth();
+  const [rows, setRows] = useState<{ id: string; title: string; mentorName?: string; durationMinutes: number; price: number }[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!slug) return;
+    api<typeof rows>(`/api/public/sites/${slug}/one-to-one`)
+      .then(setRows)
+      .catch((e: Error) => setError(e.message));
+  }, [slug]);
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-navy">Book a 1:1 session</h1>
+      <p className="text-sm text-slate-500">Pick a mentor slot. If it is paid, a fee invoice appears under Fees.</p>
+      <ErrorText error={error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {rows.map((s) => (
+          <Card key={s.id} title={s.title}>
+            <p className="text-sm text-slate-500">{s.mentorName || "Mentor"} · {s.durationMinutes} min</p>
+            <p className="mt-2 font-semibold text-navy">{s.price ? formatInr(s.price) : "Free"}</p>
+            <div className="mt-3">
+              <PrimaryButton
+                onClick={async () => {
+                  setError(null);
+                  setNotice(null);
+                  if (!token || user?.role !== "STUDENT") {
+                    window.location.href = `${sitePath(slug)}/login?next=${encodeURIComponent(sitePath(slug, "/one-to-one"))}`;
+                    return;
+                  }
+                  try {
+                    const out = await api<{ meetingUrl?: string; invoiceNo?: string }>("/api/actions/one-to-one/" + s.id + "/book", {
+                      method: "POST",
+                      body: "{}",
+                    });
+                    setNotice(out.invoiceNo ? `Booked. Pay invoice ${out.invoiceNo} on Fees.` : `Booked. Join: ${out.meetingUrl || "link in notices"}`);
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
+                }}
+              >
+                Book
+              </PrimaryButton>
+            </div>
+          </Card>
+        ))}
+        {rows.length === 0 && <p className="text-sm text-slate-500">No 1:1 offerings yet.</p>}
+      </div>
+    </div>
+  );
+}
+
 function AppInstallPage() {
   const slug = useSlug();
   const { site } = useSite(slug);
   const [prompt, setPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
+  const [pushOn, setPushOn] = useState(typeof Notification !== "undefined" && Notification.permission === "granted");
 
   useEffect(() => {
     const onPrompt = (e: Event) => {
@@ -1515,6 +1769,20 @@ function AppInstallPage() {
           </button>
         )}
         {installed && <p className="mt-4 text-sm text-emerald-700">Installed. Open it from your home screen.</p>}
+        <button
+          className="mt-4 rounded-full border border-line px-5 py-2 text-sm"
+          type="button"
+          onClick={async () => {
+            if (typeof Notification === "undefined") return;
+            const perm = await Notification.requestPermission();
+            setPushOn(perm === "granted");
+            if (perm === "granted") {
+              new Notification(site?.name || "Student app", { body: "Notices will also appear under Notices after you log in." });
+            }
+          }}
+        >
+          {pushOn ? "Browser notices are on" : "Allow browser notices"}
+        </button>
         <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-slate-600">
           <li>On Android Chrome, tap Install if you see it, or Menu → Add to Home screen.</li>
           <li>On iPhone Safari, tap Share → Add to Home Screen.</li>

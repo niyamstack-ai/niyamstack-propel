@@ -13,6 +13,7 @@ export function ReadinessPage() {
   const [studentId, setStudentId] = useState("");
   const [score, setScore] = useState<Record<string, unknown> | null>(null);
   const [ai, setAi] = useState("");
+  const aiStatus = useApi<{ enabled?: boolean }>("/api/actions/ai/status");
   const [skill, setSkill] = useState("");
   const [level, setLevel] = useState("INTERMEDIATE");
   const [error, setError] = useState<string | null>(null);
@@ -119,11 +120,17 @@ export function ReadinessPage() {
           </ul>
         </Card>
       </div>
-      <Card title="AI academic assistant / career coach">
-        <p className="mb-3 text-sm text-slate-500">Enterprise package. Stub until an LLM key is configured.</p>
-        <PrimaryButton onClick={coach}>Ask coach</PrimaryButton>
-        {ai && <p className="mt-3 text-sm leading-6">{ai}</p>}
-      </Card>
+      {aiStatus.data?.enabled ? (
+        <Card title="AI academic assistant / career coach">
+          <p className="mb-3 text-sm text-slate-500">Uses the institute LLM key from Integrations.</p>
+          <PrimaryButton onClick={coach}>Ask coach</PrimaryButton>
+          {ai && <p className="mt-3 text-sm leading-6">{ai}</p>}
+        </Card>
+      ) : (
+        <Card title="AI academic assistant / career coach">
+          <p className="text-sm text-slate-500">Hidden until an OpenAI key is saved under Institute → Integrations.</p>
+        </Card>
+      )}
     </div>
   );
 }

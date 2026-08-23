@@ -1,6 +1,7 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { NiyamstackLogo } from "../../brand/NiyamstackLogo";
+import { clearInstituteSession } from "../../api";
 import { usePlatformAuth } from "../../platformAuth";
 
 export function PlatformLoginPage() {
@@ -9,6 +10,11 @@ export function PlatformLoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    clearInstituteSession();
+    window.dispatchEvent(new Event("propel:unauthorized"));
+  }, []);
 
   if (token) return <Navigate to="/platform" replace />;
 
@@ -32,9 +38,9 @@ export function PlatformLoginPage() {
         <div className="pointer-events-none absolute -right-10 bottom-10 h-80 w-80 rounded-full bg-sky-500/10 blur-3xl" />
         <div className="relative z-10 flex flex-1 flex-col justify-center px-12 xl:px-16">
           <NiyamstackLogo variant="lockup" />
-          <h2 className="mt-10 max-w-md text-3xl font-bold leading-tight text-white xl:text-4xl">
+          <p className="mt-10 max-w-md text-3xl font-bold leading-tight text-white xl:text-4xl">
             Niyamstack operations.
-          </h2>
+          </p>
           <p className="mt-4 max-w-md text-base text-slate-300">
             Approve institutes, set each customer’s price, and run the platform. This door is not for institutes.
           </p>
@@ -46,7 +52,7 @@ export function PlatformLoginPage() {
             <NiyamstackLogo />
           </div>
           <h1 className="text-2xl font-bold text-navy">Platform login</h1>
-          <p className="mt-2 text-sm text-slate-500">Niyamstack owner only. There is no public signup here.</p>
+          <p className="mt-2 text-sm text-slate-500">Niyamstack staff sign in here. There is no public signup on this door.</p>
           <form className="mt-8" onSubmit={onSubmit}>
             <label className="block text-sm font-medium text-navy">
               Id

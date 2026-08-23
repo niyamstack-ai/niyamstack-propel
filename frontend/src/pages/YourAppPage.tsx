@@ -68,8 +68,10 @@ export function YourAppPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-navy">Student app</h1>
-          <p className="text-sm text-slate-500">A home-screen shortcut to your institute website. This is not a Play Store listing unless Niyamstack publishes one for you.</p>
+          <h1 className="text-2xl font-bold text-navy">Student and faculty apps</h1>
+          <p className="text-sm text-slate-500">
+            Phone apps for attendance, content, fees, notices, and marking class. Not a website shortcut, and not a Play Store listing unless Niyamstack publishes one.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {(
@@ -106,8 +108,11 @@ export function YourAppPage() {
             </FormGrid>
             <div className="mt-3 flex flex-wrap gap-2">
               <PrimaryButton onClick={saveApp}>Save</PrimaryButton>
+              <a className="rounded-full border border-line px-4 py-2 text-sm" href="/m">
+                Open student / faculty app
+              </a>
               <a className="rounded-full border border-line px-4 py-2 text-sm" href={org.data?.appShareUrl || `/s/${org.data?.slug || "aarohan"}/app`}>
-                Open student app
+                Install prompt
               </a>
             </div>
           </Card>
@@ -115,7 +120,7 @@ export function YourAppPage() {
             <div className="mx-auto flex h-64 w-40 flex-col rounded-3xl border-4 border-navy bg-mist p-3">
               <div className="rounded-xl bg-white p-2 text-center text-xs font-bold text-navy">{org.data?.name || "App"}</div>
               <div className="mt-3 flex-1 rounded-xl bg-white/70" />
-          <p className="mt-2 text-center text-[10px] text-slate-500">Home screen of your website</p>
+          <p className="mt-2 text-center text-[10px] text-slate-500">Attendance, fees, notices, mark class</p>
             </div>
           </Card>
         </div>
@@ -144,7 +149,7 @@ export function YourAppPage() {
 
       {tab === "marketing" && (
         <Card title="Notification Panel">
-          <p className="mb-3 text-sm text-slate-500">Send and schedule your daily notifications here.</p>
+          <p className="mb-3 text-sm text-slate-500">Shown in the student app notices. WhatsApp also sends when that key is saved in Integrations.</p>
           <FormGrid>
             <Field label="Title" value={pTitle} onChange={setPTitle} />
             <Field label="Message" value={pBody} onChange={setPBody} />
@@ -161,7 +166,7 @@ export function YourAppPage() {
           </FormGrid>
           <div className="mt-3">
             <PrimaryButton disabled={!pTitle || !pBody} onClick={addPush}>
-              Queue notification
+              Queue / send notice
             </PrimaryButton>
           </div>
           <div className="mt-4">

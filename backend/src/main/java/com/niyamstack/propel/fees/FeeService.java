@@ -8,8 +8,10 @@ import com.niyamstack.propel.integration.EventHook;
 import com.niyamstack.propel.integration.MessagingGateway;
 import com.niyamstack.propel.integration.OrgSecrets;
 import com.niyamstack.propel.integration.PaymentGateway;
+import com.niyamstack.propel.catalog.Packs;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
+import com.niyamstack.propel.security.Gstins;
 import com.niyamstack.propel.security.PropelUser;
 import com.niyamstack.propel.security.Roles;
 import org.springframework.http.HttpStatus;
@@ -20,7 +22,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -69,13 +73,14 @@ public class FeeService {
             invoice.setOrganizationId(user.organizationId());
             invoice.setStudentId(student.getId());
             invoice.setFeePlanId(plan.getId());
-            invoice.setInvoiceNo(series + "-" + System.currentTimeMillis() % 1_000_000 + "-" + i);
+            invoice.setCourseId(plan.getCourseId() != null ? plan.getCourseId() : student.getCourseId());
             invoice.setAmount(each);
             invoice.setBuyerName(student.getFullName());
             invoice.setSacCode(plan.getSacCode() == null || plan.getSacCode().isBlank() ? "999293" : plan.getSacCode());
             invoice.setSeriesPrefix(series);
-            invoice.setPlaceOfSupply(OrgSecrets.live(store.get(Organization.class, user.organizationId()), "gstState"));
-            applyGst(invoice, plan, store.get(Organization.class, user.organizationId()));
+            invoice.setPlaceOfSupply(OrgSecrets.live(org, "gstState"));
+            applyGst(invoice, plan, org);
+            invoice.setInvoiceNo(nextInvoiceNo(org));
             invoice.setStatus("DUE");
             invoice.setDueDate(inst.getDueDate());
             invoice.setPaidAmount(BigDecimal.ZERO);
@@ -89,6 +94,11 @@ public class FeeService {
 
     @Transactional
     public Map<String, Object> collect(UUID invoiceId, BigDecimal amount, String method) {
+        return collect(invoiceId, amount, method, null);
+    }
+
+    @Transactional
+    public Map<String, Object> collect(UUID invoiceId, BigDecimal amount, String method, String reference) {
         PropelUser user = Auth.current();
         Invoice invoice = store.getOwned(Invoice.class, invoiceId, user.organizationId());
         if (Roles.STUDENT.equals(user.role())) {
@@ -96,6 +106,9 @@ public class FeeService {
                     .stream().findFirst().orElseThrow(() -> new ApiException(HttpStatus.FORBIDDEN, "No student profile"));
             if (!me.getId().equals(invoice.getStudentId())) {
                 throw new ApiException(HttpStatus.FORBIDDEN, "You can only pay your own fees");
+            }
+            if (isOffline(method)) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Ask the institute to record cash or cheque");
             }
         } else {
             Access.requireAny(user, Roles.OWNER, Roles.ACCOUNTANT);
@@ -109,6 +122,21 @@ public class FeeService {
         }
         UUID orgId = user.organizationId();
         Organization org = store.get(Organization.class, orgId);
+        if (isOffline(method)) {
+            if (Roles.STUDENT.equals(user.role())) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Ask the institute to record cash or cheque");
+            }
+            String ref = (reference == null || reference.isBlank()) ? "OFFLINE-" + Instant.now().toEpochMilli() : reference.trim();
+            Payment payment = capture(org, invoice, payAmt, normalizeMethod(method), ref);
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("checkout", false);
+            out.put("offline", true);
+            out.put("status", payment.getStatus());
+            out.put("method", payment.getMethod());
+            out.put("gatewayRef", payment.getGatewayRef());
+            out.put("receiptNo", payment.getReceiptNo());
+            return out;
+        }
         if (payments.live(orgId)) {
             PaymentGateway.ChargeResult order = payments.createOrder(orgId, payAmt, invoice.getInvoiceNo(),
                     Map.of("invoiceId", invoice.getId().toString(), "orgId", orgId.toString()));
@@ -130,6 +158,7 @@ public class FeeService {
         out.put("checkout", false);
         out.put("status", payment.getStatus());
         out.put("gatewayRef", payment.getGatewayRef());
+        out.put("receiptNo", payment.getReceiptNo());
         return out;
     }
 
@@ -200,8 +229,10 @@ public class FeeService {
     @Transactional
     public Refund requestRefund(UUID paymentId, BigDecimal amount, String reason) {
         PropelUser user = Auth.current();
-        Access.requireAny(user, Roles.OWNER, Roles.ACCOUNTANT);
-        Access.requirePackage(user, "GROWTH");
+        Access.requireAnyModule(user, Packs.MOD_FEES);
+        if (!Roles.OWNER.equals(user.role()) && !Roles.ACCOUNTANT.equals(user.role()) && !Access.hasCap(user, Packs.CAP_REFUND)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "This role cannot refund");
+        }
         Payment payment = store.getOwned(Payment.class, paymentId, user.organizationId());
         Refund refund = new Refund();
         refund.setOrganizationId(user.organizationId());
@@ -237,7 +268,17 @@ public class FeeService {
                 String rz = payments.refundPayment(user.organizationId(), ref, refund.getAmount());
                 refund.setGatewayRefundRef(rz);
             }
-            refund.setCreditNoteNo("CN-" + Instant.now().toEpochMilli());
+            refund.setCreditNoteNo(nextCreditNoteNo(store.get(Organization.class, user.organizationId())));
+            Payment credit = new Payment();
+            credit.setOrganizationId(user.organizationId());
+            credit.setInvoiceId(invoice.getId());
+            credit.setAmount(refund.getAmount() == null ? BigDecimal.ZERO : refund.getAmount().negate());
+            credit.setMethod("CREDIT_NOTE");
+            credit.setGatewayRef(refund.getCreditNoteNo());
+            credit.setReceivedAt(Instant.now());
+            credit.setStatus("REFUNDED");
+            credit.setReceiptNo(refund.getCreditNoteNo());
+            store.save(credit);
         }
         refund = store.save(refund);
         audit.log(approve ? "REFUND_APPROVE" : "REFUND_REJECT", "Refund", refund.getId(), null);
@@ -246,8 +287,145 @@ public class FeeService {
 
     public List<Invoice> dues() {
         return store.list(Invoice.class, Auth.current().organizationId()).stream()
-                .filter(i -> !"PAID".equals(i.getStatus()))
+                .filter(i -> !"PAID".equals(i.getStatus()) && !"CANCELLED".equals(i.getStatus()))
                 .toList();
+    }
+
+    public List<Map<String, Object>> ledger() {
+        PropelUser user = Auth.current();
+        Access.requireAny(user, Roles.OWNER, Roles.ACCOUNTANT);
+        UUID orgId = user.organizationId();
+        Map<UUID, String> names = new LinkedHashMap<>();
+        for (Student s : store.list(Student.class, orgId)) {
+            names.put(s.getId(), s.getFullName());
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Invoice invoice : store.list(Invoice.class, orgId)) {
+            rows.add(ledgerRow(invoice.getCreatedAt(), "INVOICE", invoice.getInvoiceNo(),
+                    invoice.getAmount(), invoice.getStatus(), names.get(invoice.getStudentId()), invoice.getId(), null));
+        }
+        for (Payment payment : store.list(Payment.class, orgId)) {
+            Invoice invoice = store.getOwned(Invoice.class, payment.getInvoiceId(), orgId);
+            rows.add(ledgerRow(payment.getReceivedAt(), paymentMethodKind(payment),
+                    payment.getReceiptNo() == null ? payment.getGatewayRef() : payment.getReceiptNo(),
+                    payment.getAmount(), payment.getStatus(), names.get(invoice.getStudentId()), invoice.getId(), payment.getId()));
+        }
+        for (Refund refund : store.list(Refund.class, orgId)) {
+            Payment payment = store.getOwned(Payment.class, refund.getPaymentId(), orgId);
+            Invoice invoice = store.getOwned(Invoice.class, payment.getInvoiceId(), orgId);
+            rows.add(ledgerRow(refund.getApprovedAt() == null ? refund.getCreatedAt() : refund.getApprovedAt(),
+                    "REFUND", refund.getCreditNoteNo() == null ? refund.getStatus() : refund.getCreditNoteNo(),
+                    refund.getAmount() == null ? BigDecimal.ZERO : refund.getAmount().negate(),
+                    refund.getStatus(), names.get(invoice.getStudentId()), invoice.getId(), payment.getId()));
+        }
+        rows.sort((a, b) -> String.valueOf(b.get("at")).compareTo(String.valueOf(a.get("at"))));
+        return rows;
+    }
+
+    public List<Map<String, Object>> reconciliation() {
+        PropelUser user = Auth.current();
+        Access.requireAny(user, Roles.OWNER, Roles.ACCOUNTANT);
+        UUID orgId = user.organizationId();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Payment payment : store.list(Payment.class, orgId)) {
+            if (!"PENDING".equals(payment.getStatus()) && !isOffline(payment.getMethod()) && !"CREDIT_NOTE".equalsIgnoreCase(payment.getMethod())) {
+                continue;
+            }
+            Invoice invoice = store.getOwned(Invoice.class, payment.getInvoiceId(), orgId);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("paymentId", payment.getId());
+            row.put("invoiceId", invoice.getId());
+            row.put("invoiceNo", invoice.getInvoiceNo());
+            row.put("method", payment.getMethod());
+            row.put("reference", payment.getGatewayRef());
+            row.put("amount", payment.getAmount());
+            row.put("status", payment.getStatus());
+            row.put("receivedAt", payment.getReceivedAt());
+            row.put("receiptNo", payment.getReceiptNo());
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    @Transactional
+    public Map<String, Object> remindInvoice(UUID invoiceId) {
+        PropelUser user = Auth.current();
+        Access.requireAny(user, Roles.OWNER, Roles.ACCOUNTANT);
+        Invoice invoice = store.getOwned(Invoice.class, invoiceId, user.organizationId());
+        return remindOne(store.get(Organization.class, user.organizationId()), invoice, true);
+    }
+
+    @Transactional
+    public int remindOverdue() {
+        int sent = 0;
+        for (Organization org : store.listOrganizations()) {
+            sent += remindOrg(org);
+        }
+        return sent;
+    }
+
+    @Transactional
+    public Map<String, Object> remindOrgDues() {
+        PropelUser user = Auth.current();
+        Access.requireAny(user, Roles.OWNER, Roles.ACCOUNTANT);
+        int sent = remindOrg(store.get(Organization.class, user.organizationId()));
+        return Map.of("sent", sent);
+    }
+
+    private int remindOrg(Organization org) {
+        int sent = 0;
+        for (Invoice invoice : store.list(Invoice.class, org.getId())) {
+            if (!isOverdue(invoice)) {
+                continue;
+            }
+            if (invoice.getLastRemindedAt() != null && invoice.getLastRemindedAt().isAfter(Instant.now().minusSeconds(20 * 3600))) {
+                continue;
+            }
+            remindOne(org, invoice, false);
+            sent++;
+        }
+        return sent;
+    }
+
+    public Map<String, Object> creditNote(UUID refundId) {
+        PropelUser user = Auth.current();
+        Refund refund = store.getOwned(Refund.class, refundId, user.organizationId());
+        if (!"APPROVED".equals(refund.getStatus()) || refund.getCreditNoteNo() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Credit note is issued after the owner approves the refund");
+        }
+        Payment payment = store.getOwned(Payment.class, refund.getPaymentId(), user.organizationId());
+        Invoice invoice = store.getOwned(Invoice.class, payment.getInvoiceId(), user.organizationId());
+        if (Roles.STUDENT.equals(user.role())) {
+            List<Student> mine = store.listBy(Student.class, user.organizationId(), "userId", user.userId());
+            UUID studentId = mine.isEmpty() ? null : mine.getFirst().getId();
+            if (studentId == null || !studentId.equals(invoice.getStudentId())) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Not your credit note");
+            }
+        } else {
+            Access.requireAny(user, Roles.OWNER, Roles.ACCOUNTANT);
+        }
+        Organization org = store.get(Organization.class, user.organizationId());
+        Student student = store.getOwned(Student.class, invoice.getStudentId(), user.organizationId());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("creditNoteNo", refund.getCreditNoteNo());
+        out.put("amount", refund.getAmount());
+        out.put("reason", refund.getReason());
+        out.put("approvedAt", refund.getApprovedAt());
+        out.put("invoiceNo", invoice.getInvoiceNo());
+        out.put("instituteName", org.getName());
+        out.put("instituteGstin", org.getGstin());
+        out.put("buyerName", invoice.getBuyerName() == null ? student.getFullName() : invoice.getBuyerName());
+        out.put("buyerGstin", invoice.getBuyerGstin());
+        out.put("placeOfSupply", invoice.getPlaceOfSupply());
+        out.put("sacCode", invoice.getSacCode());
+        out.put("hsn", invoice.getHsn());
+        BigDecimal[] tax = prorateTax(invoice, refund.getAmount());
+        out.put("cgst", tax[0]);
+        out.put("sgst", tax[1]);
+        out.put("igst", tax[2]);
+        out.put("gstRate", invoice.getGstRate());
+        out.put("gatewayRefundRef", refund.getGatewayRefundRef());
+        return out;
     }
 
     private Payment pendingPayment(UUID orgId, UUID invoiceId, BigDecimal amount, String method, String orderId) {
@@ -319,10 +497,13 @@ public class FeeService {
         Access.requireAny(Auth.current(), Roles.OWNER, Roles.ACCOUNTANT);
         List<Map<String, Object>> rows = new ArrayList<>();
         for (Invoice invoice : store.list(Invoice.class, orgId)) {
+            if ("CANCELLED".equalsIgnoreCase(invoice.getStatus()) || invoice.getInvoiceNo() == null || invoice.getInvoiceNo().isBlank()) {
+                continue;
+            }
             if (invoice.getCreatedAt() == null) {
                 continue;
             }
-            LocalDate day = invoice.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+            LocalDate day = invoice.getCreatedAt().atZone(ZoneId.systemDefault()).toLocalDate();
             if (from != null && day.isBefore(from)) {
                 continue;
             }
@@ -333,14 +514,15 @@ public class FeeService {
             row.put("docType", invoice.getBuyerGstin() == null || invoice.getBuyerGstin().isBlank() ? "B2C" : "B2B");
             row.put("invoiceNo", invoice.getInvoiceNo());
             row.put("date", day.toString());
-            row.put("buyerGstin", invoice.getBuyerGstin());
-            row.put("placeOfSupply", invoice.getPlaceOfSupply());
+            row.put("buyerGstin", invoice.getBuyerGstin() == null ? "" : invoice.getBuyerGstin());
+            row.put("placeOfSupply", invoice.getPlaceOfSupply() == null ? "" : invoice.getPlaceOfSupply());
             row.put("taxable", invoice.getAmount());
-            row.put("cgst", invoice.getCgst());
-            row.put("sgst", invoice.getSgst());
-            row.put("igst", invoice.getIgst());
+            row.put("cgst", nvl(invoice.getCgst()));
+            row.put("sgst", nvl(invoice.getSgst()));
+            row.put("igst", nvl(invoice.getIgst()));
             row.put("sac", invoice.getSacCode());
             row.put("hsn", invoice.getHsn());
+            row.put("status", invoice.getStatus());
             rows.add(row);
         }
         for (Refund refund : store.list(Refund.class, orgId)) {
@@ -349,18 +531,29 @@ public class FeeService {
             }
             LocalDate day = refund.getApprovedAt() == null
                     ? LocalDate.now()
-                    : refund.getApprovedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+                    : refund.getApprovedAt().atZone(ZoneId.systemDefault()).toLocalDate();
             if (from != null && day.isBefore(from)) {
                 continue;
             }
             if (to != null && day.isAfter(to)) {
                 continue;
             }
+            Payment payment = store.getOwned(Payment.class, refund.getPaymentId(), orgId);
+            Invoice invoice = store.getOwned(Invoice.class, payment.getInvoiceId(), orgId);
+            BigDecimal[] tax = prorateTax(invoice, refund.getAmount());
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("docType", "CDNR");
             row.put("invoiceNo", refund.getCreditNoteNo());
             row.put("date", day.toString());
+            row.put("buyerGstin", invoice.getBuyerGstin() == null ? "" : invoice.getBuyerGstin());
+            row.put("placeOfSupply", invoice.getPlaceOfSupply() == null ? "" : invoice.getPlaceOfSupply());
             row.put("taxable", refund.getAmount() == null ? BigDecimal.ZERO : refund.getAmount().negate());
+            row.put("cgst", tax[0].negate());
+            row.put("sgst", tax[1].negate());
+            row.put("igst", tax[2].negate());
+            row.put("sac", invoice.getSacCode());
+            row.put("hsn", invoice.getHsn());
+            row.put("status", "CREDIT_NOTE");
             rows.add(row);
         }
         return rows;
@@ -391,6 +584,93 @@ public class FeeService {
 
     private static BigDecimal nvl(BigDecimal v) {
         return v == null ? BigDecimal.ZERO : v;
+    }
+
+    private static boolean isOffline(String method) {
+        if (method == null) {
+            return false;
+        }
+        String m = method.trim().toUpperCase();
+        return "CASH".equals(m) || "CHEQUE".equals(m) || "BANK".equals(m) || "NEFT".equals(m)
+                || "UPI_OFFLINE".equals(m) || "OFFLINE".equals(m) || "SCHOLARSHIP".equals(m);
+    }
+
+    private static String normalizeMethod(String method) {
+        if (method == null || method.isBlank()) {
+            return "CASH";
+        }
+        return method.trim().toUpperCase();
+    }
+
+    private static String paymentMethodKind(Payment payment) {
+        if ("CREDIT_NOTE".equalsIgnoreCase(payment.getMethod()) || "REFUNDED".equalsIgnoreCase(payment.getStatus())) {
+            return "CREDIT_NOTE";
+        }
+        if ("PENDING".equalsIgnoreCase(payment.getStatus())) {
+            return "PENDING";
+        }
+        return isOffline(payment.getMethod()) ? "OFFLINE" : "PAYMENT";
+    }
+
+    private static Map<String, Object> ledgerRow(Instant at, String type, String ref, BigDecimal amount, String status,
+                                                 String student, UUID invoiceId, UUID paymentId) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("at", at);
+        row.put("type", type);
+        row.put("ref", ref);
+        row.put("amount", amount);
+        row.put("status", status);
+        row.put("student", student);
+        row.put("invoiceId", invoiceId);
+        row.put("paymentId", paymentId);
+        return row;
+    }
+
+    private static boolean isOverdue(Invoice invoice) {
+        if (invoice == null || "PAID".equalsIgnoreCase(invoice.getStatus()) || "CANCELLED".equalsIgnoreCase(invoice.getStatus())) {
+            return false;
+        }
+        if (invoice.getDueDate() == null) {
+            return false;
+        }
+        return invoice.getDueDate().isBefore(LocalDate.now());
+    }
+
+    private Map<String, Object> remindOne(Organization org, Invoice invoice, boolean requireStaff) {
+        if (requireStaff) {
+            Access.requireAny(Auth.current(), Roles.OWNER, Roles.ACCOUNTANT);
+        }
+        if ("PAID".equalsIgnoreCase(invoice.getStatus()) || "CANCELLED".equalsIgnoreCase(invoice.getStatus())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "This invoice is not due");
+        }
+        Student student = store.getOwned(Student.class, invoice.getStudentId(), org.getId());
+        BigDecimal due = invoice.getAmount().subtract(nvl(invoice.getPaidAmount()));
+        String title = "Fee due " + invoice.getInvoiceNo();
+        String body = "₹" + due + " is due for invoice " + invoice.getInvoiceNo()
+                + (invoice.getDueDate() == null ? "." : " (due " + invoice.getDueDate() + ").");
+        Notification n = new Notification();
+        n.setOrganizationId(org.getId());
+        n.setStudentId(student.getId());
+        n.setChannel("IN_APP");
+        n.setAudience("STUDENT");
+        n.setTitle(title);
+        n.setBody(body);
+        n.setStatus("SENT");
+        store.save(n);
+        String phone = student.getPhone();
+        var wa = messaging.send(org.getId(), "WHATSAPP", phone, title, body);
+        String email = student.getEmail();
+        var mail = (email == null || email.isBlank() || email.endsWith("@student.local"))
+                ? null
+                : messaging.send(org.getId(), "EMAIL", email, title, body);
+        invoice.setLastRemindedAt(Instant.now());
+        store.save(invoice);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("invoiceId", invoice.getId());
+        out.put("inApp", "SENT");
+        out.put("whatsapp", wa.status());
+        out.put("email", mail == null ? "SKIPPED" : mail.status());
+        return out;
     }
 
     public Map<String, Object> receipt(UUID receiptId) {
@@ -427,8 +707,14 @@ public class FeeService {
         return out;
     }
 
+    @Transactional
     public Invoice finalizeInvoice(Invoice invoice) {
         Organization org = store.get(Organization.class, invoice.getOrganizationId());
+        Gstins.requireValid(invoice.getBuyerGstin());
+        invoice.setBuyerGstin(Gstins.normalize(invoice.getBuyerGstin()));
+        if (invoice.getBuyerGstin().isBlank()) {
+            invoice.setBuyerGstin(null);
+        }
         if (invoice.getSacCode() == null || invoice.getSacCode().isBlank()) {
             invoice.setSacCode("999293");
         }
@@ -440,10 +726,13 @@ public class FeeService {
             invoice.setPlaceOfSupply(OrgSecrets.live(org, "gstState"));
         }
         if (invoice.getInvoiceNo() == null || invoice.getInvoiceNo().isBlank()) {
-            invoice.setInvoiceNo(invoice.getSeriesPrefix() + "-" + System.currentTimeMillis() % 1_000_000);
+            invoice.setInvoiceNo(nextInvoiceNo(org));
         }
         if (invoice.getFeePlanId() != null) {
             FeePlan plan = store.getOwned(FeePlan.class, invoice.getFeePlanId(), invoice.getOrganizationId());
+            if (invoice.getCourseId() == null) {
+                invoice.setCourseId(plan.getCourseId());
+            }
             applyGst(invoice, plan, org);
         } else {
             FeePlan adhoc = new FeePlan();
@@ -484,5 +773,278 @@ public class FeeService {
     public Map<String, Object> gatewayNote() {
         UUID org = Auth.current().organizationId();
         return Map.of("provider", payments.provider(org), "live", payments.live(org));
+    }
+
+    public Map<String, Object> accountingExport(String format, LocalDate from, LocalDate to) {
+        Access.requireAny(Auth.current(), Roles.OWNER, Roles.ACCOUNTANT);
+        String kind = format == null || format.isBlank() ? "csv" : format.trim().toLowerCase();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        UUID orgId = Auth.current().organizationId();
+        for (Invoice invoice : store.list(Invoice.class, orgId)) {
+            if ("CANCELLED".equalsIgnoreCase(invoice.getStatus()) || invoice.getCreatedAt() == null) {
+                continue;
+            }
+            LocalDate day = invoice.getCreatedAt().atZone(ZoneId.systemDefault()).toLocalDate();
+            if (from != null && day.isBefore(from)) {
+                continue;
+            }
+            if (to != null && day.isAfter(to)) {
+                continue;
+            }
+            rows.add(voucher("Sales", invoice.getInvoiceNo(), day, invoice.getBuyerName(), invoice.getBuyerGstin(),
+                    invoice.getAmount(), nvl(invoice.getCgst()), nvl(invoice.getSgst()), nvl(invoice.getIgst()),
+                    "Fee invoice " + invoice.getInvoiceNo()));
+        }
+        for (Payment payment : store.list(Payment.class, orgId)) {
+            if (!"CAPTURED".equalsIgnoreCase(payment.getStatus()) && !"REFUNDED".equalsIgnoreCase(payment.getStatus())) {
+                continue;
+            }
+            Instant at = payment.getReceivedAt();
+            if (at == null) {
+                continue;
+            }
+            LocalDate day = at.atZone(ZoneId.systemDefault()).toLocalDate();
+            if (from != null && day.isBefore(from)) {
+                continue;
+            }
+            if (to != null && day.isAfter(to)) {
+                continue;
+            }
+            Invoice invoice = store.getOwned(Invoice.class, payment.getInvoiceId(), orgId);
+            String voucherType = "CREDIT_NOTE".equalsIgnoreCase(payment.getMethod()) ? "Credit Note" : "Receipt";
+            String no = payment.getReceiptNo() != null ? payment.getReceiptNo() : payment.getGatewayRef();
+            rows.add(voucher(voucherType, no, day, invoice.getBuyerName(), invoice.getBuyerGstin(),
+                    payment.getAmount(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                    voucherType + " against " + invoice.getInvoiceNo()));
+        }
+        List<String> columns = switch (kind) {
+            case "tally" -> List.of("Date", "VoucherType", "VoucherNo", "Ledger", "GSTIN", "Amount", "CGST", "SGST", "IGST", "Narration");
+            case "zoho" -> List.of("Invoice Date", "Invoice Number", "Customer Name", "GSTIN", "Item Name", "Quantity", "Rate", "CGST", "SGST", "IGST", "Total");
+            default -> List.of("date", "voucherType", "voucherNo", "party", "gstin", "taxable", "cgst", "sgst", "igst", "total", "narration");
+        };
+        List<Map<String, Object>> shaped = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            shaped.add(shapeExport(kind, row));
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("format", kind);
+        out.put("columns", columns);
+        out.put("rows", shaped);
+        return out;
+    }
+
+    public Map<String, Object> financeDashboard(int days) {
+        Access.requireTenant(Auth.current());
+        UUID orgId = Auth.current().organizationId();
+        Instant from = days > 0 ? Instant.now().minusSeconds(days * 86400L) : Instant.EPOCH;
+        Map<UUID, Student> students = new HashMap<>();
+        for (Student s : store.list(Student.class, orgId)) {
+            students.put(s.getId(), s);
+        }
+        Map<UUID, String> courseNames = new HashMap<>();
+        for (Course c : store.list(Course.class, orgId)) {
+            courseNames.put(c.getId(), c.getName());
+        }
+        Map<UUID, UUID> counselorByStudent = new HashMap<>();
+        for (Inquiry inq : store.list(Inquiry.class, orgId)) {
+            if (inq.getStudentId() != null && inq.getCounselorUserId() != null) {
+                counselorByStudent.put(inq.getStudentId(), inq.getCounselorUserId());
+            }
+        }
+        Map<UUID, String> userNames = new HashMap<>();
+        Map<String, BigDecimal[]> byCourse = new LinkedHashMap<>();
+        Map<String, BigDecimal[]> byCounselor = new LinkedHashMap<>();
+        BigDecimal outstanding = BigDecimal.ZERO;
+        BigDecimal billed = BigDecimal.ZERO;
+        for (Invoice invoice : store.list(Invoice.class, orgId)) {
+            if ("CANCELLED".equalsIgnoreCase(invoice.getStatus())) {
+                continue;
+            }
+            BigDecimal remaining = nvl(invoice.getAmount()).subtract(nvl(invoice.getPaidAmount()));
+            if (remaining.signum() < 0) {
+                remaining = BigDecimal.ZERO;
+            }
+            if (!"PAID".equalsIgnoreCase(invoice.getStatus())) {
+                outstanding = outstanding.add(remaining);
+            }
+            if (invoice.getCreatedAt() != null && !invoice.getCreatedAt().isBefore(from)) {
+                billed = billed.add(nvl(invoice.getAmount()));
+            }
+            String course = courseName(invoice, students.get(invoice.getStudentId()), courseNames);
+            String counselor = counselorName(invoice.getStudentId(), counselorByStudent, userNames);
+            bump(byCourse, course, BigDecimal.ZERO, remaining);
+            bump(byCounselor, counselor, BigDecimal.ZERO, remaining);
+        }
+        BigDecimal collected = BigDecimal.ZERO;
+        int captured = 0;
+        for (Payment payment : store.list(Payment.class, orgId)) {
+            if (payment.getReceivedAt() != null && payment.getReceivedAt().isBefore(from)) {
+                continue;
+            }
+            if ("PENDING".equalsIgnoreCase(payment.getStatus())) {
+                continue;
+            }
+            if (!"CAPTURED".equalsIgnoreCase(payment.getStatus()) && !"REFUNDED".equalsIgnoreCase(payment.getStatus())) {
+                continue;
+            }
+            collected = collected.add(nvl(payment.getAmount()));
+            if ("CAPTURED".equalsIgnoreCase(payment.getStatus())) {
+                captured++;
+            }
+            Invoice invoice = store.getOwned(Invoice.class, payment.getInvoiceId(), orgId);
+            String course = courseName(invoice, students.get(invoice.getStudentId()), courseNames);
+            String counselor = counselorName(invoice.getStudentId(), counselorByStudent, userNames);
+            bump(byCourse, course, nvl(payment.getAmount()), BigDecimal.ZERO);
+            bump(byCounselor, counselor, nvl(payment.getAmount()), BigDecimal.ZERO);
+        }
+        BigDecimal base = collected.add(outstanding);
+        int pct = base.signum() == 0 ? 0 : collected.multiply(BigDecimal.valueOf(100)).divide(base, 0, RoundingMode.HALF_UP).intValue();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("outstanding", outstanding);
+        out.put("collected", collected);
+        out.put("due", outstanding);
+        out.put("billed", billed);
+        out.put("collectionPct", pct);
+        out.put("transactions", captured);
+        out.put("revenue", collected);
+        out.put("byCourse", buckets(byCourse));
+        out.put("byCounselor", buckets(byCounselor));
+        return out;
+    }
+
+    private String nextInvoiceNo(Organization org) {
+        String prefix = OrgSecrets.live(org, "invoiceSeries");
+        if (prefix.isBlank()) {
+            prefix = "INV";
+        }
+        int seq = OrgSecrets.liveInt(org, "invoiceNextSeq", 0) + 1;
+        OrgSecrets.putLive(org, "invoiceNextSeq", Integer.toString(seq));
+        store.save(org);
+        return prefix + "/" + fiscalYearLabel(LocalDate.now()) + "/" + String.format("%04d", seq);
+    }
+
+    private String nextCreditNoteNo(Organization org) {
+        int seq = OrgSecrets.liveInt(org, "creditNoteNextSeq", 0) + 1;
+        OrgSecrets.putLive(org, "creditNoteNextSeq", Integer.toString(seq));
+        store.save(org);
+        return "CN/" + fiscalYearLabel(LocalDate.now()) + "/" + String.format("%04d", seq);
+    }
+
+    private static String fiscalYearLabel(LocalDate day) {
+        int start = day.getYear();
+        if (day.getMonthValue() < 4) {
+            start--;
+        }
+        return start + "-" + String.valueOf(start + 1).substring(2);
+    }
+
+    private static BigDecimal[] prorateTax(Invoice invoice, BigDecimal part) {
+        BigDecimal total = nvl(invoice.getAmount());
+        BigDecimal share = nvl(part);
+        if (total.signum() <= 0 || share.signum() <= 0) {
+            return new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO};
+        }
+        BigDecimal ratio = share.divide(total, 8, RoundingMode.HALF_UP);
+        return new BigDecimal[]{
+                nvl(invoice.getCgst()).multiply(ratio).setScale(2, RoundingMode.HALF_UP),
+                nvl(invoice.getSgst()).multiply(ratio).setScale(2, RoundingMode.HALF_UP),
+                nvl(invoice.getIgst()).multiply(ratio).setScale(2, RoundingMode.HALF_UP)
+        };
+    }
+
+    private static Map<String, Object> voucher(String type, String no, LocalDate day, String party, String gstin,
+                                               BigDecimal taxable, BigDecimal cgst, BigDecimal sgst, BigDecimal igst,
+                                               String narration) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("date", day.toString());
+        row.put("voucherType", type);
+        row.put("voucherNo", no == null ? "" : no);
+        row.put("party", party == null ? "" : party);
+        row.put("gstin", gstin == null ? "" : gstin);
+        row.put("taxable", taxable);
+        row.put("cgst", cgst);
+        row.put("sgst", sgst);
+        row.put("igst", igst);
+        row.put("total", taxable);
+        row.put("narration", narration);
+        return row;
+    }
+
+    private static Map<String, Object> shapeExport(String kind, Map<String, Object> row) {
+        if ("tally".equals(kind)) {
+            Map<String, Object> t = new LinkedHashMap<>();
+            t.put("Date", row.get("date"));
+            t.put("VoucherType", row.get("voucherType"));
+            t.put("VoucherNo", row.get("voucherNo"));
+            t.put("Ledger", row.get("party"));
+            t.put("GSTIN", row.get("gstin"));
+            t.put("Amount", row.get("taxable"));
+            t.put("CGST", row.get("cgst"));
+            t.put("SGST", row.get("sgst"));
+            t.put("IGST", row.get("igst"));
+            t.put("Narration", row.get("narration"));
+            return t;
+        }
+        if ("zoho".equals(kind)) {
+            Map<String, Object> z = new LinkedHashMap<>();
+            z.put("Invoice Date", row.get("date"));
+            z.put("Invoice Number", row.get("voucherNo"));
+            z.put("Customer Name", row.get("party"));
+            z.put("GSTIN", row.get("gstin"));
+            z.put("Item Name", row.get("voucherType"));
+            z.put("Quantity", 1);
+            z.put("Rate", row.get("taxable"));
+            z.put("CGST", row.get("cgst"));
+            z.put("SGST", row.get("sgst"));
+            z.put("IGST", row.get("igst"));
+            z.put("Total", row.get("total"));
+            return z;
+        }
+        return row;
+    }
+
+    private String courseName(Invoice invoice, Student student, Map<UUID, String> courseNames) {
+        UUID courseId = invoice.getCourseId();
+        if (courseId == null && student != null) {
+            courseId = student.getCourseId();
+        }
+        if (courseId == null) {
+            return "Unassigned";
+        }
+        String name = courseNames.get(courseId);
+        return name == null || name.isBlank() ? "Unassigned" : name;
+    }
+
+    private String counselorName(UUID studentId, Map<UUID, UUID> counselorByStudent, Map<UUID, String> userNames) {
+        UUID userId = studentId == null ? null : counselorByStudent.get(studentId);
+        if (userId == null) {
+            return "Unassigned";
+        }
+        return userNames.computeIfAbsent(userId, id -> {
+            try {
+                AppUser u = store.get(AppUser.class, id);
+                return u.getFullName() == null || u.getFullName().isBlank() ? "Unassigned" : u.getFullName();
+            } catch (Exception e) {
+                return "Unassigned";
+            }
+        });
+    }
+
+    private static void bump(Map<String, BigDecimal[]> buckets, String key, BigDecimal collected, BigDecimal outstanding) {
+        BigDecimal[] row = buckets.computeIfAbsent(key, k -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO});
+        row[0] = row[0].add(nvl(collected));
+        row[1] = row[1].add(nvl(outstanding));
+    }
+
+    private static List<Map<String, Object>> buckets(Map<String, BigDecimal[]> source) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map.Entry<String, BigDecimal[]> e : source.entrySet()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("name", e.getKey());
+            row.put("collected", e.getValue()[0]);
+            row.put("outstanding", e.getValue()[1]);
+            out.add(row);
+        }
+        return out;
     }
 }

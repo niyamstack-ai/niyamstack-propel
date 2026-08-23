@@ -20,6 +20,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -136,7 +137,7 @@ public class LmsService {
     @Transactional
     public LmsPackage registerPackage(UUID contentItemId, String standard, String launchUrl, String version) {
         PropelUser user = Auth.current();
-        Access.requirePackage(user, "ENTERPRISE");
+        Access.requirePackage(user, "GROWTH");
         Access.requireAny(user, Roles.OWNER, Roles.FACULTY);
         ContentItem content = store.getOwned(ContentItem.class, contentItemId, user.organizationId());
         LmsPackage pkg = new LmsPackage();
@@ -172,7 +173,7 @@ public class LmsService {
     @Transactional
     public LiveSession scheduleLive(String title, UUID batchId, Instant startsAt) {
         PropelUser user = Auth.current();
-        Access.requirePackage(user, "GROWTH");
+        Access.requireWrite(user, "LMS");
         Access.requireAny(user, Roles.OWNER, Roles.FACULTY);
         MeetingGateway.Meeting meeting = meetings.create(title, startsAt);
         LiveSession session = new LiveSession();
@@ -230,6 +231,9 @@ public class LmsService {
         sub.setStatus("SUBMITTED");
         sub = store.save(sub);
         audit.log("ASSIGNMENT_SUBMIT", "Submission", sub.getId(), assignment.getTitle());
+        if (assignment.getCourseId() != null) {
+            issueIfComplete(user.organizationId(), student.getId(), assignment.getCourseId());
+        }
         return sub;
     }
 
@@ -250,9 +254,7 @@ public class LmsService {
     public ExamAttempt startExam(UUID assessmentId) {
         PropelUser user = Auth.current();
         Assessment exam = store.getOwned(Assessment.class, assessmentId, user.organizationId());
-        if (!exam.isPublished()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Exam is not published");
-        }
+        requireExamOpen(user, exam);
         Student student = requireCurrentStudent(user);
         requireEnrolled(student, exam.getCourseId(), exam.getBatchId());
         List<ExamAttempt> existing = store.listBy(ExamAttempt.class, user.organizationId(), "assessmentId", exam.getId());
@@ -305,6 +307,9 @@ public class LmsService {
     public List<Map<String, Object>> examPaper(UUID assessmentId) {
         PropelUser user = Auth.current();
         Assessment exam = store.getOwned(Assessment.class, assessmentId, user.organizationId());
+        if (!Access.canSeeAnswerKeys(user)) {
+            requireExamOpen(user, exam);
+        }
         if (!exam.isPublished() && !Access.canSeeAnswerKeys(user)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Exam is not published");
         }
@@ -354,6 +359,7 @@ public class LmsService {
         Access.requireTenant(user);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("languages", runner.languages());
+        out.put("runnerConfigured", runner.languages().stream().anyMatch(row -> Boolean.TRUE.equals(row.get("available")) && !"sql".equals(row.get("id"))));
         if (courseId != null) {
             Course course = store.getOwned(Course.class, courseId, user.organizationId());
             String inferred = CodeRunner.inferLanguage(course.getName(), course.getCategory());
@@ -370,9 +376,13 @@ public class LmsService {
         if (!"CODE".equals(questionType(q))) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "This is not a coding question");
         }
-        Assessment exam = store.getOwned(Assessment.class, q.getAssessmentId(), user.organizationId());
-        if (!Access.canSeeAnswerKeys(user)) {
-            requireEnrolled(requireCurrentStudent(user), exam.getCourseId(), exam.getBatchId());
+        if (q.getAssessmentId() == null) {
+            Access.requireWrite(user, "LMS");
+        } else {
+            Assessment exam = store.getOwned(Assessment.class, q.getAssessmentId(), user.organizationId());
+            if (!Access.canSeeAnswerKeys(user)) {
+                requireEnrolled(requireCurrentStudent(user), exam.getCourseId(), exam.getBatchId());
+            }
         }
         String language = q.getLanguage() == null || q.getLanguage().isBlank()
                 ? CodeRunner.inferLanguage(null, null)
@@ -486,7 +496,12 @@ public class LmsService {
         if ("SUBMITTED".equals(attempt.getStatus())) {
             return buildResult(attempt, exam, parseAnswers(attempt.getAnswersJson()), safeReason);
         }
-        return buildResult(scoreAndSave(attempt, exam, given, safeReason), exam, given, safeReason);
+        Map<String, Object> result = buildResult(scoreAndSave(attempt, exam, given, safeReason), exam, given, safeReason);
+        if (exam.getCourseId() != null) {
+            Student student = store.getOwned(Student.class, attempt.getStudentId(), user.organizationId());
+            issueIfComplete(user.organizationId(), student.getId(), exam.getCourseId());
+        }
+        return result;
     }
 
     public Map<String, Object> progress(UUID studentId) {
@@ -526,7 +541,188 @@ public class LmsService {
             row.setViewedAt(Instant.now());
             store.save(row);
         }
+        if (item.getCourseId() != null) {
+            issueIfComplete(user.organizationId(), student.getId(), item.getCourseId());
+        }
         return Map.of("status", "ok");
+    }
+
+    private void requireExamOpen(PropelUser user, Assessment exam) {
+        if (Access.canSeeAnswerKeys(user)) {
+            return;
+        }
+        if (!exam.isPublished()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "This test is not published yet");
+        }
+        if (exam.getScheduledAt() != null && exam.getScheduledAt().isAfter(Instant.now())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "This test opens at " + exam.getScheduledAt());
+        }
+    }
+
+    public List<Question> questionBank(String subject, String topic, String difficulty) {
+        PropelUser user = Auth.current();
+        Access.requireWrite(user, "LMS");
+        return store.list(Question.class, user.organizationId()).stream()
+                .filter(q -> q.getAssessmentId() == null)
+                .filter(q -> subject == null || subject.isBlank() || subject.equalsIgnoreCase(q.getSubject()))
+                .filter(q -> topic == null || topic.isBlank() || topic.equalsIgnoreCase(q.getTopic()))
+                .filter(q -> difficulty == null || difficulty.isBlank() || difficulty.equalsIgnoreCase(q.getDifficulty()))
+                .toList();
+    }
+
+    @Transactional
+    public Question saveBankQuestion(QuizQuestionInput body) {
+        PropelUser user = Auth.current();
+        Access.requireWrite(user, "LMS");
+        if (body == null || body.prompt == null || body.prompt.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a question");
+        }
+        Question row = new Question();
+        row.setOrganizationId(user.organizationId());
+        row.setAssessmentId(null);
+        row.setPrompt(body.prompt.trim());
+        String type = body.questionType == null || body.questionType.isBlank() ? "MCQ" : body.questionType.trim().toUpperCase();
+        row.setQuestionType(type);
+        row.setLanguage(body.language);
+        row.setStarterCode(body.starterCode);
+        row.setTestsJson(body.testsJson);
+        row.setExplanation(body.explanation == null ? "" : body.explanation.trim());
+        row.setDifficulty(body.difficulty == null || body.difficulty.isBlank() ? "MEDIUM" : body.difficulty.trim().toUpperCase());
+        row.setSubject(body.subject);
+        row.setTopic(body.topic);
+        if ("MATCH".equals(type)) {
+            Map<String, Object> sides = new LinkedHashMap<>();
+            sides.put("left", body.left == null ? List.of() : body.left);
+            sides.put("right", body.right == null ? List.of() : body.right);
+            row.setOptionsJson(writeJson(sides));
+            row.setAnswerKey(body.matchAnswer == null ? "{}" : writeJson(body.matchAnswer));
+        } else if ("MULTI".equals(type)) {
+            List<String> options = body.options == null ? List.of() : body.options.stream().filter(o -> o != null && !o.isBlank()).toList();
+            row.setOptionsJson(jsonArray(options));
+            row.setAnswerKey(body.correctOptions == null ? "[]" : jsonArray(body.correctOptions));
+        } else {
+            List<String> options = body.options == null ? List.of() : body.options.stream().filter(o -> o != null && !o.isBlank()).toList();
+            row.setOptionsJson(jsonArray(options));
+            row.setAnswerKey(body.answerKey == null ? "" : body.answerKey);
+        }
+        if ("CODE".equals(type) && (row.getStarterCode() == null || row.getStarterCode().isBlank())) {
+            row.setStarterCode(CodeRunner.starter(row.getLanguage()));
+        }
+        return store.save(row);
+    }
+
+    private void saveBankCopy(UUID orgId, Question source) {
+        boolean exists = store.list(Question.class, orgId).stream()
+                .anyMatch(q -> q.getAssessmentId() == null && source.getPrompt() != null && source.getPrompt().equals(q.getPrompt())
+                        && String.valueOf(source.getQuestionType()).equals(String.valueOf(q.getQuestionType())));
+        if (exists) {
+            return;
+        }
+        Question copy = new Question();
+        copy.setOrganizationId(orgId);
+        copy.setAssessmentId(null);
+        copy.setPrompt(source.getPrompt());
+        copy.setQuestionType(source.getQuestionType());
+        copy.setLanguage(source.getLanguage());
+        copy.setStarterCode(source.getStarterCode());
+        copy.setTestsJson(source.getTestsJson());
+        copy.setExplanation(source.getExplanation());
+        copy.setDifficulty(source.getDifficulty());
+        copy.setSubject(source.getSubject());
+        copy.setTopic(source.getTopic());
+        copy.setOptionsJson(source.getOptionsJson());
+        copy.setAnswerKey(source.getAnswerKey());
+        store.save(copy);
+    }
+
+    @Transactional
+    public Certificate issueIfComplete(UUID orgId, UUID studentId, UUID courseId) {
+        if (courseId == null) {
+            return null;
+        }
+        int pct = completionPct(orgId, studentId, courseId);
+        if (pct < 100) {
+            return null;
+        }
+        Certificate existing = store.listBy(Certificate.class, orgId, "studentId", studentId).stream()
+                .filter(c -> courseId.equals(c.getCourseId()))
+                .findFirst()
+                .orElse(null);
+        if (existing != null) {
+            return existing;
+        }
+        Course course = store.getOwned(Course.class, courseId, orgId);
+        Certificate cert = new Certificate();
+        cert.setOrganizationId(orgId);
+        cert.setStudentId(studentId);
+        cert.setCourseId(courseId);
+        cert.setTitle("Certificate of completion — " + course.getName());
+        cert.setCertificateNo("CERT-" + Instant.now().toEpochMilli());
+        cert.setIssuedOn(LocalDate.now());
+        cert = store.save(cert);
+        audit.log("CERTIFICATE_ISSUE", "Certificate", cert.getId(), course.getName());
+        return cert;
+    }
+
+    public Map<String, Object> certificate(UUID certificateId) {
+        PropelUser user = Auth.current();
+        Certificate cert = store.getOwned(Certificate.class, certificateId, user.organizationId());
+        Student student = store.getOwned(Student.class, cert.getStudentId(), user.organizationId());
+        if (Roles.STUDENT.equals(user.role()) && !student.getUserId().equals(user.userId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Not your certificate");
+        }
+        Organization org = store.get(Organization.class, user.organizationId());
+        String courseName = "";
+        if (cert.getCourseId() != null) {
+            try {
+                courseName = store.getOwned(Course.class, cert.getCourseId(), user.organizationId()).getName();
+            } catch (Exception ignored) {
+                courseName = "";
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", cert.getId());
+        out.put("certificateNo", cert.getCertificateNo());
+        out.put("title", cert.getTitle());
+        out.put("issuedOn", cert.getIssuedOn());
+        out.put("studentName", student.getFullName());
+        out.put("courseName", courseName);
+        out.put("instituteName", org.getName());
+        return out;
+    }
+
+    private int completionPct(UUID orgId, UUID studentId, UUID courseId) {
+        Set<UUID> submittedExams = store.listBy(ExamAttempt.class, orgId, "studentId", studentId).stream()
+                .filter(a -> "SUBMITTED".equals(a.getStatus()))
+                .map(ExamAttempt::getAssessmentId)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<UUID> submittedAsg = store.listBy(Submission.class, orgId, "studentId", studentId).stream()
+                .map(Submission::getAssignmentId)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<UUID> viewedContent = store.listBy(ContentProgress.class, orgId, "studentId", studentId).stream()
+                .map(ContentProgress::getContentItemId)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<UUID> batchIds = store.listBy(Batch.class, orgId, "courseId", courseId).stream().map(Batch::getId).collect(java.util.stream.Collectors.toSet());
+        List<Assessment> exams = store.list(Assessment.class, orgId).stream()
+                .filter(Assessment::isPublished)
+                .filter(a -> !"PRACTICE_LAB".equalsIgnoreCase(a.getKind()))
+                .filter(a -> courseId.equals(a.getCourseId()) || (a.getBatchId() != null && batchIds.contains(a.getBatchId())))
+                .toList();
+        List<Assignment> homework = store.list(Assignment.class, orgId).stream()
+                .filter(Assignment::isPublished)
+                .filter(a -> courseId.equals(a.getCourseId()) || (a.getBatchId() != null && batchIds.contains(a.getBatchId())))
+                .toList();
+        List<ContentItem> materials = store.listBy(ContentItem.class, orgId, "courseId", courseId).stream()
+                .filter(c -> c.isPublished() && !"FOLDER".equalsIgnoreCase(c.getContentType()))
+                .toList();
+        int total = materials.size() + homework.size() + exams.size();
+        if (total == 0) {
+            return 0;
+        }
+        int done = (int) materials.stream().filter(c -> viewedContent.contains(c.getId())).count()
+                + (int) homework.stream().filter(a -> submittedAsg.contains(a.getId())).count()
+                + (int) exams.stream().filter(a -> submittedExams.contains(a.getId())).count();
+        return (int) Math.min(100, done * 100L / total);
     }
 
     private Student requireCurrentStudent(PropelUser user) {
@@ -578,6 +774,11 @@ public class LmsService {
         public Integer durationMinutes;
         public Integer passingScore;
         public Integer maxAttempts;
+        public Boolean published;
+        public Boolean proctoring;
+        public Boolean scoresPublished;
+        public Instant scheduledAt;
+        public Boolean keepInBank;
         public List<QuizQuestionInput> questions;
     }
 
@@ -588,6 +789,9 @@ public class LmsService {
         public String language;
         public String starterCode;
         public String testsJson;
+        public String subject;
+        public String topic;
+        public String difficulty;
         public List<String> options;
         public List<String> left;
         public List<String> right;
@@ -641,7 +845,10 @@ public class LmsService {
         exam.setPassingScore(body.passingScore == null ? 40 : body.passingScore);
         exam.setTotalMarks(100);
         exam.setMaxAttempts(body.maxAttempts == null ? 0 : body.maxAttempts);
-        exam.setPublished(true);
+        exam.setPublished(body.published == null || body.published);
+        exam.setProctoring(Boolean.TRUE.equals(body.proctoring));
+        exam.setScoresPublished(body.scoresPublished == null || body.scoresPublished);
+        exam.setScheduledAt(body.scheduledAt);
         exam = store.save(exam);
         for (Question old : store.listBy(Question.class, user.organizationId(), "assessmentId", exam.getId())) {
             store.deleteOwned(Question.class, old.getId(), user.organizationId());
@@ -657,7 +864,9 @@ public class LmsService {
             row.setStarterCode(q.starterCode);
             row.setTestsJson(q.testsJson);
             row.setExplanation(q.explanation == null ? "" : q.explanation.trim());
-            row.setDifficulty("MEDIUM");
+            row.setDifficulty(q.difficulty == null || q.difficulty.isBlank() ? "MEDIUM" : q.difficulty.trim().toUpperCase());
+            row.setSubject(q.subject);
+            row.setTopic(q.topic);
             if ("MATCH".equals(type)) {
                 Map<String, Object> sides = new LinkedHashMap<>();
                 sides.put("left", q.left == null ? List.of() : q.left);
@@ -685,6 +894,9 @@ public class LmsService {
                 row.setStarterCode(CodeRunner.starter(row.getLanguage()));
             }
             store.save(row);
+            if (Boolean.TRUE.equals(body.keepInBank)) {
+                saveBankCopy(user.organizationId(), row);
+            }
         }
         audit.log("ASSESSMENT_SAVE", "Assessment", exam.getId(), exam.getTitle());
         return exam;
@@ -883,7 +1095,18 @@ public class LmsService {
         out.put("startedAt", attempt.getStartedAt());
         out.put("submittedAt", attempt.getSubmittedAt());
         out.put("durationMinutes", exam.getDurationMinutes());
-        out.put("breakdown", breakdown);
+        out.put("scoresPublished", exam.isScoresPublished());
+        boolean hideScores = !exam.isScoresPublished() && !Access.canSeeAnswerKeys(Auth.current());
+        if (hideScores) {
+            out.put("score", null);
+            out.put("passed", false);
+            out.put("correctCount", 0);
+            out.put("pendingReview", false);
+            out.put("scoresPending", true);
+            out.put("breakdown", List.of());
+        } else {
+            out.put("breakdown", breakdown);
+        }
         return out;
     }
 
@@ -901,7 +1124,7 @@ public class LmsService {
         if (timedOut(exam, attempt)) {
             return "TIME";
         }
-        if ("TAB".equalsIgnoreCase(reason) && exam.getKind() != null && !"PRACTICE".equalsIgnoreCase(exam.getKind())) {
+        if ("TAB".equalsIgnoreCase(reason) && exam.isProctoring()) {
             return "TAB";
         }
         return null;

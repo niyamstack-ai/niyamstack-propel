@@ -1,3 +1,4 @@
+import { useLocation } from "react-router-dom";
 import { Card, Table, useApi } from "../ui";
 
 type Feature = {
@@ -10,7 +11,11 @@ type Feature = {
 };
 
 export function FeaturesPage() {
-  const { data } = useApi<Feature[]>("/api/features");
+  const location = useLocation();
+  const list = useApi<Feature[]>(
+    location.pathname.startsWith("/platform") ? "/api/platform/features" : "/api/features"
+  );
+  const data = list.data;
   return (
     <div className="space-y-6">
       <div>
@@ -20,9 +25,11 @@ export function FeaturesPage() {
           Placement to run the institute.
         </p>
       </div>
+      {list.error && <p className="text-sm text-red-600">{list.error}</p>}
       <Card title="Starter / Growth / Enterprise">
         <Table
           columns={["#", "Category", "Feature", "Package", "Diff"]}
+          loading={list.loading}
           rows={(data ?? []).map((f) => [f.serial, f.category, f.name, f.packageName, f.differentiator ? "Y" : ""])}
         />
       </Card>

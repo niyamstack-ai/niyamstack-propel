@@ -1,19 +1,38 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { api } from "../api";
 import { createRecord } from "../ops";
+import { prettyLabel } from "../labels";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, useApi } from "../ui";
 
+type Alumnus = { id: string; fullName: string; company: string; role: string };
+type AlumniJob = { id: string; title: string; company: string; status?: string };
+type Industry = { id: string; name: string; mou: boolean };
+type EventRow = { id: string; title: string; eventDate: string; attendanceCount?: number };
+
 export function AlumniPage({ embedded }: { embedded?: boolean } = {}) {
-  const alumni = useApi<{ fullName: string; company: string; role: string }[]>("/api/alumni");
-  const jobs = useApi<{ title: string; company: string }[]>("/api/alumni-jobs");
-  const industry = useApi<{ name: string; mou: boolean }[]>("/api/industry");
-  const events = useApi<{ title: string; eventDate: string }[]>("/api/events");
+  const alumni = useApi<Alumnus[]>("/api/alumni");
+  const jobs = useApi<AlumniJob[]>("/api/alumni-jobs");
+  const industry = useApi<Industry[]>("/api/industry");
+  const events = useApi<EventRow[]>("/api/events");
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [role, setRole] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [jobCo, setJobCo] = useState("");
   const [acct, setAcct] = useState("");
+  const [eventTitle, setEventTitle] = useState("");
+  const [eventDate, setEventDate] = useState(new Date().toISOString().slice(0, 10));
+  const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const directory = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (alumni.data ?? []).filter((a) => {
+      if (!q) return true;
+      return `${a.fullName} ${a.company} ${a.role}`.toLowerCase().includes(q);
+    });
+  }, [alumni.data, search]);
 
   async function run(fn: () => Promise<void>) {
     setError(null);
@@ -28,6 +47,7 @@ export function AlumniPage({ embedded }: { embedded?: boolean } = {}) {
     <div className="space-y-6">
       {!embedded && <h1 className="text-2xl font-bold text-navy">Alumni & industry</h1>}
       <ErrorText error={error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       <Card title="Add alumnus">
         <FormGrid>
           <Field label="Name" value={name} onChange={setName} />
@@ -88,39 +108,106 @@ export function AlumniPage({ embedded }: { embedded?: boolean } = {}) {
           </div>
         </FormGrid>
       </Card>
+      <Card title="Guest lecture / event">
+        <FormGrid>
+          <Field label="Title" value={eventTitle} onChange={setEventTitle} />
+          <Field label="Date" type="date" value={eventDate} onChange={setEventDate} />
+          <div className="flex items-end">
+            <PrimaryButton
+              disabled={!eventTitle}
+              onClick={() =>
+                run(async () => {
+                  await createRecord("/api/events", { title: eventTitle, eventDate, attendanceCount: 0 });
+                  setEventTitle("");
+                  events.reload();
+                })
+              }
+            >
+              Save event
+            </PrimaryButton>
+          </div>
+        </FormGrid>
+      </Card>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Alumni directory">
-          <ul className="text-sm">
-            {(alumni.data ?? []).map((a, i) => (
-              <li key={i}>
+          <Field label="Search" value={search} onChange={setSearch} placeholder="Name, company, or role" />
+          <ul className="mt-3 text-sm">
+            {directory.length === 0 && <li className="text-slate-500">No alumni match.</li>}
+            {directory.map((a) => (
+              <li key={a.id}>
                 {a.fullName} — {a.role}, {a.company}
               </li>
             ))}
           </ul>
         </Card>
         <Card title="Referral jobs">
-          <ul className="text-sm">
-            {(jobs.data ?? []).map((j, i) => (
-              <li key={i}>
-                {j.title} @ {j.company}
+          <ul className="space-y-2 text-sm">
+            {(jobs.data ?? []).map((j) => (
+              <li key={j.id} className="flex flex-wrap items-center gap-2">
+                <span>
+                  {j.title} @ {j.company} — {prettyLabel(j.status)}
+                </span>
+                {j.status !== "ROUTED" && (
+                  <PrimaryButton
+                    onClick={() =>
+                      run(async () => {
+                        const drive = await api<{ title: string }>(`/api/actions/placement/alumni-jobs/${j.id}/route`, { method: "POST", body: "{}" });
+                        setNotice(`Routed “${j.title}” to drive “${drive.title}”.`);
+                        jobs.reload();
+                      })
+                    }
+                  >
+                    Route to drive
+                  </PrimaryButton>
+                )}
               </li>
             ))}
           </ul>
         </Card>
         <Card title="Employer engagement">
-          <ul className="text-sm">
-            {(industry.data ?? []).map((n, i) => (
-              <li key={i}>
-                {n.name} {n.mou ? "(signed agreement)" : ""}
+          <ul className="space-y-2 text-sm">
+            {(industry.data ?? []).map((n) => (
+              <li key={n.id} className="flex flex-wrap items-center gap-2">
+                <span>
+                  {n.name} {n.mou ? "(signed agreement)" : "(no MoU)"}
+                </span>
+                <PrimaryButton
+                  onClick={() =>
+                    run(async () => {
+                      await api(`/api/actions/placement/industry/${n.id}/mou`, {
+                        method: "POST",
+                        body: JSON.stringify({ mou: !n.mou }),
+                      });
+                      industry.reload();
+                    })
+                  }
+                >
+                  {n.mou ? "Clear MoU" : "Mark MoU"}
+                </PrimaryButton>
               </li>
             ))}
           </ul>
         </Card>
         <Card title="Events">
-          <ul className="text-sm">
-            {(events.data ?? []).map((e, i) => (
-              <li key={i}>
-                {e.title} — {e.eventDate}
+          <ul className="space-y-2 text-sm">
+            {(events.data ?? []).map((e) => (
+              <li key={e.id} className="flex flex-wrap items-center gap-2">
+                <span>
+                  {e.title} — {e.eventDate} · {e.attendanceCount ?? 0} attended
+                </span>
+                <PrimaryButton
+                  onClick={() =>
+                    run(async () => {
+                      await api(`/api/actions/placement/events/${e.id}/attend`, {
+                        method: "POST",
+                        body: JSON.stringify({ count: 1 }),
+                      });
+                      events.reload();
+                    })
+                  }
+                >
+                  Record attendance
+                </PrimaryButton>
               </li>
             ))}
           </ul>

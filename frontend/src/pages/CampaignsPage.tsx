@@ -15,6 +15,8 @@ type Campaign = {
   body?: string;
   status: string;
   sentCount?: number;
+  lastSendStatus?: string;
+  lastSendDetail?: string;
 };
 
 export function CampaignsPage() {
@@ -146,13 +148,14 @@ export function CampaignsPage() {
             <p className="text-sm text-slate-500">No campaigns yet. Send a reminder when someone leaves checkout, or a one-time message about a new course.</p>
           ) : (
             <Table
-              columns={["Name", "Type", "Channel", "Status", "Sent", ""]}
+              columns={["Name", "Type", "Channel", "Status", "Sent", "Delivery", ""]}
               rows={(campaigns.data ?? []).map((c) => [
                 c.name,
                 c.campaignType === "ACTION" ? "When a student acts" : "One-time",
                 prettyLabel(c.channel),
                 prettyLabel(c.status),
                 String(c.sentCount ?? 0),
+                c.lastSendDetail || prettyLabel(c.lastSendStatus) || "Not launched",
                 <button className="text-brand hover:underline" type="button" onClick={() => launch(c)} key={c.id}>
                   Launch
                 </button>,

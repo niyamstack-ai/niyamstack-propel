@@ -12,6 +12,13 @@ export async function deleteRecord(path: string): Promise<void> {
   await api(path, { method: "DELETE" });
 }
 
+export async function ensureWebsitePublished() {
+  const org = await api<{ slug?: string; websitePublished?: boolean; websiteUrl?: string }>("/api/organization");
+  if (org.slug && org.websitePublished === false) {
+    await updateRecord("/api/organization", { ...org, websitePublished: true, websiteUrl: org.websiteUrl || `/s/${org.slug}` });
+  }
+}
+
 export async function uploadContentFile<T = { id: string; url?: string; title?: string }>(
   file: File,
   fields: Record<string, string> = {},

@@ -43,12 +43,13 @@ public class DemoSeeder implements CommandLineRunner {
         org.setPhone("+91 98765 00001");
         org.setWebsite("https://aarohan.demo");
         org.setPackageTier("ENTERPRISE");
+        org.setProductPack("FULL_OPS");
         org.setSlug("aarohan");
         org.setAccessStatus("ACTIVE");
         org.setPaymentStatus("PAID");
         org.setBillingCycle("QUARTERLY");
         org.setDealAmount(new BigDecimal("45000"));
-        org.setModulesCsv("STUDENTS,CRM,LMS,FEES,PLACEMENT,COMMS,ANALYTICS");
+        org.setModulesCsv("STUDENTS,CRM,LMS,FEES,PLACEMENT,COMMS,ANALYTICS,WEBSITE,TESTS,STAFF,GROW");
         org.setMaxStudents(500);
         org.setMaxCenters(5);
         org.setPaidAt(Instant.now());
@@ -620,7 +621,9 @@ public class DemoSeeder implements CommandLineRunner {
             org.setPaymentStatus("PAID");
             org.setBillingCycle("QUARTERLY");
             org.setDealAmount(new BigDecimal("45000"));
-            org.setModulesCsv("STUDENTS,CRM,LMS,FEES,PLACEMENT,COMMS,ANALYTICS");
+            org.setProductPack("FULL_OPS");
+            org.setModulesCsv("STUDENTS,CRM,LMS,FEES,PLACEMENT,COMMS,ANALYTICS,WEBSITE,TESTS,STAFF,GROW");
+            org.setModulesCsv("STUDENTS,CRM,LMS,FEES,PLACEMENT,COMMS,ANALYTICS,WEBSITE,TESTS,STAFF,GROW");
             org.setMaxStudents(500);
             org.setMaxCenters(5);
         }

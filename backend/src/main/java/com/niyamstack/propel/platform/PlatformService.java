@@ -31,7 +31,8 @@ import java.util.UUID;
 
 @Service
 public class PlatformService {
-    public static final String DEFAULT_MODULES = "STUDENTS,CRM,LMS,FEES";
+    public static final String DEFAULT_MODULES = com.niyamstack.propel.catalog.Packs.modulesCsvForPack(
+            com.niyamstack.propel.catalog.Packs.FULL_OPS);
 
     private final Store store;
     private final PasswordEncoder encoder;
@@ -162,14 +163,19 @@ public class PlatformService {
         } else if (org.getBillingCycle() == null || org.getBillingCycle().isBlank()) {
             org.setBillingCycle("MONTHLY");
         }
+        if (body.productPack() != null && !body.productPack().isBlank()) {
+            org.setProductPack(com.niyamstack.propel.catalog.Packs.normalizePack(body.productPack()));
+        }
         if (body.modulesCsv() != null) {
             org.setModulesCsv(body.modulesCsv().trim().toUpperCase());
+        } else if (org.getModulesCsv() == null || org.getModulesCsv().isBlank()) {
+            org.setModulesCsv(com.niyamstack.propel.catalog.Packs.modulesCsvForPack(org.getProductPack()));
         }
         if (body.maxStudents() != null) {
-            org.setMaxStudents(body.maxStudents());
+            org.setMaxStudents(body.maxStudents() <= 0 ? null : body.maxStudents());
         }
         if (body.maxCenters() != null) {
-            org.setMaxCenters(body.maxCenters());
+            org.setMaxCenters(body.maxCenters() <= 0 ? null : body.maxCenters());
         }
         if (body.couponCode() != null) {
             org.setCouponCode(body.couponCode().trim());
@@ -379,7 +385,8 @@ public class PlatformService {
             Integer maxCenters,
             String couponCode,
             String dealNotes,
-            String packageTier
+            String packageTier,
+            String productPack
     ) {}
 
     private Map<String, Object> session(AppUser user) {
@@ -512,6 +519,7 @@ public class PlatformService {
         row.put("phone", org.getPhone());
         row.put("gstin", org.getGstin());
         row.put("packageTier", org.getPackageTier());
+        row.put("productPack", org.getProductPack());
         row.put("accessStatus", nz(org.getAccessStatus(), "DEMO"));
         row.put("paymentStatus", nz(org.getPaymentStatus(), "UNPAID"));
         row.put("billingCycle", org.getBillingCycle());

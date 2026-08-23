@@ -23,12 +23,17 @@ import com.niyamstack.propel.domain.Model.Receipt;
 import com.niyamstack.propel.domain.Model.SiteHit;
 import com.niyamstack.propel.domain.Model.Student;
 import com.niyamstack.propel.domain.Model.TimetableSlot;
+import com.niyamstack.propel.grow.GrowService;
 import com.niyamstack.propel.fees.FeeService;
 import com.niyamstack.propel.integration.EventHook;
 import com.niyamstack.propel.integration.PaymentGateway;
+import com.niyamstack.propel.domain.Model.Inquiry;
+import com.niyamstack.propel.security.LicenseService;
+import com.niyamstack.propel.security.OtpService;
 import com.niyamstack.propel.security.Phones;
 import com.niyamstack.propel.security.Roles;
 import com.niyamstack.propel.security.SessionService;
+import com.niyamstack.propel.sis.StudentAccountService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -46,6 +51,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -56,25 +62,38 @@ public class StorefrontService {
     private final SessionService sessions;
     private final EventHook hooks;
     private final FeeService fees;
+    private final OtpService otp;
+    private final StudentAccountService studentAccounts;
+    private final LicenseService licenses;
+    private final GrowService grow;
+    private final ConcurrentHashMap<String, PendingRegister> pendingRegisters = new ConcurrentHashMap<>();
 
     public StorefrontService(Store store, PaymentGateway payments, PasswordEncoder encoder, SessionService sessions,
-                             EventHook hooks, FeeService fees) {
+                             EventHook hooks, FeeService fees, OtpService otp, StudentAccountService studentAccounts,
+                             LicenseService licenses, GrowService grow) {
         this.store = store;
         this.payments = payments;
         this.encoder = encoder;
         this.sessions = sessions;
         this.hooks = hooks;
         this.fees = fees;
+        this.otp = otp;
+        this.studentAccounts = studentAccounts;
+        this.licenses = licenses;
+        this.grow = grow;
+    }
+
+    public Organization orgBySlug(String slug) {
+        return store.findOrgBySlug(slug);
+    }
+
+    public boolean isLive(Organization org) {
+        return org.isWebsitePublished();
     }
 
     public Organization liveOrg(String slug) {
-        Organization org = store.findOrgBySlug(slug);
-        if (org.isWebsitePublished()) {
-            return org;
-        }
-        boolean hasLiveCourse = store.list(Course.class, org.getId()).stream()
-                .anyMatch(c -> c.isActive() && c.isPublished());
-        if (hasLiveCourse) {
+        Organization org = orgBySlug(slug);
+        if (isLive(org)) {
             return org;
         }
         throw new ApiException(HttpStatus.NOT_FOUND, "This institute website is not live yet");
@@ -90,6 +109,8 @@ public class StorefrontService {
         out.put("brandSecondary", org.getBrandSecondary() == null ? "#071a33" : org.getBrandSecondary());
         out.put("customDomain", org.getCustomDomain());
         out.put("websiteUrl", org.getWebsiteUrl());
+        out.put("websitePublished", org.isWebsitePublished());
+        out.put("live", isLive(org));
         out.put("phone", org.getPhone());
         out.put("email", org.getEmail());
         out.putAll(hooks.tracking(org.getId()));
@@ -150,7 +171,7 @@ public class StorefrontService {
         Organization org = liveOrg(slug);
         Course course = store.getOwned(Course.class, courseId, org.getId());
         if (!course.isActive() || !course.isPublished()) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "Course not found");
+            throw new ApiException(HttpStatus.NOT_FOUND, "This course is not published yet");
         }
 
         AppUser user = store.findUserByPhone(phone);
@@ -161,6 +182,7 @@ public class StorefrontService {
             throw new ApiException(HttpStatus.CONFLICT, "This mobile belongs to a staff account. Use a student number.");
         }
         if (user == null) {
+            licenses.requireStudentCapacity(org);
             String mail = email == null || email.isBlank() ? phone + "@student.local" : email.trim().toLowerCase();
             AppUser byEmail = store.findUserByEmail(mail);
             if (byEmail != null) {
@@ -198,10 +220,7 @@ public class StorefrontService {
                 .findFirst()
                 .orElse(null);
         if (existing != null) {
-            Map<String, Object> session = new LinkedHashMap<>(sessions.issue(user));
-            session.put("alreadyEnrolled", true);
-            session.put("course", publicCourse(course));
-            return session;
+            return purchaseSession(user, course, null, null, true);
         }
 
         BigDecimal price = payable(course, validityOption);
@@ -227,11 +246,8 @@ public class StorefrontService {
         if (price.signum() == 0) {
             enroll(org, student, course, invoice, applied);
             hooks.fire(org.getId(), "course.enrolled", Map.of("courseId", course.getId(), "price", 0));
-            Map<String, Object> session = new LinkedHashMap<>(sessions.issue(user));
-            session.put("alreadyEnrolled", false);
-            session.put("checkout", false);
-            session.put("course", publicCourse(course));
-            return session;
+            Receipt complimentary = complimentaryReceipt(org, invoice);
+            return purchaseSession(user, course, invoice, complimentary, false);
         }
 
         if (payments.live(org.getId())) {
@@ -259,6 +275,8 @@ public class StorefrontService {
             out.put("name", org.getName());
             out.put("invoiceId", invoice.getId());
             out.put("courseId", course.getId());
+            out.put("phone", phone);
+            out.put("loginHint", loginHint(phone));
             return out;
         }
 
@@ -293,11 +311,7 @@ public class StorefrontService {
         }
         enroll(org, student, course, invoice, applied);
         hooks.fire(org.getId(), "course.purchased", Map.of("courseId", course.getId(), "amount", price));
-        Map<String, Object> session = new LinkedHashMap<>(sessions.issue(user));
-        session.put("alreadyEnrolled", false);
-        session.put("checkout", false);
-        session.put("course", publicCourse(course));
-        return session;
+        return purchaseSession(user, course, invoice, receipt, false);
     }
 
     @Transactional
@@ -313,11 +327,8 @@ public class StorefrontService {
         enroll(org, student, course, invoice, null);
         AppUser user = store.get(AppUser.class, student.getUserId());
         hooks.fire(org.getId(), "course.purchased", Map.of("courseId", course.getId(), "amount", invoice.getAmount()));
-        Map<String, Object> session = new LinkedHashMap<>(sessions.issue(user));
-        session.put("alreadyEnrolled", false);
-        session.put("checkout", false);
-        session.put("course", publicCourse(course));
-        return session;
+        Receipt receipt = latestReceipt(org.getId(), invoice.getId());
+        return purchaseSession(user, course, invoice, receipt, false);
     }
 
     @Transactional
@@ -330,6 +341,48 @@ public class StorefrontService {
         Student student = store.getOwned(Student.class, invoice.getStudentId(), orgId);
         Course course = store.getOwned(Course.class, invoice.getCourseId(), orgId);
         enroll(store.get(Organization.class, orgId), student, course, invoice, null);
+    }
+
+    private Map<String, Object> purchaseSession(AppUser user, Course course, Invoice invoice, Receipt receipt, boolean already) {
+        Map<String, Object> session = new LinkedHashMap<>(sessions.issue(user));
+        session.put("alreadyEnrolled", already);
+        session.put("checkout", false);
+        session.put("course", publicCourse(course));
+        session.put("phone", user.getPhone());
+        session.put("loginHint", loginHint(user.getPhone()));
+        if (invoice != null) {
+            session.put("invoiceId", invoice.getId());
+            session.put("invoiceNo", invoice.getInvoiceNo());
+        }
+        if (receipt != null) {
+            session.put("receiptId", receipt.getId());
+            session.put("receiptNo", receipt.getReceiptNo());
+        }
+        return session;
+    }
+
+    private static String loginHint(String phone) {
+        String mobile = phone == null || phone.isBlank() ? "this mobile number" : phone;
+        return "Log in later with " + mobile + " on the institute website. We send an OTP — no password needed.";
+    }
+
+    private Receipt complimentaryReceipt(Organization org, Invoice invoice) {
+        Receipt existing = latestReceipt(org.getId(), invoice.getId());
+        if (existing != null) {
+            return existing;
+        }
+        Receipt receipt = new Receipt();
+        receipt.setOrganizationId(org.getId());
+        receipt.setInvoiceId(invoice.getId());
+        receipt.setReceiptNo("FREE-" + Instant.now().toEpochMilli());
+        receipt.setAmount(BigDecimal.ZERO);
+        receipt.setGstin(org.getGstin());
+        receipt.setIssuedAt(Instant.now());
+        return store.save(receipt);
+    }
+
+    private Receipt latestReceipt(UUID orgId, UUID invoiceId) {
+        return store.listBy(Receipt.class, orgId, "invoiceId", invoiceId).stream().findFirst().orElse(null);
     }
 
     private void enroll(Organization org, Student student, Course course, Invoice invoice, Coupon applied) {
@@ -501,6 +554,9 @@ public class StorefrontService {
             if (!exam.isPublished() || "PRACTICE_LAB".equalsIgnoreCase(exam.getKind())) {
                 continue;
             }
+            if (exam.getScheduledAt() != null && exam.getScheduledAt().isAfter(Instant.now())) {
+                continue;
+            }
             if (exam.getCourseId() == null || !courseIds.contains(exam.getCourseId())) {
                 continue;
             }
@@ -509,7 +565,7 @@ public class StorefrontService {
             row.put("title", exam.getTitle());
             row.put("courseId", exam.getCourseId());
             row.put("courseName", courseName(orgId, exam.getCourseId()));
-            row.put("lastScore", lastScore.get(exam.getId()));
+            row.put("lastScore", exam.isScoresPublished() ? lastScore.get(exam.getId()) : null);
             long taken = used.getOrDefault(exam.getId(), 0L);
             Integer max = exam.getMaxAttempts();
             row.put("attemptsLeft", max == null || max <= 0 ? null : Math.max(0, max - taken));
@@ -533,6 +589,17 @@ public class StorefrontService {
         todayView.put("due", due.stream().limit(5).toList());
         todayView.put("tests", tests);
         todayView.put("fees", fees);
+        List<Map<String, Object>> certs = store.listBy(com.niyamstack.propel.domain.Model.Certificate.class, orgId, "studentId", student.getId()).stream()
+                .map(c -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("id", c.getId());
+                    row.put("title", c.getTitle());
+                    row.put("certificateNo", c.getCertificateNo());
+                    row.put("issuedOn", c.getIssuedOn());
+                    return row;
+                })
+                .toList();
+        todayView.put("certificates", certs);
         if (notice != null) {
             todayView.put("notice", Map.of("title", notice.getTitle() == null ? "" : notice.getTitle(), "body", notice.getBody() == null ? "" : notice.getBody()));
         }
@@ -801,4 +868,109 @@ public class StorefrontService {
         hit.setPath(path);
         store.save(hit);
     }
+
+    public Map<String, Object> registerOtp(String slug, String fullName, String email, String phoneRaw, UUID courseId) {
+        Organization org = liveOrg(slug);
+        licenses.requireStudentCapacity(org);
+        if (fullName == null || fullName.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Name is required");
+        }
+        String phone = StudentAccountService.requireMobile(phoneRaw);
+        AppUser existing = store.findUserByPhone(phone);
+        if (existing != null && !org.getId().equals(existing.getOrganizationId())) {
+            throw new ApiException(HttpStatus.CONFLICT, "This mobile is already used on another institute");
+        }
+        if (existing != null) {
+            throw new ApiException(HttpStatus.CONFLICT, "An account already exists for this mobile. Log in instead.");
+        }
+        String mail = StudentAccountService.emailOrGenerated(email, phone);
+        if (store.findUserByEmail(mail) != null && (email != null && !email.isBlank())) {
+            throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+        }
+        if (courseId != null) {
+            Course course = store.getOwned(Course.class, courseId, org.getId());
+            if (!course.isActive() || !course.isPublished()) {
+                throw new ApiException(HttpStatus.NOT_FOUND, "Course not found");
+            }
+        }
+        pendingRegisters.put(phone, new PendingRegister(org.getId(), fullName.trim(), mail, courseId, Instant.now().plusSeconds(300)));
+        var issued = otp.issue(phone, OtpService.SIGNUP);
+        return otp.publicIssue(issued);
+    }
+
+    @Transactional
+    public Map<String, Object> registerVerify(String slug, String phoneRaw, String code) {
+        Organization org = liveOrg(slug);
+        licenses.requireStudentCapacity(org);
+        String phone = StudentAccountService.requireMobile(phoneRaw);
+        PendingRegister pending = pendingRegisters.get(phone);
+        if (pending == null || pending.expires().isBefore(Instant.now()) || !org.getId().equals(pending.orgId())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Request a new OTP, then try again");
+        }
+        otp.verify(phone, OtpService.SIGNUP, code);
+        pendingRegisters.remove(phone);
+        if (store.findUserByPhone(phone) != null) {
+            throw new ApiException(HttpStatus.CONFLICT, "An account already exists for this mobile. Log in instead.");
+        }
+        if (store.findUserByEmail(pending.email()) != null) {
+            throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+        }
+        AppUser user = new AppUser();
+        user.setOrganizationId(org.getId());
+        user.setFullName(pending.fullName());
+        user.setEmail(pending.email());
+        user.setPhone(phone);
+        user.setPasswordHash(encoder.encode(UUID.randomUUID().toString()));
+        user.setRole(Roles.STUDENT);
+        user.setActive(true);
+        user.setPasswordChangedAt(Instant.now());
+        user = store.save(user);
+
+        Student student = new Student();
+        student.setOrganizationId(org.getId());
+        student.setUserId(user.getId());
+        student.setFullName(user.getFullName());
+        student.setEmail(user.getEmail());
+        student.setPhone(phone);
+        student.setStudentCode("STU-" + System.currentTimeMillis() % 1_000_000);
+        student.setStatus("ENROLLED");
+        student.setEnrollmentDate(LocalDate.now());
+        student.setCourseId(pending.courseId());
+        student = store.save(student);
+        if (pending.courseId() != null) {
+            Course course = store.getOwned(Course.class, pending.courseId(), org.getId());
+            if ("FREE".equalsIgnoreCase(course.getCourseType())) {
+                studentAccounts.enrollIfCourse(org.getId(), student, course.getId(), "WEBSITE");
+            }
+        }
+        hooks.fire(org.getId(), "student.registered", Map.of("studentId", student.getId()));
+        return sessions.issue(user);
+    }
+
+    @Transactional
+    public Map<String, Object> enquire(String slug, String fullName, String email, String phoneRaw, String message, UUID courseId, String landingSlug, String referralCode) {
+        Organization org = orgBySlug(slug);
+        if (fullName == null || fullName.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Name is required");
+        }
+        String phone = StudentAccountService.requireMobile(phoneRaw);
+        Inquiry inquiry = new Inquiry();
+        inquiry.setOrganizationId(org.getId());
+        inquiry.setFullName(fullName.trim());
+        inquiry.setEmail(email == null || email.isBlank() ? null : email.trim().toLowerCase());
+        inquiry.setPhone(phone);
+        inquiry.setSource("WEB");
+        inquiry.setStage("NEW");
+        inquiry.setNotes(message == null || message.isBlank() ? null : message.trim());
+        inquiry.setCourseId(courseId);
+        inquiry = store.save(inquiry);
+        grow.attributeLead(inquiry, landingSlug, referralCode);
+        hooks.fire(org.getId(), "inquiry.created", Map.of("inquiryId", inquiry.getId(), "source", inquiry.getSource() == null ? "WEB" : inquiry.getSource()));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("id", inquiry.getId());
+        return out;
+    }
+
+    private record PendingRegister(UUID orgId, String fullName, String email, UUID courseId, Instant expires) {}
 }

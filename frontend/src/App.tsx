@@ -1,6 +1,6 @@
-import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { Link, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
-import { usePlatformAuth } from "./platformAuth";
+import { hasCap, platformCapForPath, usePlatformAuth } from "./platformAuth";
 import { Shell } from "./Shell";
 import { canOpen } from "./portals";
 import { LoginPage, SignupPage, ForgotPage } from "./pages/LoginPage";
@@ -11,6 +11,7 @@ import { PlatformInstitutesPage } from "./pages/platform/PlatformInstitutesPage"
 import { PlatformInstituteDetailPage } from "./pages/platform/PlatformInstituteDetailPage";
 import { PlatformSettingsPage } from "./pages/platform/PlatformSettingsPage";
 import { PlatformEmployeesPage } from "./pages/platform/PlatformEmployeesPage";
+import { MobileApp } from "./pages/MobileApps";
 import { DashboardPage } from "./pages/DashboardPage";
 import { CrmPage } from "./pages/CrmPage";
 import { StudentsPage } from "./pages/StudentsPage";
@@ -34,7 +35,11 @@ import { CampaignsPage } from "./pages/CampaignsPage";
 import { PeoplePage } from "./pages/PeoplePage";
 import { SelfServicePage } from "./pages/SelfServicePage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
-import { StorefrontAppPage, StorefrontCatalogPage, StorefrontChatsPage, StorefrontCmsPage, StorefrontCoursePage, StorefrontFeesPage, StorefrontForgotPage, StorefrontJobsPage, StorefrontLayout, StorefrontLearnPage, StorefrontLoginPage, StorefrontNoticesPage, StorefrontProfilePage, StorefrontStudyPage } from "./pages/Storefront";
+import { FeaturesPage } from "./pages/FeaturesPage";
+import { LmsPage } from "./pages/LmsPage";
+import { EssPage } from "./pages/EssPage";
+import { AcademicsPage } from "./pages/AcademicsPage";
+import { StorefrontAppPage, StorefrontCatalogPage, StorefrontChatsPage, StorefrontCmsPage, StorefrontCoursePage, StorefrontFeesPage, StorefrontForgotPage, StorefrontJobsPage, StorefrontLandingPage, StorefrontLayout, StorefrontLearnPage, StorefrontLoginPage, StorefrontNoticesPage, StorefrontOneToOnePage, StorefrontProfilePage, StorefrontRegisterPage, StorefrontStudyPage } from "./pages/Storefront";
 import { LegalPage } from "./pages/LegalPage";
 import { isProductHost } from "./siteHost";
 import { useEffect, useState } from "react";
@@ -42,7 +47,7 @@ import { api } from "./api";
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { token, ready } = useAuth();
-  if (!ready) return <p className="p-6 text-sm text-slate-500">Loading…</p>;
+  if (!token && !ready) return <p className="p-6 text-sm text-slate-500">Loading…</p>;
   if (!token) return <Navigate to="/login" replace />;
   return children;
 }
@@ -61,10 +66,31 @@ function PlatformGuard({ children }: { children: React.ReactNode }) {
   return children;
 }
 
+function PlatformCapGate() {
+  const { user } = usePlatformAuth();
+  const location = useLocation();
+  const cap = platformCapForPath(location.pathname);
+  if (cap && !hasCap(user, cap)) {
+    return (
+      <div className="mx-auto max-w-lg rounded-2xl border border-line bg-white p-8 text-center">
+        <h1 className="text-xl font-bold text-navy">This role cannot open this page</h1>
+        <p className="mt-2 text-sm text-slate-500">
+          Your Niyamstack staff role does not include the right needed for this screen. Use the menu on the left, or go
+          back to the dashboard.
+        </p>
+        <Link className="mt-6 inline-block rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white" to="/platform">
+          Back to dashboard
+        </Link>
+      </div>
+    );
+  }
+  return <Outlet />;
+}
+
 function RoleGate() {
   const { user } = useAuth();
   const location = useLocation();
-  if (!canOpen(user?.role, location.pathname)) {
+  if (!canOpen(user?.role, location.pathname, user?.modules, user?.capabilities)) {
     return <Navigate to="/" replace />;
   }
   return <Outlet />;
@@ -76,6 +102,7 @@ function storefrontChildRoutes() {
       <Route index element={<StorefrontCatalogPage />} />
       <Route path="courses/:courseId" element={<StorefrontCoursePage />} />
       <Route path="login" element={<StorefrontLoginPage />} />
+      <Route path="register" element={<StorefrontRegisterPage />} />
       <Route path="forgot" element={<StorefrontForgotPage />} />
       <Route path="app" element={<StorefrontAppPage />} />
       <Route path="learn" element={<StorefrontLearnPage />} />
@@ -86,6 +113,8 @@ function storefrontChildRoutes() {
       <Route path="notices" element={<StorefrontNoticesPage />} />
       <Route path="chats" element={<StorefrontChatsPage />} />
       <Route path="p/:pageSlug" element={<StorefrontCmsPage />} />
+      <Route path="l/:pageSlug" element={<StorefrontLandingPage />} />
+      <Route path="one-to-one" element={<StorefrontOneToOnePage />} />
     </>
   );
 }
@@ -129,6 +158,7 @@ export default function App() {
         {storefrontChildRoutes()}
       </Route>
       <Route path="/platform/login" element={<PlatformLoginPage />} />
+      <Route path="/m" element={<Guard><MobileApp /></Guard>} />
       <Route
         path="/platform"
         element={
@@ -137,11 +167,14 @@ export default function App() {
           </PlatformGuard>
         }
       >
-        <Route index element={<PlatformDashboardPage />} />
-        <Route path="institutes" element={<PlatformInstitutesPage />} />
-        <Route path="institutes/:id" element={<PlatformInstituteDetailPage />} />
-        <Route path="employees" element={<PlatformEmployeesPage />} />
-        <Route path="settings" element={<PlatformSettingsPage />} />
+        <Route element={<PlatformCapGate />}>
+          <Route index element={<PlatformDashboardPage />} />
+          <Route path="institutes" element={<PlatformInstitutesPage />} />
+          <Route path="institutes/:id" element={<PlatformInstituteDetailPage />} />
+          <Route path="employees" element={<PlatformEmployeesPage />} />
+          <Route path="features" element={<FeaturesPage />} />
+          <Route path="settings" element={<PlatformSettingsPage />} />
+        </Route>
       </Route>
       <Route
         path="/"
@@ -168,9 +201,13 @@ export default function App() {
           <Route path="people/:tab" element={<PeoplePage />} />
           <Route path="self-service" element={<SelfServicePage />} />
           <Route path="integrations" element={<IntegrationsPage />} />
+          <Route path="features" element={<FeaturesPage />} />
           <Route path="crm" element={<CrmPage />} />
           <Route path="students" element={<StudentsPage />} />
-          <Route path="lms" element={<Navigate to="/courses" replace />} />
+          <Route path="lms" element={<LmsPage />} />
+          <Route path="ess" element={<EssPage />} />
+          <Route path="academics" element={<AcademicsPage />} />
+          <Route path="coupons" element={<Navigate to="/courses?view=coupons" replace />} />
           <Route path="fees" element={<FeesPage />} />
           <Route path="placement" element={<PlacementPage />} />
           <Route path="readiness" element={<ReadinessPage />} />

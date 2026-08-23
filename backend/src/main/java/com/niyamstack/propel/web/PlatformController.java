@@ -1,9 +1,12 @@
 package com.niyamstack.propel.web;
 
+import com.niyamstack.propel.catalog.Features;
 import com.niyamstack.propel.platform.PlatformService;
 import com.niyamstack.propel.platform.PlatformService.DealRequest;
 import com.niyamstack.propel.platform.PlatformService.EmployeeRequest;
 import com.niyamstack.propel.platform.PlatformService.EmployeeUpdate;
+import com.niyamstack.propel.security.Access;
+import com.niyamstack.propel.security.Auth;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.web.bind.annotation.*;
@@ -43,6 +46,12 @@ public class PlatformController {
     @GetMapping("/dashboard")
     public Map<String, Object> dashboard() {
         return platform.dashboard();
+    }
+
+    @GetMapping("/features")
+    public Object features() {
+        Access.requirePlatform(Auth.current());
+        return Features.ALL;
     }
 
     @GetMapping("/institutes")

@@ -1,7 +1,8 @@
-import { FormEvent, ReactNode, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
-import { api } from "../api";
+import { api, clearPlatformSession } from "../api";
 import { useAuth } from "../auth";
+import { PACKS, type PackId } from "../packs";
 import { NiyamstackLogo } from "../brand/NiyamstackLogo";
 
 type OtpSent = { status: string; phone?: string; devOtp?: string };
@@ -25,6 +26,10 @@ export function ForgotPage() {
 
 function AuthGate({ children }: { children: ReactNode }) {
   const { token, user, ready } = useAuth();
+  useEffect(() => {
+    clearPlatformSession();
+    window.dispatchEvent(new Event("propel:platform-unauthorized"));
+  }, []);
   if (!ready) return <p className="p-6 text-sm text-slate-500">Loading…</p>;
   if (token && user?.role === "STUDENT" && user.orgSlug) {
     return <Navigate to={`/s/${user.orgSlug}/learn`} replace />;
@@ -230,6 +235,7 @@ function SignupView() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [productPack, setProductPack] = useState<PackId>("FULL_OPS");
   const [otp, setOtp] = useState("");
   const [sent, setSent] = useState<OtpSent | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -246,7 +252,7 @@ function SignupView() {
     try {
       const res = await api<OtpSent>("/api/auth/signup", {
         method: "POST",
-        body: JSON.stringify({ instituteName, fullName, email, phone, password }),
+        body: JSON.stringify({ instituteName, fullName, email, phone, password, productPack }),
       });
       setSent(res);
     } catch (err) {
@@ -287,6 +293,24 @@ function SignupView() {
           <Field label="Email" value={email} onChange={setEmail} type="email" />
           <Field label="Password" value={password} onChange={setPassword} type="password" />
           <Field label="Confirm password" value={confirm} onChange={setConfirm} type="password" />
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-navy">Pack</legend>
+            {PACKS.map((pack) => (
+              <label key={pack.id} className="flex cursor-pointer items-start gap-2 rounded-lg border border-line px-3 py-2">
+                <input
+                  type="radio"
+                  className="mt-1"
+                  name="productPack"
+                  checked={productPack === pack.id}
+                  onChange={() => setProductPack(pack.id)}
+                />
+                <span>
+                  <span className="block text-sm font-medium text-navy">{pack.name}</span>
+                  <span className="block text-xs text-slate-500">{pack.blurb}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
           <p className="text-xs text-slate-400">Password must be 10+ characters with upper, lower, digit, and special character.</p>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy}>

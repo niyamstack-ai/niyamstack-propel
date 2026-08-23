@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { createRecord, deleteRecord, updateRecord } from "../ops";
+import { createRecord, deleteRecord, ensureWebsitePublished, updateRecord } from "../ops";
 import { fileSrc } from "../api";
 import { useAuth } from "../auth";
 import { UserMenu } from "../UserMenu";
@@ -244,6 +244,9 @@ function OwnerCourses() {
         return;
       }
       await updateRecord(`/api/courses/${c.id}`, { ...c, published: c.published === false });
+      if (!willUnpublish) {
+        await ensureWebsitePublished().catch(() => undefined);
+      }
       courses.reload();
       setListTab(willUnpublish ? "unpublished" : "published");
     } catch (e) {

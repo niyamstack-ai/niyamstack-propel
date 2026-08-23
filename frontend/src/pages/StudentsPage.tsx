@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { createRecord, updateRecord } from "../ops";
 import { useAuth } from "../auth";
@@ -12,12 +12,13 @@ type Student = {
   status: string;
   email: string;
   phone: string;
+  userId?: string;
   courseId?: string;
   batchId?: string;
   centerId?: string;
   enrollmentDate?: string;
 };
-type Named = { id: string; name: string; code?: string };
+type Named = { id: string; name: string; code?: string; courseId?: string };
 
 export function StudentsPage() {
   const { user } = useAuth();
@@ -30,7 +31,7 @@ export function MyStudentRecord() {
   const students = useApi<Student[]>("/api/students");
   const guardians = useApi<{ fullName: string; relation: string }[]>("/api/guardians");
   const attendance = useApi<{ sessionDate: string; status: string }[]>("/api/attendance");
-  const certs = useApi<{ title: string; issuedOn?: string }[]>("/api/certificates");
+  const certs = useApi<{ id?: string; title: string; issuedOn?: string; certificateNo?: string }[]>("/api/certificates");
   const record = students.data?.[0];
   const [name, setName] = useState(user?.name || "");
   const [email, setEmail] = useState(user?.email || "");
@@ -159,13 +160,44 @@ export function MyStudentRecord() {
       </Card>
       <Card title="Certificates">
         {(certs.data ?? []).length === 0 && (
-          <p className="text-sm text-slate-500">No certificates yet. Completing a course does not issue one until your institute publishes it.</p>
+          <p className="text-sm text-slate-500">Finish the course materials, homework, and tests to receive a certificate automatically.</p>
         )}
         <ul className="text-sm">
           {(certs.data ?? []).map((c, i) => (
-            <li key={i}>
-              {c.title}
-              {c.issuedOn ? ` · ${formatDay(c.issuedOn)}` : ""}
+            <li key={c.id || i} className="flex items-center justify-between gap-2">
+              <span>
+                {c.title}
+                {c.issuedOn ? ` · ${formatDay(c.issuedOn)}` : ""}
+              </span>
+              {c.id && (
+                <button
+                  type="button"
+                  className="text-sm font-medium text-brand"
+                  onClick={() =>
+                    void api<{ certificateNo?: string; title: string; studentName?: string; courseName?: string; instituteName?: string; issuedOn?: string }>(
+                      `/api/actions/certificates/${c.id}`,
+                    ).then((rec) => {
+                      const win = window.open("", "_blank");
+                      if (!win) return;
+                      win.document.write(`<!doctype html><html><head><title>${rec.certificateNo || "Certificate"}</title>
+                        <style>body{font-family:Georgia,serif;padding:48px;text-align:center;color:#071a33}h1{margin:24px 0 8px;font-size:28px}p{margin:8px 0}</style></head>
+                        <body>
+                          <p>${rec.instituteName || ""}</p>
+                          <h1>Certificate of completion</h1>
+                          <p>This is to certify that</p>
+                          <p style="font-size:22px;font-weight:700">${rec.studentName || ""}</p>
+                          <p>has completed</p>
+                          <p style="font-size:18px;font-weight:600">${rec.courseName || rec.title}</p>
+                          <p>${rec.issuedOn || ""} · ${rec.certificateNo || ""}</p>
+                          <script>window.print()<\/script>
+                        </body></html>`);
+                      win.document.close();
+                    })
+                  }
+                >
+                  Download / print
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -181,7 +213,7 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
   const centers = useApi<Named[]>("/api/centers");
   const docs = useApi<{ fileName: string; docType: string }[]>("/api/student-documents");
   const guardians = useApi<{ fullName: string; relation: string }[]>("/api/guardians");
-  const risk = useApi<{ student: Student; reason: string }[]>("/api/actions/at-risk");
+  const risk = useApi<{ student: Student; reason: string; taskOpen?: boolean }[]>("/api/actions/at-risk");
 
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -195,6 +227,7 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
   const [parentPhone, setParentPhone] = useState("");
   const [photoUrl, setPhotoUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [docStudent, setDocStudent] = useState("");
   const [docType, setDocType] = useState("Aadhaar");
@@ -205,9 +238,29 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
   const [gRel, setGRel] = useState("Parent");
   const [gPhone, setGPhone] = useState("");
 
+  const courseBatches = useMemo(
+    () => (batches.data ?? []).filter((b) => !courseId || !b.courseId || b.courseId === courseId),
+    [batches.data, courseId]
+  );
+
+  useEffect(() => {
+    if (!batchId) return;
+    if (!courseBatches.some((b) => b.id === batchId)) setBatchId("");
+  }, [batchId, courseBatches]);
+
+  async function run(fn: () => Promise<void>) {
+    setError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function addStudent() {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const created = await createRecord("/api/students", {
         studentCode: code || `STU-${Date.now().toString().slice(-6)}`,
@@ -222,14 +275,16 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
         photoUrl: photoUrl || null,
         status: "ENROLLED",
         enrollmentDate: new Date().toISOString().slice(0, 10),
-      }) as Student;
+      }) as Student & { tempPassword?: string };
+      let parentNote = "";
       if (parentPhone) {
-        await createRecord("/api/guardians", {
-          studentId: created.id,
-          fullName: "Parent",
-          relation: "Parent",
-          phone: parentPhone,
+        const invited = await api<{ phone?: string; tempPassword?: string }>(`/api/actions/sis/parents/invite`, {
+          method: "POST",
+          body: JSON.stringify({ studentId: created.id, fullName: "Parent", relation: "Parent", phone: parentPhone }),
         });
+        parentNote = invited.tempPassword
+          ? ` Parent can log in with mobile ${invited.phone} (OTP) or temporary password ${invited.tempPassword}.`
+          : ` Parent login linked for ${invited.phone}.`;
       }
       setCode("");
       setName("");
@@ -240,10 +295,30 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
       setParentPhone("");
       setPhotoUrl("");
       students.reload();
+      setNotice(
+        (created.tempPassword
+          ? `${created.fullName} can log in on your website with mobile ${created.phone} (OTP) or email ${created.email} / password ${created.tempPassword}. Share this once.`
+          : `${created.fullName} was enrolled.`) + parentNote
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function issueLogin(s: Student) {
+    if (!window.confirm(`Create a website login for ${s.fullName}?`)) return;
+    setError(null);
+    setNotice(null);
+    try {
+      const created = await api<{ tempPassword?: string; phone?: string; email?: string }>(`/api/students/${s.id}/issue-login`, { method: "POST" });
+      students.reload();
+      setNotice(
+        `${s.fullName} can log in with mobile ${created.phone || s.phone} (OTP) or email ${created.email || s.email} / password ${created.tempPassword}. Share this once.`
+      );
+    } catch (e) {
+      setError((e as Error).message);
     }
   }
 
@@ -265,6 +340,7 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
 
   async function addGuardian() {
     setError(null);
+    setNotice(null);
     try {
       await createRecord("/api/guardians", {
         studentId: gStudent,
@@ -272,9 +348,38 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
         relation: gRel,
         phone: gPhone,
       });
+      if (gPhone) {
+        const invited = await api<{ phone?: string; tempPassword?: string }>(`/api/actions/sis/parents/invite`, {
+          method: "POST",
+          body: JSON.stringify({ studentId: gStudent, fullName: gName, relation: gRel, phone: gPhone }),
+        });
+        setNotice(
+          invited.tempPassword
+            ? `Parent can log in with mobile ${invited.phone} (OTP) or the temporary password ${invited.tempPassword}.`
+            : `Parent login linked for ${invited.phone}. They use OTP on the institute login.`,
+        );
+      }
       setGName("");
       setGPhone("");
       guardians.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function printId(s: Student) {
+    setError(null);
+    try {
+      const rec = await api<{ instituteName?: string; fullName?: string; code?: string; photoUrl?: string }>(`/api/actions/sis/id-card/STUDENT/${s.id}`);
+      const win = window.open("", "_blank");
+      if (!win) {
+        setError("Allow pop-ups to print the ID card.");
+        return;
+      }
+      win.document.write(`<!doctype html><html><head><title>ID</title></head><body>
+        <h1>${rec.instituteName || ""}</h1><h2>${rec.fullName || s.fullName}</h2><p>${rec.code || s.studentCode}</p>
+        <script>window.print()<\/script></body></html>`);
+      win.document.close();
     } catch (e) {
       setError((e as Error).message);
     }
@@ -285,32 +390,33 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
       {!embedded && (
       <div>
         <h1 className="text-2xl font-bold text-navy">Students</h1>
-        <p className="text-sm text-slate-500">Enroll students, keep the master record, link guardians, and track at-risk learners.</p>
+        <p className="text-sm text-slate-500">Enroll students with a mobile number. That creates a login for your institute website.</p>
       </div>
       )}
       {canEnroll && (
       <Card title="Enroll a student">
         <FormGrid>
-          <Field label="Student code" value={code} onChange={setCode} placeholder="Auto if blank" />
-          <Field label="Full name" value={name} onChange={setName} />
-          <Field label="Email" value={email} onChange={setEmail} />
-          <Field label="Phone" value={phone} onChange={setPhone} placeholder="Student mobile" />
-          <Field label="Date of birth" value={dob} onChange={setDob} type="date" />
-          <Field label="Address" value={address} onChange={setAddress} />
-          <Field label="Parent phone" value={parentPhone} onChange={setParentPhone} />
-          <FileUpload label="Photo" value={photoUrl} accept="image/*" onChange={setPhotoUrl} />
-          <Select label="Center" value={centerId} onChange={setCenterId} options={(centers.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
-          <Select label="Course" value={courseId} onChange={setCourseId} options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
-          <Select label="Batch" value={batchId} onChange={setBatchId} options={(batches.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
+          <Field key="enroll-code" name="student-code" label="Student code" value={code} onChange={setCode} placeholder="Auto if blank" />
+          <Field key="enroll-name" name="student-name" label="Full name" value={name} onChange={setName} />
+          <Field key="enroll-email" name="student-email" label="Email" value={email} onChange={setEmail} />
+          <Field key="enroll-phone" name="student-mobile" label="Phone" value={phone} onChange={setPhone} placeholder="Student mobile" />
+          <Field key="enroll-dob" name="student-dob" label="Date of birth" value={dob} onChange={setDob} type="date" />
+          <Field key="enroll-address" name="student-address" label="Address" value={address} onChange={setAddress} />
+          <Field key="enroll-parent-phone" name="parent-mobile" label="Parent phone" value={parentPhone} onChange={setParentPhone} />
+          <FileUpload key="enroll-photo" label="Photo" value={photoUrl} accept="image/*" onChange={setPhotoUrl} />
+          <Select key="enroll-center" label="Center" value={centerId} onChange={setCenterId} options={(centers.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
+          <Select key="enroll-course" label="Course" value={courseId} onChange={setCourseId} options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
+          <Select key="enroll-batch" label="Batch" value={batchId} onChange={setBatchId} options={courseBatches.map((c) => ({ value: c.id, label: c.name }))} />
           <div className="flex items-end">
-            <PrimaryButton disabled={busy || !name} onClick={addStudent}>
+            <PrimaryButton disabled={busy || !name || !phone} onClick={addStudent}>
               Save student
             </PrimaryButton>
           </div>
         </FormGrid>
-        <ErrorText error={error} />
       </Card>
       )}
+      <ErrorText error={error} />
+      {notice && <p className="text-sm text-navy">{notice}</p>}
       <Card title="Students">
         <Table
           empty="No students yet. Enrol the first student above."
@@ -321,6 +427,10 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
             prettyLabel(s.status),
             s.email,
             <span className="flex flex-wrap gap-2">
+              {!s.userId && (
+                <Linkish onClick={() => void issueLogin(s)}>Create login</Linkish>
+              )}
+              <Linkish onClick={() => void printId(s)}>ID card</Linkish>
               <Linkish onClick={() => setStatus(s, "ACTIVE")}>Active</Linkish>
               <Linkish onClick={() => setStatus(s, "DEFERRED")}>On hold</Linkish>
               <Linkish onClick={() => setStatus(s, "DROPPED")}>Drop</Linkish>
@@ -342,11 +452,12 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
           <Field label="Phone" value={gPhone} onChange={setGPhone} />
         </FormGrid>
         <div className="mt-3">
-          <PrimaryButton disabled={!gStudent || !gName} onClick={addGuardian}>
-            Save guardian
+          <PrimaryButton disabled={!gStudent || !gName || !gPhone} onClick={addGuardian}>
+            Save guardian and invite parent
           </PrimaryButton>
         </div>
       </Card>
+      <CustomFieldsCard students={students.data ?? []} />
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="ID documents">
           <p className="mb-3 text-xs text-slate-500">Upload Aadhaar, PAN, or a photo. The file is stored on this server.</p>
@@ -385,17 +496,86 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
           </ul>
         </Card>
         <Card title="Needs follow-up">
-          <ul className="text-sm">
-            {(risk.data ?? []).length === 0 && <li className="text-slate-500">No attendance or readiness warnings right now.</li>}
-            {(risk.data ?? []).map((r, i) => (
-              <li key={i}>
-                {r.student.fullName}: {r.reason}
+          <ul className="space-y-2 text-sm">
+            {(risk.data ?? []).length === 0 && <li className="text-slate-500">No attendance, resume, or test warnings right now.</li>}
+            {(risk.data ?? []).map((r) => (
+              <li key={r.student.id} className="flex flex-wrap items-center gap-2">
+                <span>
+                  {r.student.fullName}: {r.reason}
+                  {r.taskOpen ? " · task open" : ""}
+                </span>
+                <PrimaryButton
+                  onClick={() =>
+                    run(async () => {
+                      await api(`/api/actions/at-risk/${r.student.id}/follow-up`, { method: "POST", body: "{}" });
+                      setNotice(`Follow-up assigned for ${r.student.fullName}.`);
+                      risk.reload();
+                    })
+                  }
+                >
+                  Assign follow-up
+                </PrimaryButton>
               </li>
             ))}
           </ul>
         </Card>
       </div>
     </div>
+  );
+}
+
+function CustomFieldsCard({ students }: { students: Student[] }) {
+  const fields = useApi<{ id: string; entityType: string; fieldKey: string; label: string }[]>("/api/custom-fields");
+  const [studentId, setStudentId] = useState("");
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const studentFields = (fields.data ?? []).filter((f) => f.entityType === "STUDENT");
+  return (
+    <Card title="Custom fields">
+      <p className="mb-3 text-sm text-slate-500">Institute fields defined under Academics, saved on this student.</p>
+      <ErrorText error={error} />
+      {notice && <p className="mb-2 text-sm text-emerald-700">{notice}</p>}
+      {studentFields.length === 0 ? (
+        <p className="text-sm text-slate-500">No student custom fields yet. Add them in Academics.</p>
+      ) : (
+        <>
+          <FormGrid>
+            <Select
+              label="Student"
+              value={studentId}
+              onChange={setStudentId}
+              options={students.map((s) => ({ value: s.id, label: s.fullName }))}
+            />
+            {studentFields.map((f) => (
+              <Field
+                key={f.id}
+                label={f.label}
+                value={values[f.fieldKey] || ""}
+                onChange={(v) => setValues((cur) => ({ ...cur, [f.fieldKey]: v }))}
+              />
+            ))}
+          </FormGrid>
+          <div className="mt-3">
+            <PrimaryButton
+              disabled={!studentId}
+              onClick={async () => {
+                setError(null);
+                setNotice(null);
+                try {
+                  await api(`/api/actions/sis/custom/STUDENT/${studentId}`, { method: "POST", body: JSON.stringify(values) });
+                  setNotice("Custom fields saved.");
+                } catch (e) {
+                  setError((e as Error).message);
+                }
+              }}
+            >
+              Save fields
+            </PrimaryButton>
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
 

@@ -32,6 +32,8 @@ export type AssessmentRow = {
   totalMarks?: number;
   maxAttempts?: number | null;
   proctoring?: boolean;
+  scoresPublished?: boolean;
+  scheduledAt?: string | null;
   sortOrder?: number;
   createdAt?: string;
 };
@@ -47,6 +49,9 @@ type QuestionRow = {
   language?: string;
   starterCode?: string;
   testsJson?: string;
+  subject?: string;
+  topic?: string;
+  difficulty?: string;
 };
 
 type AttemptRow = {
@@ -68,6 +73,7 @@ type QuizResult = {
   passed: boolean;
   passingScore: number;
   pendingReview?: boolean;
+  scoresPending?: boolean;
   reason?: string | null;
   breakdown: {
     questionId: string;
@@ -111,6 +117,9 @@ type DraftQuestion = {
   tests: { stdin: string; stdout: string; hidden: boolean; setup: string }[];
   left: string[];
   right: string[];
+  subject: string;
+  topic: string;
+  difficulty: string;
 };
 
 function formatClock(total: number) {
@@ -122,8 +131,8 @@ function formatClock(total: number) {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
-function enterExamLock() {
-  void document.documentElement.requestFullscreen?.().catch(() => undefined);
+function enterExamLock(lock = false) {
+  if (lock) void document.documentElement.requestFullscreen?.().catch(() => undefined);
 }
 
 function leaveExamLock() {
@@ -241,7 +250,7 @@ function parseMatchSides(raw?: string): { left: string[]; right: string[] } {
   return { left: ["", ""], right: ["", ""] };
 }
 
-function blankQuestion(type: QType, language = "java", starter = ""): DraftQuestion {
+function blankQuestion(type: QType, language = "python", starter = ""): DraftQuestion {
   return {
     prompt: "",
     questionType: type,
@@ -255,6 +264,9 @@ function blankQuestion(type: QType, language = "java", starter = ""): DraftQuest
     tests: [{ stdin: "", stdout: "", hidden: false, setup: "" }],
     left: ["", ""],
     right: ["", ""],
+    subject: "",
+    topic: "",
+    difficulty: "MEDIUM",
   };
 }
 
@@ -478,7 +490,7 @@ export function CourseContentPanel({ courseId }: { courseId: string }) {
                 item.folder && item.content
                   ? counts(item.content)
                   : item.test
-                    ? `${(item.test.kind || "test").toLowerCase()} · ${item.test.maxAttempts ? `${item.test.maxAttempts} attempt(s)` : "unlimited attempts"}`
+                    ? `${(item.test.kind || "test").toLowerCase()} · ${item.test.published === false ? "draft · " : ""}${item.test.proctoring ? "proctored · " : ""}${item.test.maxAttempts ? `${item.test.maxAttempts} attempt(s)` : "unlimited attempts"}`
                     : (item.content?.contentType || "").toLowerCase()
               }
               open={menuId === item.id}
@@ -802,17 +814,24 @@ export function QuizBuilder({
   onSaved: () => void;
 }) {
   const questionsApi = useApi<QuestionRow[]>("/api/questions");
-  const langsApi = useApi<{ languages: LangInfo[]; suggested?: string; starter?: string; courseName?: string }>(
+  const langsApi = useApi<{ languages: LangInfo[]; suggested?: string; starter?: string; courseName?: string; runnerConfigured?: boolean }>(
     courseId ? `/api/actions/code/languages?courseId=${courseId}` : "/api/actions/code/languages",
   );
   const langs = langsApi.data?.languages ?? [];
-  const suggested = langsApi.data?.suggested || "java";
+  const suggested = langsApi.data?.suggested || "python";
+  const bankApi = useApi<QuestionRow[]>("/api/actions/question-bank");
   const defaultType: QType = kind === "SUBJECTIVE" ? "LONG" : "MCQ";
   const defaultTitle = kind === "SUBJECTIVE" ? "Subjective Test" : kind === "PRACTICE" ? "Practice Test" : "Online Test";
   const [title, setTitle] = useState(existing?.title || defaultTitle);
   const [attempts, setAttempts] = useState(String(existing?.maxAttempts ?? (kind === "PRACTICE" ? 0 : 3)));
   const [passing, setPassing] = useState(String(existing?.passingScore ?? 40));
   const [duration, setDuration] = useState(String(existing?.durationMinutes ?? 30));
+  const [published, setPublished] = useState(existing?.published !== false);
+  const [proctoring, setProctoring] = useState(existing?.proctoring === true);
+  const [scoresPublished, setScoresPublished] = useState(existing?.scoresPublished !== false);
+  const [scheduledAt, setScheduledAt] = useState(existing?.scheduledAt ? existing.scheduledAt.slice(0, 16) : "");
+  const [keepInBank, setKeepInBank] = useState(false);
+  const [bankPick, setBankPick] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const loaded = useMemo(
@@ -866,6 +885,9 @@ export function QuizBuilder({
           tests,
           left: match.left.length ? match.left : ["", ""],
           right: match.right.length ? match.right : ["", ""],
+          subject: q.subject || "",
+          topic: q.topic || "",
+          difficulty: (q.difficulty || "MEDIUM").toUpperCase(),
         };
       }),
     );
@@ -905,6 +927,11 @@ export function QuizBuilder({
           durationMinutes: Number(duration) || 30,
           passingScore: Number(passing) || 40,
           maxAttempts: Number(attempts) || 0,
+          published,
+          proctoring,
+          scoresPublished,
+          scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : null,
+          keepInBank,
           questions: ready.map((q) => ({
             prompt: q.prompt.trim(),
             questionType: q.questionType,
@@ -918,6 +945,9 @@ export function QuizBuilder({
             correctOptions: q.options.filter((o, idx) => q.selected[idx] && o.trim()),
             answerKey: q.questionType === "MCQ" ? q.options[q.correct] : q.textAnswer,
             explanation: q.explanation?.trim() || "",
+            subject: q.subject,
+            topic: q.topic,
+            difficulty: q.difficulty,
           })),
         }),
       });
@@ -957,7 +987,30 @@ export function QuizBuilder({
             <span className="text-slate-600">Duration (minutes)</span>
             <input className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" value={duration} onChange={(e) => setDuration(e.target.value)} />
           </label>
+          <label className="block text-sm">
+            <span className="text-slate-600">Opens at (optional)</span>
+            <input className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={published} onChange={(e) => setPublished(e.target.checked)} />
+            Publish to students
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={proctoring} onChange={(e) => setProctoring(e.target.checked)} />
+            Proctoring (fullscreen, tab switch submits)
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={scoresPublished} onChange={(e) => setScoresPublished(e.target.checked)} />
+            Publish scores to the student site
+          </label>
+          <label className="flex items-center gap-2 text-sm sm:col-span-2">
+            <input type="checkbox" checked={keepInBank} onChange={(e) => setKeepInBank(e.target.checked)} />
+            Also save these questions to the institute bank
+          </label>
         </div>
+        {langsApi.data?.runnerConfigured === false && (
+          <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">Code runner is not configured. Set PROPEL_PISTON_URL or install a compiler. Coding questions still save; Run will explain this to students.</p>
+        )}
         <div className="mt-5 space-y-4">
           {questions.map((q, i) => (
             <div key={i} className="rounded-xl border border-line p-4">
@@ -1072,7 +1125,7 @@ export function QuizBuilder({
                     >
                       {langs.map((lang) => (
                         <option key={lang.id} value={lang.id}>
-                          {lang.label} {lang.available ? "" : "(install compiler)"}
+                          {lang.label} {lang.available ? "" : "(runner not configured)"}
                         </option>
                       ))}
                     </select>
@@ -1134,8 +1187,62 @@ export function QuizBuilder({
                   onChange={(e) => patch(i, { explanation: e.target.value })}
                 />
               </label>
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                <input className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm" placeholder="Subject" value={q.subject} onChange={(e) => patch(i, { subject: e.target.value })} />
+                <input className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm" placeholder="Topic" value={q.topic} onChange={(e) => patch(i, { topic: e.target.value })} />
+                <select className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm" value={q.difficulty} onChange={(e) => patch(i, { difficulty: e.target.value })}>
+                  <option value="EASY">Easy</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="HARD">Hard</option>
+                </select>
+              </div>
             </div>
           ))}
+        </div>
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <label className="block text-sm">
+            <span className="text-slate-600">Add from question bank</span>
+            <select className="mt-1 w-72 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" value={bankPick} onChange={(e) => setBankPick(e.target.value)}>
+              <option value="">Select a bank question…</option>
+              {(bankApi.data ?? []).map((q) => (
+                <option key={q.id} value={q.id}>
+                  {(q.subject ? `${q.subject} · ` : "") + (q.prompt || "").slice(0, 60)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="rounded-lg border border-line px-3 py-1.5 text-sm"
+            disabled={!bankPick}
+            onClick={() => {
+              const src = (bankApi.data ?? []).find((q) => q.id === bankPick);
+              if (!src) return;
+              const type = ((src.questionType || "MCQ").toUpperCase() as QType) || "MCQ";
+              const options = parseOptions(src.optionsJson);
+              const match = parseMatchSides(src.optionsJson);
+              setQuestions((rows) => [
+                ...rows,
+                {
+                  ...blankQuestion(type, src.language || suggested, src.starterCode || ""),
+                  prompt: src.prompt,
+                  options: options.length ? options : ["", "", "", ""],
+                  textAnswer: src.answerKey || "",
+                  explanation: src.explanation || "",
+                  language: src.language || suggested,
+                  starterCode: src.starterCode || "",
+                  left: match.left.length ? match.left : ["", ""],
+                  right: match.right.length ? match.right : ["", ""],
+                  subject: src.subject || "",
+                  topic: src.topic || "",
+                  difficulty: (src.difficulty || "MEDIUM").toUpperCase(),
+                },
+              ]);
+              setBankPick("");
+            }}
+          >
+            Use question
+          </button>
         </div>
         <button
           type="button"
@@ -1230,9 +1337,13 @@ export function StudentCourseLibrary({ courseId, allowDownload = true, examsOnly
   }
 
   const courseContent = (content.data ?? []).filter((row) => sameId(row.courseId, courseId) && row.published !== false);
-  const courseExams = (exams.data ?? []).filter(
-    (row) => sameId(row.courseId, courseId) && row.published !== false && (row.kind || "").toUpperCase() !== "PRACTICE_LAB",
-  );
+  const now = Date.now();
+  const courseExams = (exams.data ?? []).filter((row) => {
+    if (!sameId(row.courseId, courseId) || row.published === false) return false;
+    if ((row.kind || "").toUpperCase() === "PRACTICE_LAB") return false;
+    if (row.scheduledAt && new Date(row.scheduledAt).getTime() > now) return false;
+    return true;
+  });
   const items = examsOnly
     ? courseExams.map(asTestItem).sort(compareLibrary)
     : itemsInFolder(courseContent, courseExams, folderId);
@@ -1359,11 +1470,11 @@ export function StudentCourseLibrary({ courseId, allowDownload = true, examsOnly
                 onClick={() => {
                   if (canStart) {
                     setReviewId(null);
-                    enterExamLock();
+                    enterExamLock(row.proctoring === true);
                     setQuiz(row);
                   } else if (last) {
                     setReviewId(last.id);
-                    enterExamLock();
+                    enterExamLock(row.proctoring === true);
                     setQuiz(row);
                   }
                 }}
@@ -1373,7 +1484,13 @@ export function StudentCourseLibrary({ courseId, allowDownload = true, examsOnly
                   <span className="block font-medium text-navy">{row.title}</span>
                   <span className="text-xs text-slate-500">
                     {inProgress ? "In progress · timer still running" : row.maxAttempts ? `${used}/${row.maxAttempts} attempts used` : `${used} attempt(s)`}
-                    {last?.score != null ? ` · last score ${last.score}%` : last && row.kind === "SUBJECTIVE" ? " · submitted for review" : ""}
+                    {last && row.scoresPublished === false
+                      ? " · submitted (scores not published yet)"
+                      : last?.score != null
+                        ? ` · last score ${last.score}%`
+                        : last && row.kind === "SUBJECTIVE"
+                          ? " · submitted for review"
+                          : ""}
                   </span>
                 </span>
               </button>
@@ -1384,7 +1501,7 @@ export function StudentCourseLibrary({ courseId, allowDownload = true, examsOnly
                     className="text-sm font-medium text-slate-600 hover:text-navy"
                     onClick={() => {
                       setReviewId(last.id);
-                      enterExamLock();
+                      enterExamLock(row.proctoring === true);
                       setQuiz(row);
                     }}
                   >
@@ -1397,7 +1514,7 @@ export function StudentCourseLibrary({ courseId, allowDownload = true, examsOnly
                     className="text-sm font-medium text-brand"
                     onClick={() => {
                       setReviewId(null);
-                      enterExamLock();
+                      enterExamLock(row.proctoring === true);
                       setQuiz(row);
                     }}
                   >
@@ -1521,7 +1638,7 @@ function PaperItem({
         </div>
       )}
       {type === "CODE" && (
-        <CodePad questionId={question.id} language={question.language || "java"} value={value} tests={question.publicTests} onChange={onChange} />
+        <CodePad questionId={question.id} language={question.language || "python"} value={value} tests={question.publicTests} onChange={onChange} />
       )}
       {type !== "MCQ" && type !== "MULTI" && type !== "SHORT" && type !== "LONG" && type !== "MATCH" && type !== "CODE" && (
         <textarea className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={value} onChange={(e) => onChange(e.target.value)} />
@@ -1629,7 +1746,7 @@ function TakeQuiz({
   const [loading, setLoading] = useState(true);
   const [currentQ, setCurrentQ] = useState(0);
   const remaining = exam.maxAttempts && exam.maxAttempts > 0 ? Math.max(0, exam.maxAttempts - used) : null;
-  const tabLock = exam.proctoring === true || (exam.kind || "").toUpperCase() !== "PRACTICE";
+  const tabLock = exam.proctoring === true;
   const answersRef = useRef(answers);
   const attemptRef = useRef(attemptId);
   const resultRef = useRef(result);
@@ -1848,7 +1965,12 @@ function TakeQuiz({
         {loading && !result && <p className="mt-4 text-sm text-slate-500">Starting test…</p>}
         {result && !reviewOpen && (
           <div className="mt-4 space-y-3">
-            {result.pendingReview ? (
+            {result.scoresPending ? (
+              <>
+                <p className="text-2xl font-bold text-navy">Submitted</p>
+                <p className="text-sm text-slate-500">Scores will appear on the student site when your institute publishes results.</p>
+              </>
+            ) : result.pendingReview ? (
               <>
                 <p className="text-2xl font-bold text-navy">Submitted · Awaiting review</p>
                 <p className="text-sm text-slate-500">Your written answers were saved. A teacher will grade this subjective test.</p>
@@ -1864,9 +1986,11 @@ function TakeQuiz({
               </>
             )}
             <div className="flex flex-wrap gap-2">
-              <button type="button" className="rounded-lg border border-line px-4 py-2 text-sm font-medium" onClick={() => setReviewOpen(true)}>
-                View answers
-              </button>
+              {!result.scoresPending && (
+                <button type="button" className="rounded-lg border border-line px-4 py-2 text-sm font-medium" onClick={() => setReviewOpen(true)}>
+                  View answers
+                </button>
+              )}
               <button type="button" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white" onClick={onClose}>
                 Done
               </button>
@@ -1896,7 +2020,7 @@ function TakeQuiz({
         {!result && !loading && (
           <>
             {tabLock && timed && (
-              <p className="mt-3 text-xs text-slate-500">Do not switch tabs. Leaving this page submits the test.</p>
+              <p className="mt-3 text-xs text-slate-500">Proctoring is on. Stay in fullscreen. Switching tabs submits the test.</p>
             )}
             <div className="mt-4 flex flex-wrap gap-1.5">
               {questions.map((q, i) => {

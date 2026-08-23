@@ -2,23 +2,35 @@ import { useEffect, useState } from "react";
 import { api, fileSrc } from "../api";
 import { createRecord, uploadSubmissionFile } from "../ops";
 import { useAuth } from "../auth";
-import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, formatWhen, useApi } from "../ui";
+import { useLocation, useSearchParams } from "react-router-dom";
+import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, formatWhen, studentChoice, useApi } from "../ui";
 
 type Content = { id: string; title: string; contentType: string; scormStandard?: string; published?: boolean; courseId?: string };
 type Assignment = { id: string; title: string; instructions: string; courseId?: string; batchId?: string; dueAt?: string; maxScore?: number };
 type Submission = { id: string; assignmentId?: string; grade?: string; status?: string; content?: string; fileUrl?: string; feedback?: string; submittedAt?: string };
 type Assessment = { id: string; title: string; kind: string; proctoring: boolean; published: boolean; courseId?: string };
 type Attempt = { id: string; score?: number; status: string };
-type Pkg = { id: string; standard: string; status: string; versionLabel?: string };
+type Pkg = { id: string; standard: string; status: string; versionLabel?: string; launchUrl?: string };
 type Named = { id: string; name: string };
-type Student = { id: string; fullName: string; courseId?: string };
-type Doubt = { id?: string; subject: string; body?: string; status: string; facultyReply?: string; courseId?: string };
+type Student = { id: string; fullName: string; courseId?: string; studentCode?: string };
+type Doubt = { id?: string; subject: string; body?: string; status: string; facultyReply?: string; courseId?: string; overdue?: boolean };
 type Batch = { id: string; courseId?: string };
-type LiveRow = { title: string; meetingUrl?: string; batchId?: string; startsAt?: string };
+type LiveRow = { id?: string; title: string; provider?: string; meetingUrl?: string; batchId?: string; startsAt?: string };
 type RecRow = { title: string; videoUrl?: string; batchId?: string };
 type SlotRow = { subject: string; dayOfWeek: number; startTime: string; endTime?: string; batchId?: string; classroomId?: string };
 
 export type StudySection = "contents" | "practice" | "tests" | "live" | "recordings" | "timetable" | "assignments" | "doubts";
+
+const LMS_TABS = [
+  { id: "content", label: "Content" },
+  { id: "attendance", label: "Attendance" },
+  { id: "assignments", label: "Assignments" },
+  { id: "exams", label: "Exams" },
+  { id: "packages", label: "Packages" },
+  { id: "outcomes", label: "Outcomes" },
+  { id: "live", label: "Live classes" },
+] as const;
+type LmsTab = (typeof LMS_TABS)[number]["id"];
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -417,16 +429,20 @@ function AssignmentSubmitModal({
 
 export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?: boolean } = {}) {
   const { user } = useAuth();
+  const location = useLocation();
+  const [params, setParams] = useSearchParams();
+  const tab = (LMS_TABS.some((t) => t.id === params.get("tab")) ? params.get("tab") : "content") as LmsTab;
   const content = useApi<Content[]>("/api/content");
-  const live = useApi<{ title: string; provider: string; meetingUrl: string }[]>("/api/live-sessions");
+  const live = useApi<{ id: string; title: string; provider: string; meetingUrl: string; batchId?: string }[]>("/api/live-sessions");
   const recs = useApi<{ title: string; videoUrl: string }[]>("/api/recordings");
   const asg = useApi<Assignment[]>("/api/assignments");
   const subs = useApi<Submission[]>("/api/submissions");
   const exams = useApi<Assessment[]>("/api/assessments");
   const attempts = useApi<Attempt[]>("/api/exam-attempts");
   const packages = useApi<Pkg[]>("/api/lms-packages");
-  const doubts = useApi<{ subject: string; status: string; facultyReply?: string }[]>("/api/doubts");
-  const slots = useApi<{ subject: string; dayOfWeek: number; startTime: string }[]>("/api/timetable");
+  const outcomes = useApi<{ course: string; activities: number; completed: number; completionPct: number }[]>("/api/actions/learning-outcomes");
+  const doubts = useApi<{ id?: string; subject: string; status: string; facultyReply?: string; overdue?: boolean }[]>("/api/actions/sis/doubts");
+  const slots = useApi<{ subject: string; dayOfWeek: number; startTime: string; endTime?: string }[]>("/api/timetable");
   const batches = useApi<Named[]>("/api/batches");
   const students = useApi<Student[]>("/api/students");
   const [error, setError] = useState<string | null>(null);
@@ -446,9 +462,24 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
   const [doubtBody, setDoubtBody] = useState("");
   const [liveTitle, setLiveTitle] = useState("");
   const [liveStarts, setLiveStarts] = useState("");
+  const [slotSubject, setSlotSubject] = useState("");
+  const [slotDay, setSlotDay] = useState("1");
+  const [slotStart, setSlotStart] = useState("09:00");
+  const [slotEnd, setSlotEnd] = useState("10:00");
+  const [recUrl, setRecUrl] = useState("");
+  const [pkgContent, setPkgContent] = useState("");
+  const [pkgStd, setPkgStd] = useState("SCORM_1.2");
+  const [pkgUrl, setPkgUrl] = useState("https://example.com/lti");
 
   const faculty = user?.role === "OWNER" || user?.role === "FACULTY";
   const student = user?.role === "STUDENT";
+
+  useEffect(() => {
+    if (embedded) return;
+    if (location.hash === "#live" && tab !== "live") {
+      setParams({ tab: "live" }, { replace: true });
+    }
+  }, [embedded, location.hash, tab, setParams]);
 
   async function run(fn: () => Promise<void>) {
     setError(null);
@@ -462,6 +493,7 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
   const materials = inCourse(content.data, courseId);
   const quizzes = inCourse(exams.data, courseId);
   const homework = inCourse(asg.data, courseId);
+  const show = (id: LmsTab) => embedded || tab === id;
 
   return (
     <div className="space-y-6">
@@ -475,9 +507,23 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
         <p className="text-sm text-slate-500">Attendance, assignments, and live class for this course.</p>
       )}
       <ErrorText error={error} />
+      {!embedded && (
+        <div className="flex flex-wrap gap-2">
+          {LMS_TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setParams({ tab: item.id })}
+              className={`rounded-full px-3 py-1.5 text-sm ${tab === item.id ? "bg-navy text-white" : "bg-mist"}`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
       {faculty && (
         <>
-          {!embedded && (
+          {show("content") && !embedded && (
           <Card title="Add PDF, video or notes">
             <FormGrid>
               <Field label="Title" value={title} onChange={setTitle} />
@@ -520,6 +566,7 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
             </div>
           </Card>
           )}
+          {show("assignments") && (
           <Card title="Create assignment">
             <FormGrid>
               <Field label="Title" value={asgTitle} onChange={setAsgTitle} />
@@ -554,6 +601,8 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
               </div>
             </FormGrid>
           </Card>
+          )}
+          {show("exams") && (
           <Card title="Create exam">
             <FormGrid>
               <Field label="Title" value={examTitle} onChange={setExamTitle} />
@@ -583,13 +632,15 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
               </div>
             </FormGrid>
           </Card>
+          )}
+          {show("attendance") && (
           <Card title="Mark attendance">
             <FormGrid>
               <Select
                 label="Student"
                 value={attStudent}
                 onChange={setAttStudent}
-                options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))}
+                options={(students.data ?? []).map(studentChoice)}
               />
               <Select
                 label="Status"
@@ -622,30 +673,157 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
               </div>
             </FormGrid>
           </Card>
+          )}
         </>
       )}
+      {show("live") && (
       <Card title="Timetable">
         <Table
           columns={["Subject", "Day", "Start"]}
-          rows={(slots.data ?? []).map((s) => [s.subject, String(s.dayOfWeek), s.startTime])}
+          rows={(slots.data ?? []).map((s) => [s.subject, weekdayName(s.dayOfWeek), `${clockTime(s.startTime)}${s.endTime ? `–${clockTime(s.endTime)}` : ""}`])}
         />
+        {faculty && (
+          <FormGrid>
+            <Field label="Subject" value={slotSubject} onChange={setSlotSubject} />
+            <Select
+              label="Day"
+              value={slotDay}
+              onChange={setSlotDay}
+              allowEmpty={false}
+              options={WEEKDAYS.map((d, i) => ({ value: String(i + 1), label: d }))}
+            />
+            <Field label="Start" type="time" value={slotStart} onChange={setSlotStart} />
+            <Field label="End" type="time" value={slotEnd} onChange={setSlotEnd} />
+            <Select label="Batch" value={batchId} onChange={setBatchId} options={(batches.data ?? []).map((b) => ({ value: b.id, label: b.name }))} />
+            <div className="flex items-end">
+              <PrimaryButton
+                disabled={!slotSubject}
+                onClick={() =>
+                  run(async () => {
+                    await createRecord("/api/timetable", {
+                      subject: slotSubject,
+                      dayOfWeek: Number(slotDay),
+                      startTime: `${slotStart}:00`,
+                      endTime: `${slotEnd}:00`,
+                      batchId: batchId || null,
+                      facultyUserId: user?.id || null,
+                    });
+                    setSlotSubject("");
+                    slots.reload();
+                  })
+                }
+              >
+                Add slot
+              </PrimaryButton>
+            </div>
+          </FormGrid>
+        )}
       </Card>
-      {!embedded && (
+      )}
+      {show("content") && !embedded && (
       <Card title="Learning content in this course">
         <Table
+          loading={content.loading}
           columns={["Title", "Type", "Standard", "Published"]}
           rows={materials.map((c) => [c.title, c.contentType, c.scormStandard || "—", c.published === false ? "No" : "Yes"])}
         />
       </Card>
       )}
+      {show("packages") && (
       <Card title="LMS standards packages (SCORM / xAPI / LTI)">
+        {faculty && (
+          <FormGrid>
+            <Select label="Content item" value={pkgContent} onChange={setPkgContent} options={materials.map((c) => ({ value: c.id, label: c.title }))} />
+            <Select
+              label="Standard"
+              value={pkgStd}
+              onChange={setPkgStd}
+              options={[
+                { value: "SCORM_1.2", label: "SCORM 1.2" },
+                { value: "XAPI", label: "xAPI" },
+                { value: "LTI_1.3", label: "LTI 1.3" },
+              ]}
+            />
+            <Field label="Launch URL" value={pkgUrl} onChange={setPkgUrl} />
+            <div className="flex items-end">
+              <PrimaryButton
+                disabled={!pkgContent}
+                onClick={() =>
+                  run(async () => {
+                    await api("/api/actions/lms-packages", {
+                      method: "POST",
+                      body: JSON.stringify({ contentItemId: pkgContent, standard: pkgStd, launchUrl: pkgUrl, version: "1.0" }),
+                    });
+                    packages.reload();
+                  })
+                }
+              >
+                Register package
+              </PrimaryButton>
+            </div>
+          </FormGrid>
+        )}
         <Table
-          columns={["Standard", "Version", "Status"]}
-          rows={(packages.data ?? []).map((p) => [p.standard, p.versionLabel || "—", p.status])}
+          columns={["Standard", "Version", "Status", ""]}
+          rows={(packages.data ?? []).map((p) => [
+            p.standard,
+            p.versionLabel || "—",
+            p.status,
+            faculty ? (
+              <span className="space-x-2">
+                <PrimaryButton
+                  onClick={() =>
+                    run(async () => {
+                      await api("/api/actions/xapi/statements", {
+                        method: "POST",
+                        body: JSON.stringify({
+                          verb: "completed",
+                          objectId: p.id,
+                          courseId: courseId || "",
+                          studentId: students.data?.[0]?.id || "",
+                          resultJson: "{\"success\":true}",
+                        }),
+                      });
+                      outcomes.reload();
+                    })
+                  }
+                >
+                  Record xAPI
+                </PrimaryButton>
+                {p.standard?.includes("LTI") && (
+                  <PrimaryButton
+                    onClick={() =>
+                      run(async () => {
+                        const launch = await api<{ launchUrl?: string }>(`/api/actions/lms-packages/${p.id}/lti`);
+                        if (launch.launchUrl) window.open(launch.launchUrl, "_blank");
+                      })
+                    }
+                  >
+                    LTI launch
+                  </PrimaryButton>
+                )}
+              </span>
+            ) : (
+              "—"
+            ),
+          ])}
         />
       </Card>
+      )}
+      {show("outcomes") && (
+      <Card title="Learning outcomes">
+        <Table
+          empty="No xAPI or exam outcomes yet."
+          loading={outcomes.loading}
+          columns={["Course", "Activities", "Completed", "Completion %"]}
+          rows={(outcomes.data ?? []).map((o) => [o.course, o.activities, o.completed, `${o.completionPct}%`])}
+        />
+      </Card>
+      )}
+      {show("live") && (
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Live classes">
+          <div id="live">
           {faculty && (
             <>
           <FormGrid>
@@ -678,15 +856,51 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
             </>
           )}
           <ul className="mt-4 text-sm">
-            {(live.data ?? []).map((l, i) => (
-              <li key={i}>
+            {(live.data ?? []).map((l) => (
+              <li key={l.id} className="mb-2 rounded-lg border border-line px-3 py-2">
                 {l.title} ({l.provider}){" "}
-                <a className="text-brand" href={l.meetingUrl} target="_blank" rel="noreferrer">
-                  Join
-                </a>
+                {l.meetingUrl && (
+                  <a className="text-brand" href={l.meetingUrl} target="_blank" rel="noreferrer">
+                    Join
+                  </a>
+                )}
+                {faculty && l.id && (
+                  <span className="ml-2 flex flex-wrap gap-2">
+                    <PrimaryButton
+                      onClick={() =>
+                        run(async () => {
+                          const roster = await api<{ studentId: string }[]>(`/api/actions/sis/live/${l.id}/roster`);
+                          await api(`/api/actions/sis/live/${l.id}/attendance`, {
+                            method: "POST",
+                            body: JSON.stringify({ presentIds: roster.map((r) => r.studentId) }),
+                          });
+                        })
+                      }
+                    >
+                      Mark roster present
+                    </PrimaryButton>
+                    <Field label="Recording URL" value={recUrl} onChange={setRecUrl} />
+                    <PrimaryButton
+                      disabled={!recUrl}
+                      onClick={() =>
+                        run(async () => {
+                          await api(`/api/actions/sis/live/${l.id}/recording`, {
+                            method: "POST",
+                            body: JSON.stringify({ videoUrl: recUrl }),
+                          });
+                          setRecUrl("");
+                          recs.reload();
+                        })
+                      }
+                    >
+                      Attach recording
+                    </PrimaryButton>
+                  </span>
+                )}
               </li>
             ))}
           </ul>
+          </div>
         </Card>
         <Card title="Recorded lectures">
           <ul className="text-sm">
@@ -695,6 +909,10 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
             ))}
           </ul>
         </Card>
+      </div>
+      )}
+      {show("assignments") && (
+      <>
         <Card title="Assignments">
           <ul className="space-y-2 text-sm">
             {(homework).map((a) => (
@@ -747,6 +965,10 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
             ))}
           </ul>
         </Card>
+      </>
+      )}
+      {show("exams") && (
+      <>
         <Card title="Exam engine">
           <ul className="space-y-2 text-sm">
             {(quizzes).map((e) => (
@@ -780,7 +1002,9 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
             ))}
           </ul>
         </Card>
-      </div>
+      </>
+      )}
+      {show("live") && (
       <Card title="Raise a doubt">
         <FormGrid>
           <Field label="Subject" value={doubtSub} onChange={setDoubtSub} />
@@ -803,13 +1027,32 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
         </FormGrid>
         <ul className="mt-4 text-sm">
           {(doubts.data ?? []).map((d, i) => (
-            <li key={i}>
+            <li key={d.id || i}>
               {d.subject} — {d.status}
+              {d.overdue ? " · SLA overdue" : ""}
               {d.facultyReply ? `: ${d.facultyReply}` : ""}
+              {faculty && d.id && !d.facultyReply && (
+                <span className="ml-2">
+                  <PrimaryButton
+                    onClick={() =>
+                      run(async () => {
+                        await api(`/api/actions/sis/doubts/${d.id}/reply`, {
+                          method: "POST",
+                          body: JSON.stringify({ facultyReply: "Answered in class. Check the recording.", status: "ANSWERED" }),
+                        });
+                        doubts.reload();
+                      })
+                    }
+                  >
+                    Reply
+                  </PrimaryButton>
+                </span>
+              )}
             </li>
           ))}
         </ul>
       </Card>
+      )}
     </div>
   );
 }

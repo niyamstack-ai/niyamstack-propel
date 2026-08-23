@@ -5,24 +5,38 @@ import { uploadMedia } from "./ops";
 export function useApi<T>(path: string) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(!!path);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
+    if (!path) {
+      setData(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     let alive = true;
+    setLoading(true);
     setError(null);
     api<T>(path)
       .then((value) => {
         if (alive) setData(value);
       })
       .catch((err: Error) => {
-        if (alive) setError(err.message);
+        if (alive) {
+          setData(null);
+          setError(err.message);
+        }
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
       });
     return () => {
       alive = false;
     };
   }, [path, tick]);
 
-  return { data, error, loading: data === null && !error, reload: () => setTick((n) => n + 1) };
+  return { data, error, loading, reload: () => setTick((n) => n + 1) };
 }
 
 export function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
@@ -37,15 +51,24 @@ export function Card({ title, children, action }: { title: string; children: Rea
   );
 }
 
+export function studentChoice(s: { id: string; fullName: string; studentCode?: string }) {
+  return { value: s.id, label: s.studentCode ? `${s.fullName} (${s.studentCode})` : s.fullName };
+}
+
 export function Table({
   columns,
   rows,
   empty = "Nothing here yet.",
+  loading = false,
 }: {
   columns: string[];
   rows: Array<Array<React.ReactNode>>;
   empty?: string;
+  loading?: boolean;
 }) {
+  if (loading) {
+    return <p className="text-sm text-slate-500">Loading…</p>;
+  }
   if (rows.length === 0) {
     return <p className="text-sm text-slate-500">{empty}</p>;
   }
@@ -83,12 +106,14 @@ export function Field({
   onChange,
   type = "text",
   placeholder,
+  name,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   type?: string;
   placeholder?: string;
+  name?: string;
 }) {
   const [show, setShow] = useState(false);
   const password = type === "password";
@@ -97,6 +122,8 @@ export function Field({
       <span className="text-slate-600">{label}</span>
       <span className="relative mt-1 block">
         <input
+          name={name}
+          autoComplete={name}
           className="w-full rounded-lg border border-line px-3 py-2"
           value={value}
           type={password && show ? "text" : type}

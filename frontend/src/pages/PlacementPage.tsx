@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../api";
 import { createRecord } from "../ops";
 import { useAuth } from "../auth";
@@ -6,27 +6,43 @@ import { prettyLabel } from "../labels";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatDay, useApi } from "../ui";
 
 type Drive = { id: string; title: string; packageLpa: number; status: string; locations: string; minAttendancePct?: number; companyId?: string; jobDescription?: string; deadline?: string };
-type Application = { id: string; driveId?: string; status: string; eligibilityPassed?: boolean; currentRound?: string };
+type Application = { id: string; driveId?: string; studentId?: string; status: string; eligibilityPassed?: boolean; currentRound?: string };
 type Student = { id: string; fullName: string };
 type Company = { id: string; name: string; industry: string };
+type Offer = { id: string; applicationId?: string; packageLpa: number; status: string; joiningDate?: string };
+type Internship = { id: string; role: string; status: string; studentId?: string; companyId?: string; stipend?: number };
+type CalItem = { kind: string; date: string; title: string; detail?: string; id?: string };
 
 export function PlacementPage() {
   const { user } = useAuth();
   if (user?.role === "STUDENT") return <StudentJobs />;
-  return <StaffPlacement />;
+  return <StaffPlacement recruiter={user?.role === "RECRUITER"} />;
 }
 
 function StudentJobs() {
   const drives = useApi<Drive[]>("/api/drives");
   const apps = useApi<Application[]>("/api/applications");
+  const offers = useApi<Offer[]>("/api/offers");
   const me = useApi<{ id: string }[]>("/api/students");
   const [error, setError] = useState<string | null>(null);
+  const [letter, setLetter] = useState<string | null>(null);
   const studentId = me.data?.[0]?.id;
+
+  async function run(fn: () => Promise<void>) {
+    setError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-navy">Jobs & drives</h1>
       <p className="text-sm text-slate-500">Campus drives open to you. Apply from this list.</p>
       <ErrorText error={error} />
+      {letter && <pre className="whitespace-pre-wrap rounded-lg border border-line bg-slate-50 p-3 text-sm">{letter}</pre>}
       <Card title="Open drives">
         {(drives.data ?? []).length === 0 && <p className="mb-3 text-sm text-slate-500">No open drives right now.</p>}
         <Table
@@ -41,15 +57,12 @@ function StudentJobs() {
               {d.jobDescription && <p className="max-w-xs text-xs text-slate-500">{d.jobDescription}</p>}
             <PrimaryButton
               disabled={!studentId || applied}
-              onClick={async () => {
-                setError(null);
-                try {
+              onClick={() =>
+                run(async () => {
                   await api(`/api/actions/drives/${d.id}/apply/${studentId}`, { method: "POST", body: "{}" });
                   apps.reload();
-                } catch (e) {
-                  setError((e as Error).message);
-                }
-              }}
+                })
+              }
             >
               {applied ? "Applied" : "Apply"}
             </PrimaryButton>
@@ -65,29 +78,70 @@ function StudentJobs() {
             const drive = (drives.data ?? []).find((d) => d.id === a.driveId);
             return (
               <li key={a.id}>
-                {drive?.title || "Drive"} — {a.status}
+                {drive?.title || "Drive"} — {prettyLabel(a.status)}
                 {a.currentRound ? ` · ${a.currentRound}` : ""} {a.eligibilityPassed === false ? "· not eligible" : ""}
               </li>
             );
           })}
         </ul>
       </Card>
+      <Card title="Offers">
+        {(offers.data ?? []).length === 0 && <p className="text-sm text-slate-500">No offer yet.</p>}
+        <ul className="space-y-2 text-sm">
+          {(offers.data ?? []).map((o) => (
+            <li key={o.id} className="flex flex-wrap items-center gap-2">
+              <span>
+                {o.packageLpa} LPA — {prettyLabel(o.status)}
+                {o.joiningDate ? ` · join ${formatDay(o.joiningDate)}` : ""}
+              </span>
+              <PrimaryButton
+                onClick={() =>
+                  run(async () => {
+                    const doc = await api<{ body: string }>(`/api/actions/offers/${o.id}/letter`);
+                    setLetter(doc.body);
+                  })
+                }
+              >
+                Letter
+              </PrimaryButton>
+              {o.status === "OFFERED" && (
+                <PrimaryButton
+                  onClick={() =>
+                    run(async () => {
+                      await api(`/api/actions/offers/${o.id}/accept`, { method: "POST", body: JSON.stringify({ accept: true }) });
+                      offers.reload();
+                      apps.reload();
+                    })
+                  }
+                >
+                  Accept
+                </PrimaryButton>
+              )}
+            </li>
+          ))}
+        </ul>
+      </Card>
     </div>
   );
 }
 
-function StaffPlacement() {
+function StaffPlacement({ recruiter }: { recruiter: boolean }) {
+  const now = useMemo(() => new Date(), []);
   const companies = useApi<Company[]>("/api/companies");
   const drives = useApi<Drive[]>("/api/drives");
   const apps = useApi<Application[]>("/api/applications");
   const rounds = useApi<{ roundName: string; roundType: string }[]>("/api/drive-rounds");
   const interviews = useApi<{ roundName: string; outcome?: string }[]>("/api/interviews");
-  const offers = useApi<{ packageLpa: number; status: string }[]>("/api/offers");
-  const internships = useApi<{ role: string; status: string }[]>("/api/internships");
+  const offers = useApi<Offer[]>("/api/offers");
+  const internships = useApi<Internship[]>("/api/internships");
   const students = useApi<Student[]>("/api/students");
   const benches = useApi<{ role: string; city: string; medianLpa: number }[]>("/api/actions/salary-benchmarks");
+  const calendar = useApi<CalItem[]>(
+    `/api/actions/placement/calendar?year=${now.getFullYear()}&month=${now.getMonth() + 1}`,
+  );
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [letter, setLetter] = useState<string | null>(null);
   const [coName, setCoName] = useState("");
   const [industry, setIndustry] = useState("IT Services");
   const [companyId, setCompanyId] = useState("");
@@ -95,6 +149,14 @@ function StaffPlacement() {
   const [pkg, setPkg] = useState("4.5");
   const [loc, setLoc] = useState("Pune");
   const [minAtt, setMinAtt] = useState("75");
+  const [recName, setRecName] = useState("");
+  const [recEmail, setRecEmail] = useState("");
+  const [recPhone, setRecPhone] = useState("");
+  const [recCompany, setRecCompany] = useState("");
+  const [internStudent, setInternStudent] = useState("");
+  const [internCompany, setInternCompany] = useState("");
+  const [internRole, setInternRole] = useState("Java intern");
+  const [internStipend, setInternStipend] = useState("15000");
 
   async function run(fn: () => Promise<void>) {
     setError(null);
@@ -108,108 +170,167 @@ function StaffPlacement() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-navy">Placement operations</h1>
-        <p className="text-sm text-slate-500">Companies, job drives, who can sit, interview rounds, and offers. ATS means the list of applications and which round they are in.</p>
+        <h1 className="text-2xl font-bold text-navy">{recruiter ? "Recruiter portal" : "Placement operations"}</h1>
+        <p className="text-sm text-slate-500">
+          {recruiter
+            ? "Your company’s candidate pool. Shortlist and record interview outcomes."
+            : "Companies, job drives, who can sit, interview rounds, offers, and internships."}
+        </p>
       </div>
       <ErrorText error={error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
-      <Card title="Add company">
-        <FormGrid>
-          <Field label="Company" value={coName} onChange={setCoName} />
-          <Field label="Industry" value={industry} onChange={setIndustry} />
-          <div className="flex items-end">
-            <PrimaryButton
-              disabled={!coName}
-              onClick={() =>
-                run(async () => {
-                  await createRecord("/api/companies", { name: coName, industry });
-                  setCoName("");
-                  companies.reload();
-                })
-              }
-            >
-              Save company
-            </PrimaryButton>
-          </div>
-        </FormGrid>
-        <ul className="mt-3 text-sm">
-          {(companies.data ?? []).map((c) => (
-            <li key={c.id}>
-              {c.name} — {c.industry}
+      {letter && <pre className="whitespace-pre-wrap rounded-lg border border-line bg-slate-50 p-3 text-sm">{letter}</pre>}
+      <Card title={`Calendar — ${now.toLocaleString("en-IN", { month: "long", year: "numeric" })}`}>
+        {(calendar.data ?? []).length === 0 && <p className="text-sm text-slate-500">No drive deadlines, interviews, or joining dates this month.</p>}
+        <ul className="text-sm">
+          {(calendar.data ?? []).map((c, i) => (
+            <li key={c.id || i}>
+              {formatDay(c.date)} · {prettyLabel(c.kind)} · {c.title}
+              {c.detail ? ` — ${c.detail}` : ""}
             </li>
           ))}
         </ul>
       </Card>
-      <Card title="Create drive">
-        <FormGrid>
-          <Select label="Company" value={companyId} onChange={setCompanyId} options={(companies.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
-          <Field label="Drive title" value={title} onChange={setTitle} />
-          <Field label="Package LPA" value={pkg} onChange={setPkg} />
-          <Field label="Locations" value={loc} onChange={setLoc} />
-          <Field label="Min attendance %" value={minAtt} onChange={setMinAtt} />
-        </FormGrid>
-        <div className="mt-3">
-          <PrimaryButton
-            disabled={!companyId || !title}
-            onClick={() =>
-              run(async () => {
-                await createRecord("/api/drives", {
-                  companyId,
-                  title,
-                  packageLpa: Number(pkg),
-                  locations: loc,
-                  status: "OPEN",
-                  minAttendancePct: Number(minAtt),
-                  deadline: new Date(Date.now() + 12 * 86400000).toISOString().slice(0, 10),
-                });
-                setTitle("");
-                drives.reload();
-              })
-            }
-          >
-            Save drive
-          </PrimaryButton>
-        </div>
-      </Card>
+      {!recruiter && (
+        <>
+          <Card title="Add company">
+            <FormGrid>
+              <Field label="Company" value={coName} onChange={setCoName} />
+              <Field label="Industry" value={industry} onChange={setIndustry} />
+              <div className="flex items-end">
+                <PrimaryButton
+                  disabled={!coName}
+                  onClick={() =>
+                    run(async () => {
+                      await createRecord("/api/companies", { name: coName, industry });
+                      setCoName("");
+                      companies.reload();
+                    })
+                  }
+                >
+                  Save company
+                </PrimaryButton>
+              </div>
+            </FormGrid>
+            <ul className="mt-3 text-sm">
+              {(companies.data ?? []).map((c) => (
+                <li key={c.id}>
+                  {c.name} — {c.industry}
+                </li>
+              ))}
+            </ul>
+          </Card>
+          <Card title="Create drive">
+            <FormGrid>
+              <Select label="Company" value={companyId} onChange={setCompanyId} options={(companies.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
+              <Field label="Drive title" value={title} onChange={setTitle} />
+              <Field label="Package LPA" value={pkg} onChange={setPkg} />
+              <Field label="Locations" value={loc} onChange={setLoc} />
+              <Field label="Min attendance %" value={minAtt} onChange={setMinAtt} />
+            </FormGrid>
+            <div className="mt-3">
+              <PrimaryButton
+                disabled={!companyId || !title}
+                onClick={() =>
+                  run(async () => {
+                    await createRecord("/api/drives", {
+                      companyId,
+                      title,
+                      packageLpa: Number(pkg),
+                      locations: loc,
+                      status: "OPEN",
+                      minAttendancePct: Number(minAtt),
+                      deadline: new Date().toISOString().slice(0, 10),
+                    });
+                    setTitle("");
+                    drives.reload();
+                    calendar.reload();
+                  })
+                }
+              >
+                Save drive
+              </PrimaryButton>
+            </div>
+          </Card>
+          <Card title="Invite recruiter">
+            <FormGrid>
+              <Field label="Name" value={recName} onChange={setRecName} />
+              <Field label="Email" value={recEmail} onChange={setRecEmail} />
+              <Field label="Mobile" value={recPhone} onChange={setRecPhone} />
+              <Select label="Company" value={recCompany} onChange={setRecCompany} options={(companies.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
+            </FormGrid>
+            <div className="mt-3">
+              <PrimaryButton
+                disabled={!recName || !recEmail}
+                onClick={() =>
+                  run(async () => {
+                    const row = await api<{ email: string; tempPassword: string }>("/api/actions/placement/recruiters", {
+                      method: "POST",
+                      body: JSON.stringify({ fullName: recName, email: recEmail, phone: recPhone, companyId: recCompany }),
+                    });
+                    setNotice(`Recruiter ${row.email} can sign in. Temporary password: ${row.tempPassword}`);
+                    setRecName("");
+                    setRecEmail("");
+                    setRecPhone("");
+                  })
+                }
+              >
+                Send invite
+              </PrimaryButton>
+            </div>
+          </Card>
+        </>
+      )}
       <Card title="Drives">
         <Table
-          columns={["Drive", "Package", "Min attendance", "Status", "Eligibility"]}
-          rows={(drives.data ?? []).map((d) => [
-            d.title,
-            `${d.packageLpa} LPA (₹ lakh per year)`,
-            d.minAttendancePct ? `${d.minAttendancePct}%` : "—",
-            prettyLabel(d.status),
-            <PrimaryButton
-              onClick={() =>
-                run(async () => {
-                  const studentId = students.data?.[0]?.id;
-                  if (!studentId) throw new Error("Add a student first");
-                  const result = await api<{ eligible: boolean; reason: string; attendancePct: number }>(
-                    `/api/actions/eligibility/${d.id}/${studentId}`
-                  );
-                  setNotice(`${result.eligible ? "Eligible" : "Not eligible"} — ${result.reason} (attendance ${result.attendancePct}%).`);
-                })
-              }
-            >
-              Check first student
-            </PrimaryButton>,
-          ])}
+          columns={recruiter ? ["Drive", "Package", "Deadline"] : ["Drive", "Package", "Min attendance", "Status", "Eligibility"]}
+          rows={(drives.data ?? []).map((d) =>
+            recruiter
+              ? [d.title, `${d.packageLpa} LPA`, d.deadline ? formatDay(d.deadline) : "—"]
+              : [
+                  d.title,
+                  `${d.packageLpa} LPA (₹ lakh per year)`,
+                  d.minAttendancePct ? `${d.minAttendancePct}%` : "—",
+                  prettyLabel(d.status),
+                  <PrimaryButton
+                    onClick={() =>
+                      run(async () => {
+                        const studentId = students.data?.[0]?.id;
+                        if (!studentId) throw new Error("Add a student first");
+                        const result = await api<{ eligible: boolean; reason: string; attendancePct: number }>(
+                          `/api/actions/eligibility/${d.id}/${studentId}`
+                        );
+                        setNotice(`${result.eligible ? "Eligible" : "Not eligible"} — ${result.reason} (attendance ${result.attendancePct}%).`);
+                      })
+                    }
+                  >
+                    Check first student
+                  </PrimaryButton>,
+                ],
+          )}
         />
       </Card>
-      <Card title="Drive round templates">
-        <ul className="text-sm">
-          {(rounds.data ?? []).map((r, i) => (
-            <li key={i}>
-              {r.roundName} ({r.roundType})
-            </li>
-          ))}
-        </ul>
-      </Card>
-      <Card title="ATS">
+      {!recruiter && (
+        <Card title="Drive round templates">
+          <ul className="text-sm">
+            {(rounds.data ?? []).map((r, i) => (
+              <li key={i}>
+                {r.roundName} ({r.roundType})
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+      <Card title={recruiter ? "Candidate pool" : "ATS"}>
         <Table
-          columns={["Status", "Eligible", "Round", "Actions"]}
-          rows={(apps.data ?? []).map((a) => [
-            a.status,
+          columns={["Student", "Drive", "Status", "Eligible", "Round", "Actions"]}
+          rows={(apps.data ?? []).map((a) => {
+            const student = (students.data ?? []).find((s) => s.id === a.studentId);
+            const drive = (drives.data ?? []).find((d) => d.id === a.driveId);
+            return [
+            student?.fullName || "Candidate",
+            drive?.title || "Drive",
+            prettyLabel(a.status),
             a.eligibilityPassed === false ? "No" : a.eligibilityPassed ? "Yes" : "—",
             a.currentRound || "—",
             <span className="space-x-2">
@@ -231,17 +352,46 @@ function StaffPlacement() {
                   run(async () => {
                     await api(`/api/actions/applications/${a.id}/rounds`, {
                       method: "POST",
-                      body: JSON.stringify({ roundName: "HR", outcome: "PASS", feedback: "Clear communication", panel: "Campus HR" }),
+                      body: JSON.stringify({
+                        roundName: "HR",
+                        outcome: "PASS",
+                        feedback: "Clear communication",
+                        panel: "Campus HR",
+                        scheduledAt: new Date().toISOString(),
+                      }),
                     });
                     apps.reload();
                     interviews.reload();
+                    calendar.reload();
                   })
                 }
               >
                 Record round
               </PrimaryButton>
+              {!recruiter && (
+                <PrimaryButton
+                  onClick={() =>
+                    run(async () => {
+                      await api(`/api/actions/applications/${a.id}/offer`, {
+                        method: "POST",
+                        body: JSON.stringify({
+                          packageLpa: "6.5",
+                          joiningDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+                          notes: "Campus offer",
+                        }),
+                      });
+                      apps.reload();
+                      offers.reload();
+                      calendar.reload();
+                    })
+                  }
+                >
+                  Make offer
+                </PrimaryButton>
+              )}
             </span>,
-          ])}
+          ];
+          })}
         />
       </Card>
       <div className="grid gap-4 lg:grid-cols-3">
@@ -249,40 +399,138 @@ function StaffPlacement() {
           <ul className="text-sm">
             {(interviews.data ?? []).map((n, i) => (
               <li key={i}>
-                {n.roundName} — {n.outcome || "pending"}
+                {n.roundName} — {prettyLabel(n.outcome) || "pending"}
               </li>
             ))}
           </ul>
         </Card>
         <Card title="Offers">
-          <ul className="text-sm">
-            {(offers.data ?? []).map((o, i) => (
-              <li key={i}>
-                {o.packageLpa} LPA — {o.status}
+          <ul className="space-y-2 text-sm">
+            {(offers.data ?? []).length === 0 && <li className="text-slate-500">No offers yet.</li>}
+            {(offers.data ?? []).map((o) => (
+              <li key={o.id} className="space-y-1">
+                <div>
+                  {o.packageLpa} LPA — {prettyLabel(o.status)}
+                  {o.joiningDate ? ` · ${formatDay(o.joiningDate)}` : ""}
+                </div>
+                {!recruiter && (
+                  <span className="space-x-2">
+                    <PrimaryButton
+                      onClick={() =>
+                        run(async () => {
+                          const doc = await api<{ body: string }>(`/api/actions/offers/${o.id}/letter`);
+                          setLetter(doc.body);
+                        })
+                      }
+                    >
+                      Letter
+                    </PrimaryButton>
+                    {o.status === "OFFERED" && (
+                      <PrimaryButton
+                        onClick={() =>
+                          run(async () => {
+                            await api(`/api/actions/offers/${o.id}/accept`, { method: "POST", body: JSON.stringify({ accept: true }) });
+                            offers.reload();
+                            apps.reload();
+                          })
+                        }
+                      >
+                        Accept
+                      </PrimaryButton>
+                    )}
+                    {(o.status === "ACCEPTED" || o.status === "OFFERED") && (
+                      <PrimaryButton
+                        onClick={() =>
+                          run(async () => {
+                            await api(`/api/actions/offers/${o.id}/join`, { method: "POST", body: "{}" });
+                            offers.reload();
+                            apps.reload();
+                          })
+                        }
+                      >
+                        Joined
+                      </PrimaryButton>
+                    )}
+                  </span>
+                )}
               </li>
             ))}
           </ul>
         </Card>
         <Card title="Internships">
-          <ul className="text-sm">
-            {(internships.data ?? []).map((n, i) => (
-              <li key={i}>
-                {n.role} — {n.status}
+          {!recruiter && (
+            <FormGrid>
+              <Select label="Student" value={internStudent} onChange={setInternStudent} options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))} />
+              <Select label="Company" value={internCompany} onChange={setInternCompany} options={(companies.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
+              <Field label="Role" value={internRole} onChange={setInternRole} />
+              <Field label="Stipend" value={internStipend} onChange={setInternStipend} />
+              <div className="flex items-end">
+                <PrimaryButton
+                  disabled={!internStudent}
+                  onClick={() =>
+                    run(async () => {
+                      await api("/api/actions/placement/internships", {
+                        method: "POST",
+                        body: JSON.stringify({
+                          studentId: internStudent,
+                          companyId: internCompany,
+                          role: internRole,
+                          stipend: internStipend,
+                          startDate: new Date().toISOString().slice(0, 10),
+                          status: "APPLIED",
+                        }),
+                      });
+                      internships.reload();
+                    })
+                  }
+                >
+                  Add internship
+                </PrimaryButton>
+              </div>
+            </FormGrid>
+          )}
+          <ul className="mt-3 space-y-2 text-sm">
+            {(internships.data ?? []).length === 0 && <li className="text-slate-500">No internships yet.</li>}
+            {(internships.data ?? []).map((n) => (
+              <li key={n.id}>
+                {n.role} — {prettyLabel(n.status)}
+                {!recruiter && (
+                  <span className="ml-2 space-x-1">
+                    {["ONGOING", "COMPLETED", "CONVERTED"].map((st) => (
+                      <PrimaryButton
+                        key={st}
+                        onClick={() =>
+                          run(async () => {
+                            await api(`/api/actions/placement/internships/${n.id}/status`, {
+                              method: "POST",
+                              body: JSON.stringify({ status: st }),
+                            });
+                            internships.reload();
+                          })
+                        }
+                      >
+                        {prettyLabel(st)}
+                      </PrimaryButton>
+                    ))}
+                  </span>
+                )}
               </li>
             ))}
           </ul>
         </Card>
       </div>
-      <Card title="Salary benchmarks">
-        <ul className="text-sm">
-          {benches.error ? <li className="text-slate-500">Requires Plus/Enterprise package.</li> : null}
-          {(benches.data ?? []).map((b, i) => (
-            <li key={i}>
-              {b.role}, {b.city}: {b.medianLpa} LPA
-            </li>
-          ))}
-        </ul>
-      </Card>
+      {!recruiter && (
+        <Card title="Salary benchmarks">
+          <ul className="text-sm">
+            {benches.error ? <li className="text-slate-500">Not in this pack.</li> : null}
+            {(benches.data ?? []).map((b, i) => (
+              <li key={i}>
+                {b.role}, {b.city}: {b.medianLpa} LPA
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
     </div>
   );
 }

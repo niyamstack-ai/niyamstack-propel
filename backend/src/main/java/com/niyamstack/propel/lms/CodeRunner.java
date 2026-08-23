@@ -56,12 +56,15 @@ public class CodeRunner {
 
     public List<Map<String, Object>> languages() {
         List<Map<String, Object>> out = new ArrayList<>();
+        boolean piston = !pistonUrl.isBlank();
         for (Lang lang : Lang.values()) {
+            boolean local = lang == Lang.SQL || localReady(lang);
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("id", lang.id);
             row.put("label", lang.label);
-            row.put("available", lang == Lang.SQL || !pistonUrl.isBlank() || localReady(lang));
-            row.put("hint", lang.hint);
+            row.put("available", piston || local);
+            row.put("configured", piston || local);
+            row.put("hint", local || piston ? lang.hint : "Runner not configured. Set PROPEL_PISTON_URL or install the compiler.");
             row.put("starter", lang.starter);
             out.add(row);
         }
@@ -180,9 +183,15 @@ public class CodeRunner {
             if (remote != null) {
                 return remote;
             }
+            if (!localReady(lang)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST,
+                        "Code runner is not configured for " + lang.label + ". Set PROPEL_PISTON_URL or install the compiler.");
+            }
+            return local(lang, source, stdin);
         }
         if (!localReady(lang)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, lang.label + " is not installed on this server. Set PROPEL_PISTON_URL or install the compiler.");
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "Code runner is not configured. Set PROPEL_PISTON_URL or install the " + lang.label + " compiler.");
         }
         return local(lang, source, stdin);
     }

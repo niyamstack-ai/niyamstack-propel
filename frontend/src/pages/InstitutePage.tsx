@@ -12,9 +12,11 @@ type Org = {
   phone: string;
   website: string;
   packageTier: string;
+  productPack?: string;
   logoUrl?: string;
   brandPrimary?: string;
   brandSecondary?: string;
+  websitePublished?: boolean;
 };
 type Center = { id: string; name: string; code: string; city: string; address?: string };
 type Course = { id: string; code: string; name: string; fees: number; durationMonths?: number };
@@ -27,6 +29,7 @@ export function InstitutePage() {
   const batches = useApi<Batch[]>("/api/batches");
   const rooms = useApi<{ id: string; name: string; type: string }[]>("/api/classrooms");
   const years = useApi<{ id: string; name: string }[]>("/api/academic-years");
+  const terms = useApi<{ id: string; name: string }[]>("/api/terms");
 
   const [error, setError] = useState<string | null>(null);
   const [oName, setOName] = useState("");
@@ -46,6 +49,7 @@ export function InstitutePage() {
   const [bCourse, setBCourse] = useState("");
   const [bCenter, setBCenter] = useState("");
   const [bCap, setBCap] = useState("40");
+  const [bTerm, setBTerm] = useState("");
 
   const [roomName, setRoomName] = useState("");
   const [roomType, setRoomType] = useState("Classroom");
@@ -80,6 +84,7 @@ export function InstitutePage() {
         logoUrl,
         brandPrimary,
         brandSecondary,
+        websitePublished: org.data?.websitePublished === true,
       });
       org.reload();
     } catch (e) {
@@ -108,6 +113,7 @@ export function InstitutePage() {
         courseId: bCourse || null,
         centerId: bCenter || null,
         academicYearId: years.data?.[0]?.id || null,
+        termId: bTerm || terms.data?.[0]?.id || null,
         capacity: Number(bCap),
         status: "ACTIVE",
       });
@@ -125,13 +131,13 @@ export function InstitutePage() {
       <Card title="Organization profile">
         {org.data && (
           <p className="mb-3 text-sm text-slate-500">
-            {org.data.name} · GSTIN {org.data.gstin || "—"} · plan {prettyLabel(org.data.packageTier)}
+            {org.data.name} · GSTIN {org.data.gstin || "—"} · pack {prettyLabel(org.data.productPack)} · catalog {prettyLabel(org.data.packageTier)}
           </p>
         )}
         <FormGrid>
           <Field label="Institute name" value={oName} onChange={setOName} />
           <Field label="Legal name" value={legal} onChange={setLegal} />
-          <Field label="GSTIN" value={gstin} onChange={setGstin} />
+          <Field label="GSTIN" value={gstin} onChange={setGstin} placeholder="15-character GSTIN, e.g. 27AABCU9603R1ZX" />
           <Field label="Email" value={oEmail} onChange={setOEmail} />
           <Field label="Phone" value={oPhone} onChange={setOPhone} />
           <FileUpload label="Logo" value={logoUrl} accept="image/*" onChange={setLogoUrl} />
@@ -176,6 +182,7 @@ export function InstitutePage() {
           <Field label="Batch name" value={bName} onChange={setBName} />
           <Select label="Course" value={bCourse} onChange={setBCourse} options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
           <Select label="Center" value={bCenter} onChange={setBCenter} options={(centers.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
+          <Select label="Term" value={bTerm} onChange={setBTerm} options={(terms.data ?? []).map((t) => ({ value: t.id, label: t.name }))} />
           <Field label="Capacity" value={bCap} onChange={setBCap} />
         </FormGrid>
         <div className="mt-3">

@@ -7,21 +7,27 @@ import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi 
 
 export function CommsPage() {
   const { user } = useAuth();
-  const notes = useApi<{ channel: string; title: string; status: string }[]>("/api/notifications");
+  const notes = useApi<{ channel: string; title: string; status: string; detail?: string }[]>("/api/notifications");
   const anns = useApi<{ title: string; body: string }[]>("/api/announcements");
-  const tpls = useApi<{ eventType: string; channel: string }[]>("/api/message-templates");
+  const tpls = useApi<{ eventType: string; channel: string; body?: string }[]>("/api/message-templates");
   const inbox = useApi<{ fromName: string; subject: string; status: string }[]>("/api/inbox");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [channel, setChannel] = useState("IN_APP");
   const [error, setError] = useState<string | null>(null);
+  const [sendStatus, setSendStatus] = useState<string | null>(null);
   const canSend = user?.role === "OWNER" || user?.role === "FACULTY" || user?.role === "COUNSELOR" || user?.role === "PLACEMENT_HEAD";
 
   async function send() {
     setError(null);
+    setSendStatus(null);
     try {
       await createRecord("/api/announcements", { title, body });
-      await api("/api/actions/notices/send", { method: "POST", body: JSON.stringify({ channel, title, body }) });
+      const out = await api<{ sent?: number; status?: string; detail?: string }>("/api/actions/notices/send", {
+        method: "POST",
+        body: JSON.stringify({ channel, title, body }),
+      });
+      setSendStatus(out.detail || `${prettyLabel(out.status)} · ${out.sent ?? 0} recipient(s)`);
       setTitle("");
       setBody("");
       anns.reload();
@@ -57,12 +63,13 @@ export function CommsPage() {
           </div>
         </FormGrid>
         <ErrorText error={error} />
+        {sendStatus && <p className="mt-2 text-sm text-emerald-700">{sendStatus}</p>}
       </Card>
       )}
       <Card title="Notifications">
         <Table
-          columns={["Channel", "Title", "Status"]}
-          rows={(notes.data ?? []).map((n) => [prettyLabel(n.channel), n.title, prettyLabel(n.status)])}
+          columns={["Channel", "Title", "Status", "Delivery"]}
+          rows={(notes.data ?? []).map((n) => [prettyLabel(n.channel), n.title, prettyLabel(n.status), n.detail || "—"])}
         />
       </Card>
       <Card title="Announcements">
@@ -80,7 +87,8 @@ export function CommsPage() {
           <ul className="text-sm">
             {(tpls.data ?? []).map((t, i) => (
               <li key={i}>
-                {t.eventType} · {t.channel}
+                {prettyLabel(t.eventType)} · {prettyLabel(t.channel)}
+                {t.body ? ` — ${t.body}` : ""}
               </li>
             ))}
           </ul>

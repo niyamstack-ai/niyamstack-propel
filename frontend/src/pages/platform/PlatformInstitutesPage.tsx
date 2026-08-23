@@ -68,9 +68,11 @@ export function PlatformInstitutesPage() {
         </p>
       )}
       {list.error && <p className="text-sm text-red-600">{list.error}</p>}
-      <Card title={`${rows.length} institutes`}>
+      <Card title={list.loading ? "Institutes" : `${rows.length} institutes`}>
         <Table
           columns={["Institute", "Access", "Payment", "Deal", ""]}
+          loading={list.loading}
+          empty="No institutes yet."
           rows={rows.map((org) => [
             <Link key={`${org.id}-n`} className="block hover:text-brand" to={`/platform/institutes/${org.id}`}>
               <p className="font-medium text-navy">{org.name}</p>

@@ -61,6 +61,9 @@ public class DataScope {
         if (Roles.RECRUITER.equals(role) && hiddenFromRecruiter(type)) {
             return List.of();
         }
+        if (Roles.RECRUITER.equals(role)) {
+            return restrictRecruiter(type, rows, user);
+        }
         if (Access.centerScoped(user) && user.centerId() != null) {
             return rows.stream().filter(e -> {
                 UUID center = centerOf(e);
@@ -75,7 +78,10 @@ public class DataScope {
                 Inquiry.class, CounselingNote.class, AdmissionForm.class, Referral.class, Scholarship.class,
                 EligibilityRule.class, Workflow.class, CustomField.class, DocumentTemplate.class,
                 FeePlan.class, Company.class, IndustryAccount.class, IndustryEvent.class, Alumnus.class,
-                AlumniJob.class, SupportTicket.class, AuditEvent.class, DriveRound.class
+                AlumniJob.class, SupportTicket.class, AuditEvent.class, DriveRound.class,
+                Employee.class, StaffAttendance.class, BiometricPunch.class, LeaveBalance.class, LeaveRequest.class,
+                SalaryStructure.class, Payslip.class, StaffVacancy.class, StaffCandidate.class, ApprovalRequest.class,
+                ReportDefinition.class, ScheduledReport.class, AccreditationFolder.class, AccreditationEvidence.class
         ).contains(type);
     }
 
@@ -83,7 +89,8 @@ public class DataScope {
         return hiddenFromLearner(type) || Set.of(
                 ContentItem.class, Assignment.class, Submission.class, Assessment.class, Question.class,
                 ExamAttempt.class, LmsPackage.class, LmsLaunch.class, Application.class, Drive.class,
-                InterviewRound.class, Offer.class, Skill.class, Resume.class, MockInterview.class
+                InterviewRound.class, Offer.class, Skill.class, Resume.class, MockInterview.class,
+                OneToOneSession.class
         ).contains(type);
     }
 
@@ -109,6 +116,14 @@ public class DataScope {
         if (sid != null) {
             return me.getId().equals(sid);
         }
+        if (e instanceof Offer o) {
+            try {
+                Application a = store.getOwned(Application.class, o.getApplicationId(), me.getOrganizationId());
+                return me.getId().equals(a.getStudentId());
+            } catch (Exception ex) {
+                return false;
+            }
+        }
         if (e instanceof Invoice inv) {
             return me.getId().equals(inv.getStudentId());
         }
@@ -133,6 +148,12 @@ public class DataScope {
             return a.getBatchId() != null && a.getBatchId().equals(me.getBatchId());
         }
         if (e instanceof Assessment a) {
+            if (!a.isPublished()) {
+                return false;
+            }
+            if (a.getScheduledAt() != null && a.getScheduledAt().isAfter(java.time.Instant.now())) {
+                return false;
+            }
             if (a.getCourseId() != null) {
                 return enrolledCourseIds(me).contains(a.getCourseId());
             }
@@ -147,10 +168,16 @@ public class DataScope {
         if (e instanceof TimetableSlot t) {
             return t.getBatchId() != null && t.getBatchId().equals(me.getBatchId());
         }
+        if (e instanceof OneToOneSession s) {
+            return s.getStudentId() == null || me.getId().equals(s.getStudentId());
+        }
         if (e instanceof Announcement a) {
             return a.getBatchId() == null || a.getBatchId().equals(me.getBatchId());
         }
         if (e instanceof Notification n) {
+            if (n.getStudentId() != null) {
+                return me.getId().equals(n.getStudentId());
+            }
             String audience = n.getAudience();
             if (audience == null || audience.isBlank() || "ALL".equalsIgnoreCase(audience) || "STUDENT".equalsIgnoreCase(audience)) {
                 return true;
@@ -207,6 +234,7 @@ public class DataScope {
     }
 
     private static UUID studentIdOf(TenantEntity e) {
+        if (e instanceof Invoice inv) return inv.getStudentId();
         if (e instanceof Submission s) return s.getStudentId();
         if (e instanceof AttendanceRecord a) return a.getStudentId();
         if (e instanceof DoubtTicket d) return d.getStudentId();
@@ -215,16 +243,77 @@ public class DataScope {
         if (e instanceof MockInterview m) return m.getStudentId();
         if (e instanceof PracticeAttempt p) return p.getStudentId();
         if (e instanceof Application a) return a.getStudentId();
+        if (e instanceof XapiStatement x) return x.getStudentId();
         if (e instanceof ExamAttempt a) return a.getStudentId();
         if (e instanceof FeeInstallment f) return f.getStudentId();
         if (e instanceof Guardian g) return g.getStudentId();
         if (e instanceof StudentDocument d) return d.getStudentId();
         if (e instanceof Certificate c) return c.getStudentId();
+        if (e instanceof Notification n) return n.getStudentId();
         if (e instanceof Internship i) return i.getStudentId();
+        if (e instanceof OneToOneSession s) return s.getStudentId();
         if (e instanceof CourseEnrollment en) return en.getStudentId();
         if (e instanceof ContentProgress p) return p.getStudentId();
         if (e instanceof ChatThread t) return t.getStudentId();
         return null;
+    }
+
+    private <T extends TenantEntity> List<T> restrictRecruiter(Class<T> type, List<T> rows, PropelUser user) {
+        AppUser rec;
+        try {
+            rec = store.get(AppUser.class, user.userId());
+        } catch (Exception e) {
+            return rows;
+        }
+        UUID companyId = rec.getCompanyId();
+        if (companyId == null) {
+            return rows;
+        }
+        return rows.stream().filter(e -> recruiterCompanyOk(type, e, companyId, user.organizationId())).toList();
+    }
+
+    private boolean recruiterCompanyOk(Class<?> type, TenantEntity e, UUID companyId, UUID orgId) {
+        if (e instanceof Company c) {
+            return companyId.equals(c.getId());
+        }
+        if (e instanceof Drive d) {
+            return companyId.equals(d.getCompanyId());
+        }
+        if (e instanceof Internship i) {
+            return companyId.equals(i.getCompanyId());
+        }
+        if (e instanceof Application a) {
+            return driveCompany(a.getDriveId(), orgId, companyId);
+        }
+        if (e instanceof InterviewRound r) {
+            try {
+                Application a = store.getOwned(Application.class, r.getApplicationId(), orgId);
+                return driveCompany(a.getDriveId(), orgId, companyId);
+            } catch (Exception ex) {
+                return false;
+            }
+        }
+        if (e instanceof Offer o) {
+            try {
+                Application a = store.getOwned(Application.class, o.getApplicationId(), orgId);
+                return driveCompany(a.getDriveId(), orgId, companyId);
+            } catch (Exception ex) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean driveCompany(UUID driveId, UUID orgId, UUID companyId) {
+        if (driveId == null) {
+            return false;
+        }
+        try {
+            Drive d = store.getOwned(Drive.class, driveId, orgId);
+            return companyId.equals(d.getCompanyId());
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private Set<UUID> enrolledCourseIds(Student me) {

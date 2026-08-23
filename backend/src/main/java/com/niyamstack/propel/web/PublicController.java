@@ -2,10 +2,12 @@ package com.niyamstack.propel.web;
 
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
+import com.niyamstack.propel.ess.EssService;
 import com.niyamstack.propel.domain.Model.AdmissionForm;
 import com.niyamstack.propel.domain.Model.Course;
 import com.niyamstack.propel.domain.Model.Organization;
 import com.niyamstack.propel.integration.PaymentGateway;
+import com.niyamstack.propel.grow.GrowService;
 import com.niyamstack.propel.storefront.StorefrontService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
@@ -28,23 +30,37 @@ public class PublicController {
     private final Store store;
     private final StorefrontService storefront;
     private final PaymentGateway payments;
+    private final EssService ess;
+    private final GrowService grow;
     private final Path filesRoot;
 
     public PublicController(
             Store store,
             StorefrontService storefront,
             PaymentGateway payments,
+            EssService ess,
+            GrowService grow,
             @Value("${app.storage.local-dir:./data/files}") String dir
     ) {
         this.store = store;
         this.storefront = storefront;
         this.payments = payments;
+        this.ess = ess;
+        this.grow = grow;
         this.filesRoot = Path.of(dir).toAbsolutePath().normalize();
     }
 
     public record PurchaseRequest(String fullName, String email, String phone, UUID courseId, String couponCode, String validityOption) {}
     public record ConfirmRequest(UUID invoiceId, String orderId, String paymentId, String signature) {}
     public record CouponRequest(UUID courseId, String code) {}
+    public record RegisterRequest(String fullName, String email, String phone, UUID courseId) {}
+    public record RegisterVerifyRequest(String phone, String otp) {}
+    public record EnquireRequest(String fullName, String email, String phone, String message, UUID courseId, String landingSlug, String referralCode) {}
+
+    @GetMapping("/packs")
+    public Map<String, Object> packs() {
+        return com.niyamstack.propel.catalog.Packs.catalogMap();
+    }
 
     @GetMapping("/sites/by-host")
     public Map<String, Object> byHost(@RequestParam String host) {
@@ -52,52 +68,52 @@ public class PublicController {
         if (org == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "No institute website for this domain");
         }
-        return storefront.publicOrg(storefront.liveOrg(org.getSlug()));
+        return storefront.publicOrg(org);
     }
 
     @GetMapping("/sites/{slug}/pages")
     public List<Map<String, Object>> pages(@PathVariable String slug) {
-        return storefront.publicPages(storefront.liveOrg(slug));
+        return storefront.publicPages(storefront.orgBySlug(slug));
     }
 
     @GetMapping("/cms/{slug}/pages")
     public List<Map<String, Object>> cmsPages(@PathVariable String slug) {
-        return storefront.publicPages(storefront.liveOrg(slug));
+        return storefront.publicPages(storefront.orgBySlug(slug));
     }
 
     @GetMapping("/sites/{slug}/pages/{pageSlug}")
     public Map<String, Object> page(@PathVariable String slug, @PathVariable String pageSlug) {
-        return storefront.publicPage(storefront.liveOrg(slug), pageSlug);
+        return storefront.publicPage(storefront.orgBySlug(slug), pageSlug);
     }
 
     @GetMapping("/cms/{slug}/pages/{pageSlug}")
     public Map<String, Object> cmsPage(@PathVariable String slug, @PathVariable String pageSlug) {
-        return storefront.publicPage(storefront.liveOrg(slug), pageSlug);
+        return storefront.publicPage(storefront.orgBySlug(slug), pageSlug);
     }
 
     @GetMapping("/sites/{slug}")
     public Map<String, Object> site(@PathVariable String slug) {
-        return storefront.publicOrg(storefront.liveOrg(slug));
+        return storefront.publicOrg(storefront.orgBySlug(slug));
     }
 
     @GetMapping("/sites/{slug}/courses")
     public List<Map<String, Object>> courses(@PathVariable String slug) {
-        return storefront.catalog(storefront.liveOrg(slug));
+        return storefront.catalog(storefront.orgBySlug(slug));
     }
 
     @GetMapping("/sites/{slug}/courses/{courseId}")
     public Map<String, Object> course(@PathVariable String slug, @PathVariable UUID courseId) {
-        return storefront.course(storefront.liveOrg(slug), courseId);
+        return storefront.course(storefront.orgBySlug(slug), courseId);
     }
 
     @GetMapping("/sites/{slug}/courses/{courseId}/outline")
     public List<Map<String, Object>> outline(@PathVariable String slug, @PathVariable UUID courseId) {
-        return storefront.courseOutline(storefront.liveOrg(slug), courseId);
+        return storefront.courseOutline(storefront.orgBySlug(slug), courseId);
     }
 
     @GetMapping("/sites/{slug}/courses/{courseId}/cover")
     public ResponseEntity<Resource> cover(@PathVariable String slug, @PathVariable UUID courseId) {
-        Organization org = storefront.liveOrg(slug);
+        Organization org = storefront.orgBySlug(slug);
         Course course = store.getOwned(Course.class, courseId, org.getId());
         if (!course.isActive() || !course.isPublished()) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Course not found");
@@ -220,18 +236,54 @@ public class PublicController {
         return store.save(form);
     }
 
+    @PostMapping("/sites/{slug}/punch")
+    public Map<String, Object> punch(@PathVariable String slug, @RequestBody Map<String, Object> body) {
+        return ess.publicPunch(slug, body);
+    }
+
     @PostMapping("/sites/{slug}/hit")
     public Map<String, Boolean> hit(@PathVariable String slug, @RequestBody(required = false) Map<String, String> body) {
-        Organization org = storefront.liveOrg(slug);
+        Organization org = storefront.orgBySlug(slug);
         String kind = body == null ? "SESSION" : body.getOrDefault("kind", "SESSION");
         String path = body == null ? null : body.get("path");
         storefront.recordHit(org, kind, path);
         return Map.of("ok", true);
     }
 
+    @PostMapping("/sites/{slug}/register/otp")
+    public Map<String, Object> registerOtp(@PathVariable String slug, @RequestBody RegisterRequest body) {
+        return storefront.registerOtp(slug, body.fullName(), body.email(), body.phone(), body.courseId());
+    }
+
+    @PostMapping("/sites/{slug}/register/verify")
+    public Map<String, Object> registerVerify(@PathVariable String slug, @RequestBody RegisterVerifyRequest body) {
+        return storefront.registerVerify(slug, body.phone(), body.otp());
+    }
+
+    @PostMapping("/sites/{slug}/enquire")
+    public Map<String, Object> enquire(@PathVariable String slug, @RequestBody EnquireRequest body) {
+        return storefront.enquire(slug, body.fullName(), body.email(), body.phone(), body.message(), body.courseId(),
+                body.landingSlug(), body.referralCode());
+    }
+
+    @GetMapping("/sites/{slug}/landing/{pageSlug}")
+    public Map<String, Object> landing(@PathVariable String slug, @PathVariable String pageSlug) {
+        return grow.publicLanding(slug, pageSlug);
+    }
+
+    @GetMapping("/sites/{slug}/one-to-one")
+    public List<Map<String, Object>> oneToOne(@PathVariable String slug) {
+        return grow.publicOfferings(slug);
+    }
+
+    @GetMapping("/sites/{slug}/banners")
+    public List<Map<String, Object>> banners(@PathVariable String slug) {
+        return grow.publicBanners(slug);
+    }
+
     @GetMapping("/sites/{slug}/manifest")
     public Map<String, Object> manifest(@PathVariable String slug) {
-        Organization org = storefront.liveOrg(slug);
+        Organization org = storefront.orgBySlug(slug);
         String start = org.getCustomDomain() == null || org.getCustomDomain().isBlank() ? "/s/" + org.getSlug() : "/";
         return Map.of(
                 "name", org.getName() == null ? "Student app" : org.getName(),

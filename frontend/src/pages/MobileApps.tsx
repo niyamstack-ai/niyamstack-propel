@@ -1,0 +1,339 @@
+import { useEffect, useState } from "react";
+import { Link, Navigate } from "react-router-dom";
+import { api } from "../api";
+import { useAuth } from "../auth";
+import { prettyLabel } from "../labels";
+import { enqueueOffline, flushOffline, pendingOffline } from "../offline";
+import { Card, ErrorText, Field, PrimaryButton, Select, formatDay, formatInr, useApi } from "../ui";
+
+type Home = {
+  role?: string;
+  name?: string;
+  student?: { id: string; fullName: string };
+  attendance?: { sessionDate?: string; status?: string }[];
+  invoices?: { invoiceNo?: string; amount?: number; status?: string }[];
+  notices?: { title?: string; body?: string }[];
+  content?: { id: string; title: string; contentType?: string }[];
+  drives?: { id: string; title: string; packageLpa?: number }[];
+  batches?: { id: string; name: string }[];
+  submissions?: { id: string; assignmentId?: string; status?: string }[];
+  live?: { id: string; title: string; startsAt?: string }[];
+  students?: { id: string; fullName: string; batchId?: string }[];
+};
+
+export function MobileApp() {
+  const { user, token } = useAuth();
+  const [tab, setTab] = useState("home");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [offline, setOffline] = useState(!navigator.onLine);
+  const home = useApi<Home>("/api/actions/mobile/home");
+  const faculty = user?.role === "FACULTY" || user?.role === "OWNER";
+
+  useEffect(() => {
+    const on = () => setOffline(false);
+    const off = () => setOffline(true);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!navigator.onLine || !token) return;
+    flushOffline(api)
+      .then((n) => {
+        if (n) {
+          setNotice(`Synced ${n} offline action(s).`);
+          home.reload();
+        }
+      })
+      .catch(() => undefined);
+  }, [token, offline]);
+
+  if (!token) return <Navigate to="/login" replace />;
+
+  const tabs = faculty
+    ? [
+        ["home", "Batches"],
+        ["attend", "Attendance"],
+        ["notices", "Notices"],
+        ["grade", "Grade"],
+      ]
+    : [
+        ["home", "Today"],
+        ["learn", "Learn"],
+        ["fees", "Fees"],
+        ["jobs", "Jobs"],
+      ];
+
+  return (
+    <div className="mx-auto min-h-screen max-w-md bg-mist pb-20">
+      <header className="sticky top-0 z-10 border-b border-line bg-navy px-4 py-3 text-white">
+        <p className="text-xs uppercase tracking-wide text-white/70">{faculty ? "Faculty app" : "Student app"}</p>
+        <h1 className="text-lg font-semibold">{user?.orgName || home.data?.name || "Propel"}</h1>
+        {offline && <p className="text-xs text-amber-200">Offline — actions queue and sync later.</p>}
+      </header>
+      <main className="space-y-4 p-4">
+        <ErrorText error={error || home.error} />
+        {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+        {tab === "home" && !faculty && <StudentToday data={home.data ?? undefined} />}
+        {tab === "learn" && <StudentLearn data={home.data ?? undefined} />}
+        {tab === "fees" && <StudentFees data={home.data ?? undefined} />}
+        {tab === "jobs" && <StudentJobs data={home.data ?? undefined} />}
+        {tab === "home" && faculty && <FacultyBatches data={home.data ?? undefined} />}
+        {tab === "attend" && faculty && (
+          <FacultyAttend
+            data={home.data ?? undefined}
+            onError={setError}
+            onNotice={setNotice}
+            reload={home.reload}
+          />
+        )}
+        {tab === "notices" && faculty && (
+          <FacultyNotice
+            onError={setError}
+            onNotice={setNotice}
+            reload={home.reload}
+          />
+        )}
+        {tab === "grade" && faculty && <FacultyGrade data={home.data ?? undefined} />}
+        <p className="text-center text-xs text-slate-400">
+          <Link className="text-brand" to="/">
+            Open desktop portal
+          </Link>
+        </p>
+      </main>
+      <nav className="fixed bottom-0 left-0 right-0 mx-auto grid max-w-md grid-cols-4 border-t border-line bg-white">
+        {tabs.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            className={`py-3 text-xs ${tab === id ? "font-semibold text-brand" : "text-slate-500"}`}
+            onClick={() => setTab(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+function StudentToday({ data }: { data?: Home }) {
+  return (
+    <>
+      <Card title="Attendance">
+        <ul className="text-sm">
+          {(data?.attendance ?? []).slice(0, 8).map((a, i) => (
+            <li key={i}>
+              {formatDay(a.sessionDate)} — {prettyLabel(a.status)}
+            </li>
+          ))}
+          {(data?.attendance ?? []).length === 0 && <li className="text-slate-500">No attendance yet.</li>}
+        </ul>
+      </Card>
+      <Card title="Notices">
+        <ul className="text-sm">
+          {(data?.notices ?? []).map((n, i) => (
+            <li key={i}>{n.title || n.body}</li>
+          ))}
+          {(data?.notices ?? []).length === 0 && <li className="text-slate-500">No notices.</li>}
+        </ul>
+      </Card>
+    </>
+  );
+}
+
+function StudentLearn({ data }: { data?: Home }) {
+  return (
+    <Card title="Content">
+      <ul className="text-sm">
+        {(data?.content ?? []).map((c) => (
+          <li key={c.id}>
+            {c.title} {c.contentType ? `· ${c.contentType}` : ""}
+          </li>
+        ))}
+        {(data?.content ?? []).length === 0 && <li className="text-slate-500">No published content yet.</li>}
+      </ul>
+      <Link className="mt-3 inline-block text-sm text-brand" to="/courses">
+        Open courses
+      </Link>
+    </Card>
+  );
+}
+
+function StudentFees({ data }: { data?: Home }) {
+  return (
+    <Card title="Due fees">
+      <ul className="text-sm">
+        {(data?.invoices ?? []).map((i, n) => (
+          <li key={n}>
+            {i.invoiceNo} — {formatInr(i.amount)} ({prettyLabel(i.status)})
+          </li>
+        ))}
+        {(data?.invoices ?? []).length === 0 && <li className="text-slate-500">No dues.</li>}
+      </ul>
+      <Link className="mt-3 inline-block text-sm text-brand" to="/fees">
+        Pay fees
+      </Link>
+    </Card>
+  );
+}
+
+function StudentJobs({ data }: { data?: Home }) {
+  return (
+    <Card title="Open drives">
+      <ul className="text-sm">
+        {(data?.drives ?? []).map((d) => (
+          <li key={d.id}>
+            {d.title} {d.packageLpa ? `· ${d.packageLpa} LPA` : ""}
+          </li>
+        ))}
+        {(data?.drives ?? []).length === 0 && <li className="text-slate-500">No open drives.</li>}
+      </ul>
+      <Link className="mt-3 inline-block text-sm text-brand" to="/placement">
+        Apply
+      </Link>
+    </Card>
+  );
+}
+
+function FacultyBatches({ data }: { data?: Home }) {
+  return (
+    <>
+      <Card title="My batches">
+        <ul className="text-sm">
+          {(data?.batches ?? []).map((b) => (
+            <li key={b.id}>{b.name}</li>
+          ))}
+          {(data?.batches ?? []).length === 0 && <li className="text-slate-500">No batches yet.</li>}
+        </ul>
+      </Card>
+      <Card title="Live classes">
+        <ul className="text-sm">
+          {(data?.live ?? []).map((l) => (
+            <li key={l.id}>{l.title}</li>
+          ))}
+        </ul>
+      </Card>
+    </>
+  );
+}
+
+function FacultyAttend({
+  data,
+  onError,
+  onNotice,
+  reload,
+}: {
+  data?: Home;
+  onError: (v: string | null) => void;
+  onNotice: (v: string | null) => void;
+  reload: () => void;
+}) {
+  const [batchId, setBatchId] = useState("");
+  const students = (data?.students ?? []).filter((s) => !batchId || s.batchId === batchId);
+  async function mark(studentId: string) {
+    onError(null);
+    const payload = {
+      type: "ATTENDANCE" as const,
+      studentId,
+      batchId,
+      sessionDate: new Date().toISOString().slice(0, 10),
+      status: "PRESENT",
+    };
+    try {
+      if (!navigator.onLine) {
+        enqueueOffline(payload);
+        onNotice(`Queued. ${pendingOffline().length} waiting to sync.`);
+        return;
+      }
+      await api("/api/attendance", { method: "POST", body: JSON.stringify({ studentId, batchId, sessionDate: payload.sessionDate, status: "PRESENT", source: "APP" }) });
+      onNotice("Marked present.");
+      reload();
+    } catch (e) {
+      enqueueOffline(payload);
+      onNotice("Saved offline. Will sync when you are back online.");
+      onError((e as Error).message);
+    }
+  }
+  return (
+    <Card title="Mark attendance">
+      <Select label="Batch" value={batchId} onChange={setBatchId} options={(data?.batches ?? []).map((b) => ({ value: b.id, label: b.name }))} />
+      <ul className="mt-3 space-y-2 text-sm">
+        {students.map((s) => (
+          <li key={s.id} className="flex items-center justify-between gap-2">
+            <span>{s.fullName}</span>
+            <PrimaryButton onClick={() => mark(s.id)}>Present</PrimaryButton>
+          </li>
+        ))}
+        {students.length === 0 && <li className="text-slate-500">Pick a batch.</li>}
+      </ul>
+    </Card>
+  );
+}
+
+function FacultyNotice({
+  onError,
+  onNotice,
+  reload,
+}: {
+  onError: (v: string | null) => void;
+  onNotice: (v: string | null) => void;
+  reload: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  return (
+    <Card title="Publish notice">
+      <Field label="Title" value={title} onChange={setTitle} />
+      <Field label="Body" value={body} onChange={setBody} />
+      <div className="mt-3">
+        <PrimaryButton
+          disabled={!title}
+          onClick={async () => {
+            onError(null);
+            const payload = { type: "NOTICE" as const, title, body };
+            try {
+              if (!navigator.onLine) {
+                enqueueOffline(payload);
+                onNotice("Notice queued offline.");
+                return;
+              }
+              await api("/api/announcements", { method: "POST", body: JSON.stringify({ title, body }) });
+              setTitle("");
+              setBody("");
+              onNotice("Notice published.");
+              reload();
+            } catch (e) {
+              enqueueOffline(payload);
+              onNotice("Saved offline.");
+              onError((e as Error).message);
+            }
+          }}
+        >
+          Publish
+        </PrimaryButton>
+      </div>
+    </Card>
+  );
+}
+
+function FacultyGrade({ data }: { data?: Home }) {
+  return (
+    <Card title="Pending submissions">
+      <ul className="text-sm">
+        {(data?.submissions ?? []).map((s) => (
+          <li key={s.id}>{prettyLabel(s.status) || "Submitted"}</li>
+        ))}
+        {(data?.submissions ?? []).length === 0 && <li className="text-slate-500">Nothing to grade.</li>}
+      </ul>
+      <Link className="mt-3 inline-block text-sm text-brand" to="/courses">
+        Open courses to grade
+      </Link>
+    </Card>
+  );
+}

@@ -12,6 +12,15 @@ type Inquiry = {
   source: string;
   stage: string;
 };
+type Student = { id: string; fullName: string };
+type Referral = { id: string; code?: string; referrerName: string; status: string; incentiveAmount?: number };
+type Scholarship = { id: string; name: string; amount?: number; percent?: number; approvalStatus: string };
+
+const STAGES = [
+  { value: "NEW", label: "New" },
+  { value: "COUNSELING", label: "Counselling" },
+  { value: "DEMO", label: "Demo" },
+];
 
 export function CrmPage() {
   const inquiries = useApi<Inquiry[]>("/api/inquiries");
@@ -19,69 +28,88 @@ export function CrmPage() {
   const batches = useApi<{ id: string; name: string }[]>("/api/batches");
   const notes = useApi<{ note: string; stage: string }[]>("/api/counseling-notes");
   const forms = useApi<{ applicantName: string; status: string }[]>("/api/admission-forms");
+  const students = useApi<Student[]>("/api/students");
+  const referrals = useApi<Referral[]>("/api/referrals");
+  const scholarships = useApi<Scholarship[]>("/api/scholarships");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [source, setSource] = useState("WALKIN");
   const [noteInq, setNoteInq] = useState("");
   const [note, setNote] = useState("");
+  const [noteStage, setNoteStage] = useState("COUNSELING");
   const [convertId, setConvertId] = useState("");
   const [convertCourse, setConvertCourse] = useState("");
   const [convertBatch, setConvertBatch] = useState("");
+  const [refName, setRefName] = useState("");
+  const [refStudent, setRefStudent] = useState("");
+  const [schName, setSchName] = useState("");
+  const [schStudent, setSchStudent] = useState("");
+  const [schAmt, setSchAmt] = useState("2000");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  async function capture() {
+  async function run(fn: () => Promise<void>) {
     setError(null);
+    setNotice(null);
     try {
-      await createRecord("/api/inquiries", {
-        fullName: name,
-        phone,
-        email: email || undefined,
-        source,
-        stage: "NEW",
-      });
-      setName("");
-      setPhone("");
-      setEmail("");
-      inquiries.reload();
+      await fn();
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
+  async function capture() {
+    await run(async () => {
+      await createRecord("/api/inquiries", { fullName: name, phone, email: email || undefined, source, stage: "NEW" });
+      setName("");
+      setPhone("");
+      setEmail("");
+      inquiries.reload();
+    });
+  }
+
+  async function move(id: string, stage: string) {
+    await run(async () => {
+      await api(`/api/actions/inquiries/${id}/stage`, { method: "POST", body: JSON.stringify({ stage }) });
+      inquiries.reload();
+    });
+  }
+
   async function convert() {
     if (!convertId) return;
     if (!window.confirm("Enrol this lead as a student?")) return;
-    setError(null);
-    try {
+    await run(async () => {
       await api(`/api/actions/inquiries/${convertId}/convert`, {
         method: "POST",
         body: JSON.stringify({ courseId: convertCourse || undefined, batchId: convertBatch || undefined }),
       });
       setConvertId("");
       inquiries.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    }
+      students.reload();
+    });
   }
 
   async function addNote() {
-    setError(null);
-    try {
-      await createRecord("/api/counseling-notes", { inquiryId: noteInq, note, stage: "COUNSELING" });
+    await run(async () => {
+      await api("/api/actions/grow/notes", {
+        method: "POST",
+        body: JSON.stringify({ inquiryId: noteInq, note, stage: noteStage }),
+      });
       setNote("");
       notes.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    }
+      inquiries.reload();
+    });
   }
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-navy">Admissions</h1>
-        <p className="text-sm text-slate-500">Walk-ins and website leads. Enrol them as students when they join.</p>
+        <p className="text-sm text-slate-500">Move a lead New → Counselling → Demo → Enrolled. Website and referral links land here.</p>
       </div>
+      <ErrorText error={error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       <Card title="Capture inquiry">
         <FormGrid>
           <Field label="Name" value={name} onChange={setName} />
@@ -100,55 +128,61 @@ export function CrmPage() {
           />
         </FormGrid>
         <div className="mt-3">
-          <PrimaryButton disabled={!name || !phone} onClick={capture}>
+          <PrimaryButton disabled={!name || !phone} onClick={() => void capture()}>
             Save lead
           </PrimaryButton>
         </div>
-        <ErrorText error={error} />
       </Card>
-      <Card title="Leads">
-        <Table
-          empty="No leads yet. Add a walk-in above."
-          columns={["Name", "Phone", "Came from", "Status", ""]}
-          rows={(inquiries.data ?? []).map((i) => [
-            i.fullName,
-            i.phone,
-            prettyLabel(i.source),
-            prettyLabel(i.stage),
-            i.stage === "CONVERTED" ? (
-              "Enrolled"
-            ) : (
-              <LinkButton onClick={() => setConvertId(i.id)}>Enrol as student</LinkButton>
-            ),
-          ])}
-        />
-        {convertId && (
-          <div className="mt-4 rounded-xl bg-mist p-3">
-            <p className="mb-2 text-sm font-medium text-navy">Choose course and batch, then enrol</p>
-            <FormGrid>
-              <Select label="Course" value={convertCourse} onChange={setConvertCourse} options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
-              <Select label="Batch" value={convertBatch} onChange={setConvertBatch} options={(batches.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
-              <div className="flex items-end gap-2">
-                <PrimaryButton onClick={() => void convert()}>Enrol</PrimaryButton>
-                <button type="button" className="text-sm text-slate-500" onClick={() => setConvertId("")}>
-                  Cancel
-                </button>
-              </div>
-            </FormGrid>
-          </div>
-        )}
-      </Card>
+      <div className="grid gap-4 lg:grid-cols-4">
+        {["NEW", "COUNSELING", "DEMO", "CONVERTED"].map((stage) => (
+          <Card key={stage} title={prettyLabel(stage)}>
+            <ul className="space-y-3 text-sm">
+              {(inquiries.data ?? [])
+                .filter((i) => (i.stage || "NEW") === stage)
+                .map((i) => (
+                  <li key={i.id} className="rounded-lg border border-line p-2">
+                    <p className="font-medium text-navy">{i.fullName}</p>
+                    <p className="text-xs text-slate-500">{i.phone} · {prettyLabel(i.source)}</p>
+                    {stage !== "CONVERTED" && (
+                      <span className="mt-2 flex flex-wrap gap-2">
+                        {STAGES.filter((s) => s.value !== stage).map((s) => (
+                          <LinkButton key={s.value} onClick={() => void move(i.id, s.value)}>
+                            {s.label}
+                          </LinkButton>
+                        ))}
+                        <LinkButton onClick={() => setConvertId(i.id)}>Enrol</LinkButton>
+                      </span>
+                    )}
+                  </li>
+                ))}
+              {(inquiries.data ?? []).filter((i) => (i.stage || "NEW") === stage).length === 0 && (
+                <li className="text-slate-400">None</li>
+              )}
+            </ul>
+          </Card>
+        ))}
+      </div>
+      {convertId && (
+        <Card title="Enrol as student">
+          <FormGrid>
+            <Select label="Course" value={convertCourse} onChange={setConvertCourse} options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
+            <Select label="Batch" value={convertBatch} onChange={setConvertBatch} options={(batches.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
+            <div className="flex items-end gap-2">
+              <PrimaryButton onClick={() => void convert()}>Enrol</PrimaryButton>
+              <button type="button" className="text-sm text-slate-500" onClick={() => setConvertId("")}>
+                Cancel
+              </button>
+            </div>
+          </FormGrid>
+        </Card>
+      )}
       <Card title="Add counseling note">
         <FormGrid>
-          <Select
-            label="Inquiry"
-            value={noteInq}
-            onChange={setNoteInq}
-            options={(inquiries.data ?? []).map((i) => ({ value: i.id, label: i.fullName }))}
-          />
+          <Select label="Inquiry" value={noteInq} onChange={setNoteInq} options={(inquiries.data ?? []).map((i) => ({ value: i.id, label: i.fullName }))} />
+          <Select label="Move to" value={noteStage} onChange={setNoteStage} allowEmpty={false} options={STAGES} />
           <Field label="Note" value={note} onChange={setNote} />
           <div className="flex items-end">
-            <PrimaryButton disabled={!noteInq || !note} onClick={addNote}>
+            <PrimaryButton disabled={!noteInq || !note} onClick={() => void addNote()}>
               Save note
             </PrimaryButton>
           </div>
@@ -175,6 +209,71 @@ export function CrmPage() {
           </ul>
         </Card>
       </div>
+      <Card title="Referral codes">
+        <p className="mb-3 text-sm text-slate-500">Share `/s/your-slug?ref=CODE` on the website. New enquiries are attributed.</p>
+        <FormGrid>
+          <Field label="Referrer name" value={refName} onChange={setRefName} />
+          <Select label="Student (optional)" value={refStudent} onChange={setRefStudent} options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))} />
+        </FormGrid>
+        <div className="mt-3">
+          <PrimaryButton
+            disabled={!refName}
+            onClick={() =>
+              void run(async () => {
+                const rec = await api<Referral>("/api/actions/grow/referrals", {
+                  method: "POST",
+                  body: JSON.stringify({ referrerName: refName, studentId: refStudent || null, referrerType: "STUDENT" }),
+                });
+                setRefName("");
+                setNotice(`Share code ${rec.code} on the website.`);
+                referrals.reload();
+              })
+            }
+          >
+            Create code
+          </PrimaryButton>
+        </div>
+        <div className="mt-4">
+          <Table
+            empty="No referral codes yet."
+            columns={["Code", "Referrer", "Status"]}
+            rows={(referrals.data ?? []).map((r) => [r.code || "—", r.referrerName, prettyLabel(r.status)])}
+          />
+        </div>
+      </Card>
+      <Card title="Scholarships / fee discount">
+        <p className="mb-3 text-sm text-slate-500">Owner approves on Academics. Approved amounts credit the student’s open invoice.</p>
+        <FormGrid>
+          <Field label="Name" value={schName} onChange={setSchName} placeholder="Merit waiver" />
+          <Select label="Student" value={schStudent} onChange={setSchStudent} options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))} />
+          <Field label="Amount ₹" value={schAmt} onChange={setSchAmt} />
+        </FormGrid>
+        <div className="mt-3">
+          <PrimaryButton
+            disabled={!schName || !schStudent}
+            onClick={() =>
+              void run(async () => {
+                await api("/api/actions/grow/scholarships", {
+                  method: "POST",
+                  body: JSON.stringify({ name: schName, studentId: schStudent, amount: schAmt }),
+                });
+                setSchName("");
+                scholarships.reload();
+                setNotice("Sent for owner approval.");
+              })
+            }
+          >
+            Submit for approval
+          </PrimaryButton>
+        </div>
+        <div className="mt-4">
+          <Table
+            empty="No scholarships yet."
+            columns={["Name", "Amount", "Status"]}
+            rows={(scholarships.data ?? []).map((s) => [s.name, s.amount != null ? String(s.amount) : "—", prettyLabel(s.approvalStatus)])}
+          />
+        </div>
+      </Card>
     </div>
   );
 }

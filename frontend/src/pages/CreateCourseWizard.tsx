@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, fileSrc } from "../api";
-import { createRecord, updateRecord, uploadContentFile } from "../ops";
+import { fileSrc } from "../api";
+import { createRecord, ensureWebsitePublished, updateRecord, uploadContentFile } from "../ops";
 import { ErrorText, useApi } from "../ui";
 import { UserMenu } from "../UserMenu";
 import { CourseContentPanel } from "./courseContent";
@@ -48,6 +48,7 @@ export function CreateCourseWizard() {
   const navigate = useNavigate();
   const { courseId } = useParams();
   const courses = useApi<Draft[]>("/api/courses");
+  const terms = useApi<{ id: string; name: string }[]>("/api/terms");
   const editing = Boolean(courseId);
   const [loaded, setLoaded] = useState(false);
 
@@ -68,7 +69,7 @@ export function CreateCourseWizard() {
   const [validityType, setValidityType] = useState("SINGLE");
   const [validityValue, setValidityValue] = useState("1");
   const [validityUnit, setValidityUnit] = useState("YEAR");
-  const [fees, setFees] = useState("1");
+  const [fees, setFees] = useState("");
   const [feesAlt, setFeesAlt] = useState("");
   const [validityAltValue, setValidityAltValue] = useState("12");
   const [validityAltUnit, setValidityAltUnit] = useState("MONTH");
@@ -129,10 +130,11 @@ export function CreateCourseWizard() {
   }, [courseId, courses.data, loaded]);
 
   const paid = courseType === "PAID";
-  const basePrice = Math.max(0, Number(fees || 0) - Number(discount || 0));
-  const internetFee = payInternet ? 0 : 0.05;
-  const taxed = includeTax ? 0 : (basePrice + internetFee) * (Number(taxPercent) / 100);
-  const effective = paid ? Math.round((basePrice + internetFee + taxed) * 100) / 100 : 0;
+  const listPrice = Math.max(0, Number(fees || 0));
+  const discountAmt = Math.max(0, Number(discount || 0));
+  const afterDiscount = Math.max(0, listPrice - discountAmt);
+  const gst = includeTax ? 0 : afterDiscount * (Number(taxPercent || 0) / 100);
+  const effective = paid ? Math.round((afterDiscount + gst) * 100) / 100 : 0;
 
   const durationMonths = useMemo(() => {
     const n = Number(validityValue) || 1;
@@ -169,6 +171,7 @@ export function CreateCourseWizard() {
       allowLive,
       bundleCsv: bundleIds.join(","),
       active: true,
+      termId: terms.data?.[0]?.id || null,
     };
   }
 
@@ -213,7 +216,14 @@ export function CreateCourseWizard() {
       return;
     }
     await run(async () => {
-      if (step >= 1) await persist(live);
+      if (step === 0) await persist(false);
+      if (step === 1) {
+        if (paid && !(Number(fees) > 0)) {
+          throw new Error("Enter a price greater than 0, or mark the course as free.");
+        }
+        await persist(live);
+      }
+      if (step >= 2) await persist(live);
       setStep((s) => Math.min(s + 1, 3));
     });
   }
@@ -222,10 +232,7 @@ export function CreateCourseWizard() {
     await run(async () => {
       const saved = await persist(true);
       try {
-        const org = await api<{ slug?: string; websitePublished?: boolean; name?: string; websiteUrl?: string }>("/api/organization");
-        if (org.slug && org.websitePublished === false) {
-          await updateRecord("/api/organization", { ...org, websitePublished: true, websiteUrl: org.websiteUrl || `/s/${org.slug}` });
-        }
+        await ensureWebsitePublished();
       } catch {
         /* course is published even if the website flag cannot be updated */
       }
@@ -479,7 +486,7 @@ export function CreateCourseWizard() {
                     <PriceField label="Discount" value={discount} onChange={setDiscount} />
                     <label className="block text-sm">
                       <span className="text-slate-600">Effective Price</span>
-                      <input className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm" value={`₹ ${effective}`} readOnly />
+                      <input className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm" value={`₹${effective.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`} readOnly />
                     </label>
                   </div>
                 </div>
@@ -556,14 +563,21 @@ export function CreateCourseWizard() {
             </Link>
           )}
           {step < 3 ? (
-            <button
-              type="button"
-              disabled={busy || (step === 0 && !name.trim())}
-              className="inline-flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
-              onClick={goNext}
-            >
-              Next →
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {step >= 2 && !live && (
+                <button type="button" disabled={busy || !draft} className="rounded-lg border border-brand px-4 py-2 text-sm font-medium text-brand disabled:opacity-50" onClick={publish}>
+                  Publish without bundle
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={busy || (step === 0 && !name.trim())}
+                className="inline-flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                onClick={goNext}
+              >
+                Next →
+              </button>
+            </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               <button type="button" disabled={busy} className="text-sm text-slate-500 hover:text-navy" onClick={publish}>
@@ -583,7 +597,7 @@ export function CreateCourseWizard() {
       </div>
 
       {step === 2 && (
-        <p className="text-center text-xs text-slate-500">Next opens Bundle, which you can skip. Publish is on the last step.</p>
+        <p className="text-center text-xs text-slate-500">You can publish from this step. Bundle is optional.</p>
       )}
 
       <button type="button" className="text-sm text-brand" onClick={() => setShowHelp((v) => !v)}>
@@ -689,7 +703,7 @@ function PriceField({ label, value, onChange }: { label: string; value: string; 
       <span className="text-slate-600">{label}</span>
       <span className="mt-1 flex items-center rounded-lg border border-slate-200 px-3 py-2.5">
         <span className="mr-1 text-slate-500">₹</span>
-        <input className="w-full text-sm outline-none" value={value} onChange={(e) => onChange(e.target.value)} />
+        <input className="w-full text-sm outline-none" placeholder="0" value={value} onChange={(e) => onChange(e.target.value)} />
       </span>
     </label>
   );

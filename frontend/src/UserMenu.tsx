@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { clearPlatformSession } from "./api";
 import { useAuth } from "./auth";
 
 export function initialsOf(name?: string) {
@@ -83,6 +84,8 @@ export function UserMenu({
             className="block w-full px-3 py-2 text-left text-sm hover:bg-mist"
             onClick={() => {
               logout();
+              clearPlatformSession();
+              window.dispatchEvent(new Event("propel:platform-unauthorized"));
               navigate(signOutTo);
             }}
           >

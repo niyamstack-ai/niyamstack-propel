@@ -86,6 +86,7 @@ export function PlatformEmployeesPage() {
   }
 
   const rows = list.data ?? [];
+  const peopleLabel = list.loading ? "People" : rows.length === 1 ? "1 person" : `${rows.length} people`;
 
   return (
     <div className="space-y-6">
@@ -143,9 +144,11 @@ export function PlatformEmployeesPage() {
           </button>
         </form>
       </Card>
-      <Card title={`${rows.length} people`}>
+      <Card title={peopleLabel}>
         <Table
           columns={["Name", "Login id", "Roles", "Status", ""]}
+          loading={list.loading}
+          empty="No staff yet."
           rows={rows.map((emp) => [
             emp.name,
             emp.email,

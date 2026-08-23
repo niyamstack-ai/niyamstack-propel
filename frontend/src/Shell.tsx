@@ -22,7 +22,15 @@ function SidebarNav({
 }) {
   const { user } = useAuth();
   const location = useLocation();
-  const nav = navForRole(user?.role);
+  const nav = navForRole(user?.role, user?.modules, user?.capabilities);
+  const groups = nav.filter(isNavGroup);
+  const routeGroup = groups.find((group) => groupContainsPath(group, location.pathname))?.label ?? groups[0]?.label ?? "";
+  const [openGroup, setOpenGroup] = useState(routeGroup);
+
+  useEffect(() => {
+    const match = groups.find((group) => groupContainsPath(group, location.pathname));
+    if (match) setOpenGroup(match.label);
+  }, [location.pathname]);
 
   return (
     <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-6">
@@ -41,25 +49,36 @@ function SidebarNav({
           );
         }
         const active = groupContainsPath(entry, location.pathname);
+        const open = openGroup === entry.label;
         return (
           <div key={entry.label} className="pt-2">
-            <p className={`px-3 pb-1 text-left text-xs font-semibold ${active ? "text-white" : "text-slate-400"}`}>
+            <button
+              type="button"
+              className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-xs font-semibold ${
+                active ? "text-white" : "text-slate-400 hover:text-white"
+              }`}
+              aria-expanded={open}
+              onClick={() => setOpenGroup(entry.label)}
+            >
               {entry.label}
-            </p>
-            <div className="space-y-0.5">
-              {entry.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  onClick={onNavigate}
-                  className={({ isActive }) =>
-                    linkClass(isActive || (item.to !== "/" && location.pathname.startsWith(item.to + "/")))
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </div>
+              <span className="text-[10px] opacity-70">{open ? "▾" : "▸"}</span>
+            </button>
+            {open && (
+              <div className="space-y-0.5">
+                {entry.items.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    onClick={onNavigate}
+                    className={({ isActive }) =>
+                      linkClass(isActive || (item.to !== "/" && location.pathname.startsWith(item.to + "/")))
+                    }
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
+            )}
           </div>
         );
       })}
@@ -180,7 +199,7 @@ export function Shell() {
           </header>
         )}
         <main className={courseChrome ? "min-w-0 overflow-x-hidden px-4 py-4 sm:px-6 sm:py-6" : "min-w-0 overflow-x-hidden p-4 sm:p-6"}>
-          <Outlet />
+          {!user ? <p className="text-sm text-slate-500">Loading…</p> : <Outlet />}
         </main>
       </div>
     </div>
