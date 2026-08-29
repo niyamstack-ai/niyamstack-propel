@@ -975,7 +975,7 @@ public class StorefrontService {
     }
 
     @Transactional
-    public Map<String, Object> enquire(String slug, String fullName, String email, String phoneRaw, String message, UUID courseId, String landingSlug, String referralCode) {
+    public Map<String, Object> enquire(String slug, String fullName, String email, String phoneRaw, String message, UUID courseId, String landingSlug, String referralCode, Map<String, String> answers) {
         Organization org = orgBySlug(slug);
         if (fullName == null || fullName.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Name is required");
@@ -988,8 +988,15 @@ public class StorefrontService {
         inquiry.setPhone(phone);
         inquiry.setSource("WEB");
         inquiry.setStage("NEW");
-        inquiry.setNotes(message == null || message.isBlank() ? null : message.trim());
         inquiry.setCourseId(courseId);
+        String notes = message == null ? "" : message.trim();
+        String extra = answersJson(answers);
+        if (extra != null) {
+            inquiry.setCustomJson(extra);
+            String labelled = answersNote(answers);
+            notes = notes.isBlank() ? labelled : notes + "\n" + labelled;
+        }
+        inquiry.setNotes(notes.isBlank() ? null : notes);
         inquiry = store.save(inquiry);
         grow.attributeLead(inquiry, landingSlug, referralCode);
         hooks.fire(org.getId(), "inquiry.created", Map.of("inquiryId", inquiry.getId(), "source", inquiry.getSource() == null ? "WEB" : inquiry.getSource()));
@@ -997,6 +1004,48 @@ public class StorefrontService {
         out.put("ok", true);
         out.put("id", inquiry.getId());
         return out;
+    }
+
+    private static String answersJson(Map<String, String> answers) {
+        if (answers == null || answers.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder("{");
+        boolean first = true;
+        for (Map.Entry<String, String> row : answers.entrySet()) {
+            if (row.getKey() == null || row.getKey().isBlank()) {
+                continue;
+            }
+            if (!first) {
+                sb.append(',');
+            }
+            first = false;
+            sb.append('"').append(jsonEscape(row.getKey())).append("\":\"");
+            sb.append(jsonEscape(row.getValue() == null ? "" : row.getValue())).append('"');
+        }
+        sb.append('}');
+        return first ? null : sb.toString();
+    }
+
+    private static String answersNote(Map<String, String> answers) {
+        if (answers == null || answers.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> row : answers.entrySet()) {
+            if (row.getKey() == null || row.getKey().isBlank() || row.getValue() == null || row.getValue().isBlank()) {
+                continue;
+            }
+            if (!sb.isEmpty()) {
+                sb.append('\n');
+            }
+            sb.append(row.getKey().trim()).append(": ").append(row.getValue().trim());
+        }
+        return sb.toString();
+    }
+
+    private static String jsonEscape(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
     }
 
     private record PendingRegister(UUID orgId, String fullName, String email, UUID courseId, Instant expires) {}

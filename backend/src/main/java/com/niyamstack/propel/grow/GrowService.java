@@ -162,6 +162,7 @@ public class GrowService {
         out.put("body", page.getBody());
         out.put("ctaLabel", page.getCtaLabel() == null || page.getCtaLabel().isBlank() ? "Register now" : page.getCtaLabel());
         out.put("courseId", page.getCourseId());
+        out.put("formJson", page.getFormJson() == null ? "" : page.getFormJson());
         out.put("instituteName", org.getName());
         out.put("viewsCount", page.getViewsCount());
         out.put("leadsCount", page.getLeadsCount());

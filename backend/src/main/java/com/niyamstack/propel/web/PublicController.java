@@ -55,7 +55,7 @@ public class PublicController {
     public record CouponRequest(UUID courseId, String code) {}
     public record RegisterRequest(String fullName, String email, String phone, UUID courseId) {}
     public record RegisterVerifyRequest(String phone, String otp) {}
-    public record EnquireRequest(String fullName, String email, String phone, String message, UUID courseId, String landingSlug, String referralCode) {}
+    public record EnquireRequest(String fullName, String email, String phone, String message, UUID courseId, String landingSlug, String referralCode, java.util.Map<String, String> answers) {}
 
     @GetMapping("/packs")
     public Map<String, Object> packs() {
@@ -263,7 +263,7 @@ public class PublicController {
     @PostMapping("/sites/{slug}/enquire")
     public Map<String, Object> enquire(@PathVariable String slug, @RequestBody EnquireRequest body) {
         return storefront.enquire(slug, body.fullName(), body.email(), body.phone(), body.message(), body.courseId(),
-                body.landingSlug(), body.referralCode());
+                body.landingSlug(), body.referralCode(), body.answers());
     }
 
     @GetMapping("/sites/{slug}/landing/{pageSlug}")

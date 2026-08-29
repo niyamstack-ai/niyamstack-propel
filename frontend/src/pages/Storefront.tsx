@@ -12,6 +12,7 @@ import { Card, ErrorText, Field, FormGrid, PrimaryButton, formatDay, formatInr, 
 import { createRecord } from "../ops";
 import { PageSections } from "../PageSections";
 import { EnquireForm } from "../EnquireForm";
+import { parseFormFields } from "../formFields";
 import { isProductHost } from "../siteHost";
 import { openRazorpay, type CheckoutOrder } from "../razorpay";
 
@@ -1681,7 +1682,7 @@ function StudentForgotPage() {
 function LandingLeadPage() {
   const slug = useSlug();
   const { pageSlug } = useParams();
-  const [page, setPage] = useState<{ headline?: string; body?: string; ctaLabel?: string; name?: string; slug?: string } | null>(null);
+  const [page, setPage] = useState<{ headline?: string; body?: string; ctaLabel?: string; name?: string; slug?: string; formJson?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (!slug || !pageSlug) return;
@@ -1698,7 +1699,7 @@ function LandingLeadPage() {
         {page.body && <p className="mt-3 whitespace-pre-wrap text-slate-600">{page.body}</p>}
       </div>
       <Card title={page.ctaLabel || "Register now"}>
-        <EnquireForm slug={slug} landingSlug={page.slug || pageSlug} />
+        <EnquireForm slug={slug} landingSlug={page.slug || pageSlug} fields={parseFormFields(page.formJson)} />
       </Card>
     </div>
   );

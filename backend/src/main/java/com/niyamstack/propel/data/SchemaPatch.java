@@ -342,6 +342,7 @@ public class SchemaPatch {
                 "ALTER TABLE custom_fields ADD COLUMN IF NOT EXISTS options_json VARCHAR(1000)",
                 "ALTER TABLE students ADD COLUMN IF NOT EXISTS custom_json TEXT",
                 "ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS custom_json TEXT",
+                "ALTER TABLE landing_pages ADD COLUMN IF NOT EXISTS form_json TEXT",
                 "ALTER TABLE employees ADD COLUMN IF NOT EXISTS custom_json TEXT",
                 "ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS ends_at TIMESTAMP WITH TIME ZONE",
                 "ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS recording_url VARCHAR(1000)",

@@ -17,6 +17,11 @@ export type SiteSection = {
   text?: string;
   imageUrl?: string;
   imageFocus?: number;
+  headingSize?: string;
+  textSize?: string;
+  headingColor?: string;
+  textColor?: string;
+  formFields?: string;
   phone?: string;
   email?: string;
   address?: string;

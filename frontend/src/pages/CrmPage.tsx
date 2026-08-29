@@ -11,6 +11,8 @@ type Inquiry = {
   phone: string;
   source: string;
   stage: string;
+  notes?: string;
+  customJson?: string;
 };
 type Student = { id: string; fullName: string };
 type Referral = { id: string; code?: string; referrerName: string; status: string; incentiveAmount?: number };
@@ -143,6 +145,7 @@ export function CrmPage() {
                   <li key={i.id} className="rounded-lg border border-line p-2">
                     <p className="font-medium text-navy">{i.fullName}</p>
                     <p className="text-xs text-slate-500">{i.phone} · {prettyLabel(i.source)}</p>
+                    {i.notes && <p className="mt-1 whitespace-pre-wrap text-xs text-slate-600">{i.notes}</p>}
                     {stage !== "CONVERTED" && (
                       <span className="mt-2 flex flex-wrap gap-2">
                         {STAGES.filter((s) => s.value !== stage).map((s) => (

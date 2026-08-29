@@ -830,6 +830,8 @@ public final class Model {
         private String body;
         private String ctaLabel;
         private UUID courseId;
+        @Column(columnDefinition = "TEXT")
+        private String formJson;
         private boolean published;
         private Integer viewsCount = 0;
         private Integer leadsCount = 0;

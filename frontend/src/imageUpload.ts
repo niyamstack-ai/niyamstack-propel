@@ -32,3 +32,44 @@ export async function compressImage(file: File, maxEdge = 1600): Promise<File> {
   const name = file.name.replace(/\.[^.]+$/, "") + ".jpg";
   return new File([blob], name, { type: "image/jpeg" });
 }
+
+/** Crop a displayed photo to the cover frame (same as CSS object-fit: cover + object-position Y). */
+export async function cropCover(src: string, aspect: number, focusY = 50, maxWidth = 1600): Promise<File> {
+  const img = await loadImage(src);
+  const srcW = img.naturalWidth || img.width;
+  const srcH = img.naturalHeight || img.height;
+  const ratio = Math.max(aspect, 0.2);
+  let cropW = srcW;
+  let cropH = srcW / ratio;
+  if (cropH > srcH) {
+    cropH = srcH;
+    cropW = srcH * ratio;
+  }
+  const sx = (srcW - cropW) / 2;
+  const sy = (srcH - cropH) * (Math.min(100, Math.max(0, focusY)) / 100);
+  const outW = Math.max(1, Math.min(maxWidth, Math.round(cropW)));
+  const outH = Math.max(1, Math.round(outW / ratio));
+  const canvas = document.createElement("canvas");
+  canvas.width = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Could not crop this photo.");
+  }
+  ctx.drawImage(img, sx, sy, cropW, cropH, 0, 0, outW, outH);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+  if (!blob) {
+    throw new Error("Could not crop this photo.");
+  }
+  return new File([blob], "photo.jpg", { type: "image/jpeg" });
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Could not load this photo to crop."));
+    img.src = src;
+  });
+}
