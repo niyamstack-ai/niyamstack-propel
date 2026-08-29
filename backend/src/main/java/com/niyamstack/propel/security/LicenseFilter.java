@@ -65,9 +65,12 @@ public class LicenseFilter extends OncePerRequestFilter {
     }
 
     private static void reject(HttpServletResponse response, int status, String message) throws IOException {
+        byte[] body = ("{\"error\":\"" + message.replace("\"", "'") + "\"}").getBytes(StandardCharsets.UTF_8);
         response.setStatus(status);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        response.getWriter().write("{\"error\":\"" + message.replace("\"", "'") + "\"}");
+        response.setContentLength(body.length);
+        response.getOutputStream().write(body);
+        response.flushBuffer();
     }
 }
