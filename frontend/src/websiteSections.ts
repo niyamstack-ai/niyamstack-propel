@@ -16,12 +16,15 @@ export type SiteSection = {
   heading?: string;
   text?: string;
   imageUrl?: string;
+  imageFocus?: number;
   phone?: string;
   email?: string;
   address?: string;
   quotes?: string;
   buttonLabel?: string;
 };
+
+export type Testimonial = { name: string; text: string; imageUrl?: string };
 
 export const BLOCKS: { type: SectionType; label: string; hint: string }[] = [
   { type: "hero", label: "Hero banner", hint: "Big headline and photo" },
@@ -76,7 +79,15 @@ export function newSection(type: SectionType, institute = "our institute"): Site
     return { id: nid(), type, heading: "Visit us", text: "Call or WhatsApp to visit the centre.", phone: "", email: "", address: "" };
   }
   if (type === "testimonials") {
-    return { id: nid(), type, heading: "What students say", quotes: "The live classes were clear.\nPlacement support helped me prepare for interviews." };
+    return {
+      id: nid(),
+      type,
+      heading: "What students say",
+      quotes: serializeTestimonials([
+        { name: "", text: "The live classes were clear.", imageUrl: "" },
+        { name: "", text: "Placement support helped me prepare for interviews.", imageUrl: "" },
+      ]),
+    };
   }
   if (type === "cta") {
     return { id: nid(), type, heading: "Ready to join?", text: "Talk to a counsellor or enrol on this website.", buttonLabel: "Get started" };
@@ -130,4 +141,34 @@ export function youtubeId(url?: string) {
   if (!url) return "";
   const m = url.match(/(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{6,})/);
   return m?.[1] || "";
+}
+
+export function parseTestimonials(raw?: string): Testimonial[] {
+  const value = (raw || "").trim();
+  if (!value) return [];
+  if (value.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(value) as Array<{ name?: string; text?: string; quote?: string; imageUrl?: string }>;
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((row) => ({
+            name: String(row?.name || "").trim(),
+            text: String(row?.text || row?.quote || "").trim(),
+            imageUrl: String(row?.imageUrl || "").trim(),
+          }))
+          .filter((row) => row.text || row.name || row.imageUrl);
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((text) => ({ name: "", text, imageUrl: "" }));
+}
+
+export function serializeTestimonials(rows: Testimonial[]) {
+  return JSON.stringify(rows.map((row) => ({ name: row.name || "", text: row.text || "", imageUrl: row.imageUrl || "" })));
 }

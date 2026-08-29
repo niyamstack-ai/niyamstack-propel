@@ -66,6 +66,7 @@ public class SchemaPatch {
                 "ALTER TABLE courses ADD COLUMN IF NOT EXISTS allow_preview BOOLEAN DEFAULT FALSE",
                 "ALTER TABLE courses ADD COLUMN IF NOT EXISTS allow_live BOOLEAN DEFAULT TRUE",
                 "ALTER TABLE courses ADD COLUMN IF NOT EXISTS likes_count INTEGER DEFAULT 0",
+                "ALTER TABLE courses ADD COLUMN IF NOT EXISTS share_slug VARCHAR(80)",
                 "ALTER TABLE students ADD COLUMN IF NOT EXISTS about TEXT",
                 "ALTER TABLE students ADD COLUMN IF NOT EXISTS roll_number VARCHAR(80)",
                 "ALTER TABLE students ADD COLUMN IF NOT EXISTS date_of_joining DATE",

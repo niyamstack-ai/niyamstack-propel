@@ -117,6 +117,7 @@ export function Shell() {
   const location = useLocation();
   const portal = portalTitle(user?.role);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [subscribeOpen, setSubscribeOpen] = useState(false);
   const courseChrome = isCourseChrome(location.pathname);
   const websiteBuilder = isWebsiteBuilder(location.pathname);
 
@@ -124,9 +125,30 @@ export function Shell() {
     setMenuOpen(false);
   }, [location.pathname]);
 
+  useEffect(() => {
+    function onSubscribe() {
+      setSubscribeOpen(true);
+    }
+    window.addEventListener("propel:subscribe-required", onSubscribe);
+    return () => window.removeEventListener("propel:subscribe-required", onSubscribe);
+  }, []);
+
+  const subscribeModal = subscribeOpen ? (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onClick={() => setSubscribeOpen(false)}>
+      <div className="w-full max-w-md rounded-2xl bg-white p-6" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-bold text-navy">You are not a paid user</h2>
+        <p className="mt-2 text-sm text-slate-600">Please subscribe and take this facility. You can browse the menus in this demo workspace; saving and other live actions stay locked until Niyamstack activates your institute.</p>
+        <button type="button" className="mt-5 rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white" onClick={() => setSubscribeOpen(false)}>
+          OK
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   if (websiteBuilder) {
     return (
       <div className="h-svh overflow-hidden bg-mist">
+        {subscribeModal}
         <Outlet />
       </div>
     );
@@ -162,11 +184,13 @@ export function Shell() {
         </div>
       </aside>
       <div className="min-w-0 sm:pl-60">
-        {(user?.accessStatus === "DEMO" || user?.accessStatus === "PENDING_APPROVAL") && (
-          <div className="bg-amber-50 px-4 py-2 text-sm text-amber-900 sm:px-6">
+        {(user?.accessStatus === "DEMO" || user?.accessStatus === "PENDING_APPROVAL" || user?.accessStatus === "SUSPENDED") && (
+          <div className={`px-4 py-2 text-sm sm:px-6 ${user.accessStatus === "SUSPENDED" ? "bg-red-50 text-red-900" : "bg-amber-50 text-amber-900"}`}>
             {user.accessStatus === "DEMO"
-              ? "This is a demo workspace. Subscribe, then Niyamstack will activate live rights for your institute."
-              : "Payment received. Waiting for Niyamstack to activate your institute."}
+              ? "This is a demo workspace. You can open every menu. Saving and other live actions need a paid subscription."
+              : user.accessStatus === "SUSPENDED"
+                ? "This institute is suspended. Contact Niyamstack to restore access."
+                : "Payment received. Waiting for Niyamstack to activate your institute."}
           </div>
         )}
         {courseChrome ? (
@@ -202,6 +226,7 @@ export function Shell() {
           {!user ? <p className="text-sm text-slate-500">Loading…</p> : <Outlet />}
         </main>
       </div>
+      {subscribeModal}
     </div>
   );
 }

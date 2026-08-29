@@ -65,13 +65,7 @@ export function PlatformLoginPage() {
             </label>
             <label className="mt-4 block text-sm font-medium text-navy">
               Password
-              <input
-                className="mt-1 w-full rounded-lg border border-line px-3 py-2.5 outline-none focus:border-brand"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+              <PasswordField value={password} onChange={setPassword} />
             </label>
             {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
             <button className="mt-6 w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy}>
@@ -85,5 +79,23 @@ export function PlatformLoginPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+function PasswordField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [show, setShow] = useState(false);
+  return (
+    <span className="relative mt-1 block">
+      <input
+        className="w-full rounded-lg border border-line px-3 py-2.5 outline-none focus:border-brand"
+        type={show ? "text" : "password"}
+        autoComplete="current-password"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-brand" onClick={() => setShow((v) => !v)}>
+        {show ? "Hide" : "Show"}
+      </button>
+    </span>
   );
 }

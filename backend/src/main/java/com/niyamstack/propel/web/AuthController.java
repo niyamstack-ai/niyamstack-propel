@@ -108,6 +108,7 @@ public class AuthController {
         if (!passwordOk(user, body.password(), ip, body.email())) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid email or password");
         }
+        requireOrgAccess(user);
         clearLock(user, ip);
         audit.log("LOGIN", "AppUser", user.getId(), user.getEmail());
         return sessions.issue(user);
@@ -118,6 +119,7 @@ public class AuthController {
     public Map<String, Object> requestLoginOtp(@Valid @RequestBody PhoneRequest body) {
         AppUser user = requirePhoneUser(body.phone());
         ensureActive(user);
+        requireOrgAccess(user);
         var issued = otp.issue(user.getPhone(), OtpService.LOGIN);
         emailOtp(user, OtpService.LOGIN, issued.code());
         return otp.publicIssue(issued);
@@ -128,6 +130,7 @@ public class AuthController {
     public Map<String, Object> verifyLoginOtp(@Valid @RequestBody OtpVerifyRequest body) {
         AppUser user = requirePhoneUser(body.phone());
         ensureActive(user);
+        requireOrgAccess(user);
         otp.verify(user.getPhone(), OtpService.LOGIN, body.otp());
         clearLock(user, "otp");
         audit.log("LOGIN_OTP", "AppUser", user.getId(), user.getPhone());
@@ -352,6 +355,14 @@ public class AuthController {
         if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now())) {
             throw new ApiException(HttpStatus.LOCKED, "Account temporarily locked");
         }
+    }
+
+    private void requireOrgAccess(AppUser user) {
+        if (user == null || user.getOrganizationId() == null || Roles.isPlatform(user.getRole())) {
+            return;
+        }
+        Organization org = store.get(Organization.class, user.getOrganizationId());
+        com.niyamstack.propel.security.OrgAccess.requireNotSuspended(org);
     }
 
     private static String requireMobile(String raw) {

@@ -1,7 +1,8 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { fileSrc } from "./api";
 import { uploadMedia } from "./ops";
-import { pairLines, parseSections, youtubeId, type SiteSection } from "./websiteSections";
+import { compressImage } from "./imageUpload";
+import { pairLines, parseSections, parseTestimonials, serializeTestimonials, youtubeId, type SiteSection, type Testimonial } from "./websiteSections";
 import { EnquireForm } from "./EnquireForm";
 import { Link } from "react-router-dom";
 import { isProductHost } from "./siteHost";
@@ -50,6 +51,11 @@ function LiveText({
       suppressContentEditableWarning
       data-placeholder={placeholder}
       onClick={(e) => e.stopPropagation()}
+      onPaste={(e) => {
+        e.preventDefault();
+        const text = e.clipboardData.getData("text/plain");
+        document.execCommand("insertText", false, text);
+      }}
       onBlur={(e) => onChange(e.currentTarget.innerText)}
       onKeyDown={(e) => {
         if (e.key === "Enter" && Tag !== "p" && Tag !== "blockquote" && Tag !== "figcaption") {
@@ -64,14 +70,64 @@ function LiveText({
 async function pickImage(onChange: (url: string) => void) {
   const input = document.createElement("input");
   input.type = "file";
-  input.accept = "image/*";
+  input.accept = "image/jpeg,image/png,image/webp";
   input.onchange = async () => {
     const file = input.files?.[0];
     if (!file) return;
-    const stored = await uploadMedia(file);
+    const stored = await uploadMedia(await compressImage(file));
     onChange(stored.url);
   };
   input.click();
+}
+
+function FramedPhoto({
+  src,
+  className,
+  focus,
+  hint,
+  onChange,
+  onFocus,
+}: {
+  src: string;
+  className?: string;
+  focus?: number;
+  hint: string;
+  onChange?: (url: string) => void;
+  onFocus?: (value: number) => void;
+}) {
+  const y = Number.isFinite(focus) ? Math.min(100, Math.max(0, Number(focus))) : 50;
+  return (
+    <div className="relative">
+      <img
+        src={fileSrc(src)}
+        alt=""
+        className={`${className || ""} ${onChange ? "cursor-grab active:cursor-grabbing" : ""}`}
+        style={{ objectPosition: `center ${y}%` }}
+        onClick={onChange ? (e) => { e.stopPropagation(); void pickImage(onChange); } : undefined}
+        onMouseDown={
+          onFocus
+            ? (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const node = e.currentTarget;
+                const move = (ev: MouseEvent) => {
+                  const box = node.getBoundingClientRect();
+                  const next = Math.min(100, Math.max(0, ((ev.clientY - box.top) / Math.max(1, box.height)) * 100));
+                  onFocus(Math.round(next));
+                };
+                const up = () => {
+                  window.removeEventListener("mousemove", move);
+                  window.removeEventListener("mouseup", up);
+                };
+                window.addEventListener("mousemove", move);
+                window.addEventListener("mouseup", up);
+              }
+            : undefined
+        }
+      />
+      {onChange && <p className="mt-1 text-[11px] text-slate-400">{hint}</p>}
+    </div>
+  );
 }
 
 export function SectionView({
@@ -93,11 +149,13 @@ export function SectionView({
     return (
       <div className="overflow-hidden rounded-2xl bg-navy p-8 text-white md:p-12">
         {section.imageUrl ? (
-          <img
-            src={fileSrc(section.imageUrl)}
-            alt=""
-            className={`mb-5 h-44 w-full rounded-xl object-cover ${onChange ? "cursor-pointer" : ""}`}
-            onClick={onChange ? (e) => { e.stopPropagation(); void pickImage((url) => onChange({ imageUrl: url })); } : undefined}
+          <FramedPhoto
+            src={section.imageUrl}
+            className="mb-5 h-44 w-full rounded-xl object-cover"
+            focus={section.imageFocus}
+            hint="Upload 1600 × 600 px. Drag the photo up or down to frame it. Large files are compressed."
+            onChange={onChange ? (url) => onChange({ imageUrl: url }) : undefined}
+            onFocus={onChange ? (imageFocus) => onChange({ imageFocus }) : undefined}
           />
         ) : onChange ? (
           <button
@@ -106,6 +164,7 @@ export function SectionView({
             onClick={(e) => { e.stopPropagation(); void pickImage((url) => onChange({ imageUrl: url })); }}
           >
             Click to add a photo
+            <span className="mt-1 block text-[11px] text-sky-200/80">1600 × 600 px. Large files are compressed automatically.</span>
           </button>
         ) : null}
         <LiveText tag="h1" className="text-3xl font-bold md:text-4xl" value={section.heading} placeholder="Your institute name" onChange={edit?.("heading")} />
@@ -129,11 +188,13 @@ export function SectionView({
       <figure>
         <LiveText tag="h2" className="mb-3 text-xl font-bold text-navy" value={section.heading} placeholder="Photo title" onChange={edit?.("heading")} />
         {section.imageUrl ? (
-          <img
-            src={fileSrc(section.imageUrl)}
-            alt=""
-            className={`max-h-80 w-full rounded-2xl object-cover ${onChange ? "cursor-pointer" : ""}`}
-            onClick={onChange ? (e) => { e.stopPropagation(); void pickImage((url) => onChange({ imageUrl: url })); } : undefined}
+          <FramedPhoto
+            src={section.imageUrl}
+            className="max-h-80 w-full rounded-2xl object-cover"
+            focus={section.imageFocus}
+            hint="Upload 1200 × 800 px. Drag up or down to frame. Large files are compressed."
+            onChange={onChange ? (url) => onChange({ imageUrl: url }) : undefined}
+            onFocus={onChange ? (imageFocus) => onChange({ imageFocus }) : undefined}
           />
         ) : (
           <button
@@ -141,7 +202,7 @@ export function SectionView({
             className="grid h-40 w-full place-items-center rounded-2xl bg-mist text-sm text-slate-400"
             onClick={onChange ? (e) => { e.stopPropagation(); void pickImage((url) => onChange({ imageUrl: url })); } : undefined}
           >
-            {onChange ? "Click to add a photo" : "Add an image"}
+            {onChange ? "Click to add a photo (1200 × 800 px)" : "Add an image"}
           </button>
         )}
         <LiveText tag="figcaption" className="mt-2 text-sm text-slate-500" value={section.text} placeholder="Caption" onChange={edit?.("text")} />
@@ -162,15 +223,21 @@ export function SectionView({
         <LiveText tag="h2" className="text-xl font-bold text-navy" value={section.heading} placeholder="Contact" onChange={edit?.("heading")} />
         <LiveText tag="p" className="mt-2 whitespace-pre-wrap text-sm text-slate-600" value={section.text} placeholder="How to reach you" onChange={edit?.("text")} />
         <ul className="mt-3 space-y-1 text-sm text-slate-600">
-          <li>
-            Phone <LiveText tag="span" value={section.phone} placeholder="mobile number" onChange={edit?.("phone")} />
-          </li>
-          <li>
-            Email <LiveText tag="span" value={section.email} placeholder="email" onChange={edit?.("email")} />
-          </li>
-          <li>
-            <LiveText tag="span" value={section.address} placeholder="address" onChange={edit?.("address")} />
-          </li>
+          {(section.phone || onChange) && (
+            <li>
+              Phone <LiveText tag="span" value={section.phone} placeholder="mobile number" onChange={edit?.("phone")} />
+            </li>
+          )}
+          {(section.email || onChange) && (
+            <li>
+              Email <LiveText tag="span" value={section.email} placeholder="email" onChange={edit?.("email")} />
+            </li>
+          )}
+          {(section.address || onChange) && (
+            <li>
+              <LiveText tag="span" value={section.address} placeholder="address" onChange={edit?.("address")} />
+            </li>
+          )}
         </ul>
         {onChange ? (
           <p className="mt-4 text-xs text-slate-400">Students see an enquiry form here on the live website.</p>
@@ -181,30 +248,82 @@ export function SectionView({
     );
   }
   if (section.type === "testimonials") {
-    const quotes = (section.quotes || section.text || "").split("\n").map((q) => q.trim()).filter(Boolean);
-    const rows = quotes.length ? quotes : onChange ? ["Write a student quote"] : ["Student feedback appears here."];
+    const rows = parseTestimonials(section.quotes || section.text);
+    const list = rows.length ? rows : onChange ? [{ name: "", text: "Write a student quote", imageUrl: "" }] : [{ name: "", text: "Student feedback appears here.", imageUrl: "" }];
+    function save(next: Testimonial[]) {
+      onChange?.({ quotes: serializeTestimonials(next.filter((row) => row.text || row.name || row.imageUrl)) });
+    }
     return (
       <div>
         <LiveText tag="h2" className="text-xl font-bold text-navy" value={section.heading} placeholder="What students say" onChange={edit?.("heading")} />
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          {rows.map((q, i) => (
-            <LiveText
-              key={`${section.id}-q-${i}`}
-              tag="blockquote"
-              className="rounded-2xl bg-mist p-4 text-sm text-slate-600"
-              value={q}
-              onChange={
-                onChange
-                  ? (v) => {
-                      const next = [...rows];
-                      next[i] = v;
-                      onChange({ quotes: next.filter(Boolean).join("\n") });
-                    }
-                  : undefined
-              }
-            />
+          {list.map((row, i) => (
+            <div key={`${section.id}-q-${i}`} className="relative rounded-2xl bg-mist p-4">
+              {onChange && (
+                <button
+                  type="button"
+                  className="absolute right-2 top-2 text-[11px] text-red-600"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    save(list.filter((_, idx) => idx !== i));
+                  }}
+                >
+                  Delete
+                </button>
+              )}
+              {row.imageUrl ? (
+                <img
+                  src={fileSrc(row.imageUrl)}
+                  alt=""
+                  className={`mb-3 h-16 w-16 rounded-full object-cover ${onChange ? "cursor-pointer" : ""}`}
+                  onClick={onChange ? (e) => { e.stopPropagation(); void pickImage((imageUrl) => { const next = [...list]; next[i] = { ...next[i], imageUrl }; save(next); }); } : undefined}
+                />
+              ) : onChange ? (
+                <button
+                  type="button"
+                  className="mb-3 grid h-16 w-16 place-items-center rounded-full border border-dashed border-slate-300 text-[10px] text-slate-400"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void pickImage((imageUrl) => {
+                      const next = [...list];
+                      next[i] = { ...next[i], imageUrl };
+                      save(next);
+                    });
+                  }}
+                >
+                  Photo
+                </button>
+              ) : null}
+              {(row.name || onChange) && (
+                <LiveText
+                  tag="p"
+                  className="pr-12 text-sm font-semibold text-navy"
+                  value={row.name}
+                  placeholder="Student name"
+                  onChange={onChange ? (name) => { const next = [...list]; next[i] = { ...next[i], name }; save(next); } : undefined}
+                />
+              )}
+              <LiveText
+                tag="blockquote"
+                className="mt-1 text-sm text-slate-600"
+                value={row.text}
+                onChange={onChange ? (text) => { const next = [...list]; next[i] = { ...next[i], text }; save(next); } : undefined}
+              />
+            </div>
           ))}
         </div>
+        {onChange && (
+          <button
+            type="button"
+            className="mt-3 text-sm font-medium text-brand"
+            onClick={(e) => {
+              e.stopPropagation();
+              save([...list, { name: "", text: "", imageUrl: "" }]);
+            }}
+          >
+            Add testimonial
+          </button>
+        )}
       </div>
     );
   }

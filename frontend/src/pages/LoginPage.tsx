@@ -491,10 +491,24 @@ function ForgotView() {
 }
 
 function Field({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
+  const [show, setShow] = useState(false);
+  const password = type === "password";
   return (
     <label className="block text-sm font-medium text-navy">
       {label}
-      <input className="mt-1 w-full rounded-lg border border-line px-3 py-2 outline-none focus:border-brand" type={type} value={value} onChange={(e) => onChange(e.target.value)} />
+      <span className="relative mt-1 block">
+        <input
+          className="w-full rounded-lg border border-line px-3 py-2 outline-none focus:border-brand"
+          type={password && show ? "text" : type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        {password && (
+          <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-brand" onClick={() => setShow((v) => !v)}>
+            {show ? "Hide" : "Show"}
+          </button>
+        )}
+      </span>
     </label>
   );
 }

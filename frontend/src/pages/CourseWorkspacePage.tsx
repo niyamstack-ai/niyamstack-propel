@@ -15,6 +15,7 @@ type Course = {
   fees?: number;
   description?: string;
   thumbnailUrl?: string;
+  shareSlug?: string;
   published?: boolean;
   courseType?: string;
   validityValue?: number;
@@ -140,7 +141,13 @@ export function CourseWorkspacePage() {
         </p>
       )}
 
-      <ShareLinkBar slug={user?.orgSlug} courseId={course.id} published={!draft} />
+      <ShareLinkBar
+        slug={user?.orgSlug}
+        courseId={course.id}
+        shareSlug={course.shareSlug}
+        published={!draft}
+        onSlugSaved={() => courses.reload()}
+      />
 
       <ErrorText error={error} />
 

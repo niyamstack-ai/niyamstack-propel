@@ -13,7 +13,8 @@ import {
   Video,
   type LucideIcon,
 } from "lucide-react";
-import { createRecord, updateRecord } from "../ops";
+import { useAuth } from "../auth";
+import { createRecord, deleteRecord, updateRecord } from "../ops";
 import { ErrorText, Field, PrimaryButton, formatInr, useApi } from "../ui";
 import { SectionView } from "../PageSections";
 import { fileSrc } from "../api";
@@ -81,6 +82,8 @@ const ICONS: Record<SectionType, LucideIcon> = {
 };
 
 export function WebsitePage() {
+  const { user } = useAuth();
+  const demoLocked = user?.accessStatus === "DEMO";
   const pages = useApi<Page[]>("/api/website-pages");
   const org = useApi<Org>("/api/organization");
   const courses = useApi<Course[]>("/api/courses");
@@ -115,10 +118,10 @@ export function WebsitePage() {
   }, [org.data]);
 
   useEffect(() => {
-    if (!pages.data || pages.data.length > 0 || seeding.current) return;
+    if (demoLocked || !pages.data || pages.data.length > 0 || seeding.current) return;
     seeding.current = true;
     void seedDefaults();
-  }, [pages.data]);
+  }, [pages.data, demoLocked]);
 
   useEffect(() => {
     if (!current) return;
@@ -173,11 +176,11 @@ export function WebsitePage() {
   }
 
   useEffect(() => {
-    if (!dirty || !current) return;
+    if (demoLocked || !dirty || !current) return;
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => void savePage(), 900);
     return () => window.clearTimeout(saveTimer.current);
-  }, [sections, dirty, current?.id]);
+  }, [sections, dirty, current?.id, demoLocked]);
 
   async function publish() {
     if (!org.data) return;
@@ -237,6 +240,24 @@ export function WebsitePage() {
     setPageId(id);
   }
 
+  async function removePage(page: Page) {
+    if (page.slug === "home" || page.pageType === "HOME") {
+      setError("Keep the Home page. Hide other tabs by deleting them.");
+      return;
+    }
+    if (!window.confirm(`Delete the ${page.title} page?`)) return;
+    setError(null);
+    try {
+      if (dirty) await savePage();
+      await deleteRecord(`/api/website-pages/${page.id}`);
+      setPageId(null);
+      setPicked(null);
+      pages.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function copyLiveUrl() {
     await navigator.clipboard.writeText(liveUrl).catch(() => undefined);
     setCopied(true);
@@ -268,17 +289,30 @@ export function WebsitePage() {
         <p className="font-semibold text-navy">{institute}</p>
         <nav className="flex min-w-0 flex-1 flex-wrap gap-1">
           {sorted.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={`rounded-full px-3 py-1 text-sm ${current?.id === p.id ? "bg-navy text-white" : "text-slate-600 hover:bg-mist"}`}
-              onClick={() => void switchPage(p.id)}
-            >
-              {p.title}
-            </button>
+            <span key={p.id} className="inline-flex items-center">
+              <button
+                type="button"
+                className={`rounded-full px-3 py-1 text-sm ${current?.id === p.id ? "bg-navy text-white" : "text-slate-600 hover:bg-mist"}`}
+                onClick={() => void switchPage(p.id)}
+              >
+                {p.title}
+              </button>
+              {p.slug !== "home" && p.pageType !== "HOME" && (
+                <button
+                  type="button"
+                  className="ml-0.5 rounded-full px-1.5 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600"
+                  title={`Delete ${p.title}`}
+                  onClick={() => void removePage(p)}
+                >
+                  ×
+                </button>
+              )}
+            </span>
           ))}
         </nav>
-        <p className="text-xs text-slate-400">{status === "saving" ? "Saving…" : status === "unsaved" ? "Editing" : "Saved"}</p>
+        <p className="text-xs text-slate-400">
+          {demoLocked ? "Demo — subscribe to save" : status === "saving" ? "Saving…" : status === "unsaved" ? "Editing" : "Saved"}
+        </p>
         <button type="button" className="rounded-full border border-line px-3 py-1.5 text-sm" onClick={() => setShareOpen(true)}>
           {siteLive ? "Share website" : "Preview link"}
         </button>
@@ -347,29 +381,27 @@ export function WebsitePage() {
               {sections.map((section, index) => (
                 <div
                   key={section.id}
-                  className={`relative rounded-2xl ${picked === section.id ? "ring-2 ring-brand" : "hover:ring-1 hover:ring-slate-200"}`}
+                  className={`group relative rounded-2xl ${picked === section.id ? "ring-2 ring-brand" : "hover:ring-1 hover:ring-slate-200"}`}
                   onClick={() => setPicked(section.id)}
                 >
-                  {picked === section.id && (
-                    <div className="absolute -top-3 right-3 z-10 flex gap-1">
-                      <button type="button" className="rounded bg-white px-2 py-0.5 text-[11px] shadow" onClick={() => move(index, -1)}>
-                        Up
-                      </button>
-                      <button type="button" className="rounded bg-white px-2 py-0.5 text-[11px] shadow" onClick={() => move(index, 1)}>
-                        Down
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded bg-white px-2 py-0.5 text-[11px] text-red-600 shadow"
-                        onClick={() => {
-                          patch(sections.filter((s) => s.id !== section.id));
-                          setPicked(null);
-                        }}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  )}
+                  <div className={`absolute -top-3 right-3 z-10 gap-1 ${picked === section.id ? "flex" : "hidden group-hover:flex"}`}>
+                    <button type="button" className="rounded bg-white px-2 py-0.5 text-[11px] shadow" onClick={() => move(index, -1)}>
+                      Up
+                    </button>
+                    <button type="button" className="rounded bg-white px-2 py-0.5 text-[11px] shadow" onClick={() => move(index, 1)}>
+                      Down
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded bg-white px-2 py-0.5 text-[11px] text-red-600 shadow"
+                      onClick={() => {
+                        patch(sections.filter((s) => s.id !== section.id));
+                        setPicked(null);
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
                   <SectionView
                     section={section}
                     catalog={catalog}

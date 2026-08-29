@@ -29,6 +29,7 @@ import com.niyamstack.propel.integration.EventHook;
 import com.niyamstack.propel.integration.PaymentGateway;
 import com.niyamstack.propel.domain.Model.Inquiry;
 import com.niyamstack.propel.security.LicenseService;
+import com.niyamstack.propel.security.OrgAccess;
 import com.niyamstack.propel.security.OtpService;
 import com.niyamstack.propel.security.Phones;
 import com.niyamstack.propel.security.Roles;
@@ -93,6 +94,7 @@ public class StorefrontService {
 
     public Organization liveOrg(String slug) {
         Organization org = orgBySlug(slug);
+        OrgAccess.requireNotSuspended(org);
         if (isLive(org)) {
             return org;
         }
@@ -152,11 +154,34 @@ public class StorefrontService {
     }
 
     public Map<String, Object> course(Organization org, UUID courseId) {
-        Course course = store.getOwned(Course.class, courseId, org.getId());
+        return course(org, courseId.toString());
+    }
+
+    public Map<String, Object> course(Organization org, String courseKey) {
+        return publicCourse(resolvePublishedCourse(org, courseKey));
+    }
+
+    public Course resolvePublishedCourse(Organization org, String courseKey) {
+        Course course = resolveCourse(org, courseKey);
         if (!course.isActive() || !course.isPublished()) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Course not found");
         }
-        return publicCourse(course);
+        return course;
+    }
+
+    public Course resolveCourse(Organization org, String courseKey) {
+        String key = courseKey == null ? "" : courseKey.trim();
+        if (key.isEmpty()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Course not found");
+        }
+        try {
+            return store.getOwned(Course.class, UUID.fromString(key), org.getId());
+        } catch (IllegalArgumentException ignored) {
+            return store.list(Course.class, org.getId()).stream()
+                    .filter(c -> c.getShareSlug() != null && key.equalsIgnoreCase(c.getShareSlug()))
+                    .findFirst()
+                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Course not found"));
+        }
     }
 
     @Transactional
@@ -710,6 +735,7 @@ public class StorefrontService {
         out.put("price", payable(course));
         out.put("courseType", course.getCourseType() == null ? "PAID" : course.getCourseType());
         out.put("featured", course.isFeatured());
+        out.put("shareSlug", course.getShareSlug() == null ? "" : course.getShareSlug());
         out.put("validityOptions", validityOptions(course));
         return out;
     }
@@ -748,8 +774,9 @@ public class StorefrontService {
         return "Standard access";
     }
 
-    public List<Map<String, Object>> courseOutline(Organization org, UUID courseId) {
-        course(org, courseId);
+    public List<Map<String, Object>> courseOutline(Organization org, String courseKey) {
+        Course published = resolvePublishedCourse(org, courseKey);
+        UUID courseId = published.getId();
         List<Map<String, Object>> rows = new java.util.ArrayList<>();
         for (ContentItem item : store.listBy(ContentItem.class, org.getId(), "courseId", courseId)) {
             if (!item.isPublished()) {

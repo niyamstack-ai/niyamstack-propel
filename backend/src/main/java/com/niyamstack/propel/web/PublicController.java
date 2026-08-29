@@ -101,20 +101,20 @@ public class PublicController {
         return storefront.catalog(storefront.orgBySlug(slug));
     }
 
-    @GetMapping("/sites/{slug}/courses/{courseId}")
-    public Map<String, Object> course(@PathVariable String slug, @PathVariable UUID courseId) {
-        return storefront.course(storefront.orgBySlug(slug), courseId);
+    @GetMapping("/sites/{slug}/courses/{courseKey}")
+    public Map<String, Object> course(@PathVariable String slug, @PathVariable String courseKey) {
+        return storefront.course(storefront.orgBySlug(slug), courseKey);
     }
 
-    @GetMapping("/sites/{slug}/courses/{courseId}/outline")
-    public List<Map<String, Object>> outline(@PathVariable String slug, @PathVariable UUID courseId) {
-        return storefront.courseOutline(storefront.orgBySlug(slug), courseId);
+    @GetMapping("/sites/{slug}/courses/{courseKey}/outline")
+    public List<Map<String, Object>> outline(@PathVariable String slug, @PathVariable String courseKey) {
+        return storefront.courseOutline(storefront.orgBySlug(slug), courseKey);
     }
 
-    @GetMapping("/sites/{slug}/courses/{courseId}/cover")
-    public ResponseEntity<Resource> cover(@PathVariable String slug, @PathVariable UUID courseId) {
+    @GetMapping("/sites/{slug}/courses/{courseKey}/cover")
+    public ResponseEntity<Resource> cover(@PathVariable String slug, @PathVariable String courseKey) {
         Organization org = storefront.orgBySlug(slug);
-        Course course = store.getOwned(Course.class, courseId, org.getId());
+        Course course = storefront.resolvePublishedCourse(org, courseKey);
         if (!course.isActive() || !course.isPublished()) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Course not found");
         }

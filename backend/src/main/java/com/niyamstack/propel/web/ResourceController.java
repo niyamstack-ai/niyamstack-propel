@@ -128,9 +128,20 @@ public class ResourceController {
     @GetMapping("/courses") public List<Course> courses() { return list(Course.class); }
     @PostMapping("/courses") public Course createCourse(@RequestBody Course body) {
         body.setTermId(sis.resolveTermId(body.getTermId()));
+        applyShareSlug(body, null);
         return create(body, "SETUP");
     }
-    @PutMapping("/courses/{id}") public Course updateCourse(@PathVariable UUID id, @RequestBody Course body) { return update(Course.class, id, body, "SETUP"); }
+    @PutMapping("/courses/{id}") public Course updateCourse(@PathVariable UUID id, @RequestBody Course body) {
+        applyShareSlug(body, id);
+        return update(Course.class, id, body, "SETUP");
+    }
+    @GetMapping("/share-slugs/check")
+    public Map<String, Object> shareAvailable(@RequestParam String slug, @RequestParam(required = false) UUID courseId) {
+        Access.requireTenant(Auth.current());
+        String normalized = normalizeShareSlug(slug);
+        boolean available = normalized.isEmpty() || shareSlugFree(normalized, courseId, Auth.current().organizationId());
+        return Map.of("slug", normalized, "available", available);
+    }
     @DeleteMapping("/courses/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteCourse(@PathVariable UUID id) { lms.deleteCourse(id); }
@@ -634,6 +645,42 @@ public class ResourceController {
             Access.requireAny(Auth.current(), Roles.OWNER);
         }
         store.deleteOwned(type, id, Auth.current().organizationId());
+    }
+
+    private void applyShareSlug(Course body, UUID ignoreId) {
+        Access.requireTenant(Auth.current());
+        String slug = normalizeShareSlug(body.getShareSlug());
+        if (!slug.isEmpty() && !shareSlugFree(slug, ignoreId, Auth.current().organizationId())) {
+            throw new ApiException(HttpStatus.CONFLICT, "This link is not available");
+        }
+        body.setShareSlug(slug.isEmpty() ? null : slug);
+    }
+
+    private boolean shareSlugFree(String slug, UUID ignoreId, UUID orgId) {
+        return store.list(Course.class, orgId).stream()
+                .noneMatch(c -> slug.equalsIgnoreCase(nz(c.getShareSlug()))
+                        && (ignoreId == null || !ignoreId.equals(c.getId())));
+    }
+
+    private static String normalizeShareSlug(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String slug = raw.trim().toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("^-+|-+$", "");
+        if (slug.length() > 60) {
+            slug = slug.substring(0, 60).replaceAll("-+$", "");
+        }
+        if (slug.length() < 3) {
+            return "";
+        }
+        if (slug.matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")) {
+            return "";
+        }
+        return slug;
+    }
+
+    private static String nz(String value) {
+        return value == null ? "" : value;
     }
 
     @SuppressWarnings("unused")

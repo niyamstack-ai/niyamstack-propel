@@ -24,6 +24,7 @@ export type Course = {
   durationMonths?: number;
   published?: boolean;
   featured?: boolean;
+  shareSlug?: string;
   allowOffline?: boolean;
   allowTrial?: boolean;
   allowPreview?: boolean;
@@ -735,7 +736,7 @@ function CourseCard({
         )}
         {c.published !== false && user?.orgSlug && (
           <div className="mt-3">
-            <ShareLinkBar slug={user.orgSlug} courseId={c.id} published compact />
+            <ShareLinkBar slug={user.orgSlug} courseId={c.id} shareSlug={c.shareSlug} published compact />
           </div>
         )}
       </div>

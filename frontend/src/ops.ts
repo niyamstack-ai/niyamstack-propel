@@ -1,14 +1,34 @@
 import { api, getToken } from "./api";
+import { compressImage } from "./imageUpload";
+
+function demoWriteBlocked() {
+  try {
+    const raw = localStorage.getItem("propel.user");
+    const user = raw ? (JSON.parse(raw) as { accessStatus?: string }) : null;
+    return user?.accessStatus === "DEMO";
+  } catch {
+    return false;
+  }
+}
+
+function rejectDemoWrite(): never {
+  const message = "You are not a paid user. Please subscribe to use this facility.";
+  window.dispatchEvent(new CustomEvent("propel:subscribe-required", { detail: message }));
+  throw new Error(message);
+}
 
 export async function createRecord<T>(path: string, body: unknown): Promise<T> {
+  if (demoWriteBlocked()) rejectDemoWrite();
   return api<T>(path, { method: "POST", body: JSON.stringify(body) });
 }
 
 export async function updateRecord<T>(path: string, body: unknown): Promise<T> {
+  if (demoWriteBlocked()) rejectDemoWrite();
   return api<T>(path, { method: "PUT", body: JSON.stringify(body) });
 }
 
 export async function deleteRecord(path: string): Promise<void> {
+  if (demoWriteBlocked()) rejectDemoWrite();
   await api(path, { method: "DELETE" });
 }
 
@@ -23,8 +43,10 @@ export async function uploadContentFile<T = { id: string; url?: string; title?: 
   file: File,
   fields: Record<string, string> = {},
 ): Promise<T> {
+  if (demoWriteBlocked()) rejectDemoWrite();
+  const payload = file.type.startsWith("image/") ? await compressImage(file) : file;
   const form = new FormData();
-  form.append("file", file);
+  form.append("file", payload);
   for (const [key, value] of Object.entries(fields)) {
     if (value) form.append(key, value);
   }
@@ -45,6 +67,9 @@ export async function uploadContentFile<T = { id: string; url?: string; title?: 
     } catch {
       /* ignore */
     }
+    if (/not a paid user|subscribe to use this facility/i.test(message)) {
+      window.dispatchEvent(new CustomEvent("propel:subscribe-required", { detail: message }));
+    }
     throw new Error(message);
   }
   return res.json() as Promise<T>;
@@ -59,8 +84,10 @@ export async function uploadMedia(file: File): Promise<{ url: string; fileName: 
 }
 
 async function uploadTo(path: string, file: File): Promise<{ url: string; fileName: string }> {
+  if (demoWriteBlocked()) rejectDemoWrite();
+  const payload = file.type.startsWith("image/") ? await compressImage(file) : file;
   const form = new FormData();
-  form.append("file", file);
+  form.append("file", payload);
   const headers = new Headers();
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -77,6 +104,9 @@ async function uploadTo(path: string, file: File): Promise<{ url: string; fileNa
       message = body.error || body.message || message;
     } catch {
       /* ignore */
+    }
+    if (/not a paid user|subscribe to use this facility/i.test(message)) {
+      window.dispatchEvent(new CustomEvent("propel:subscribe-required", { detail: message }));
     }
     throw new Error(message);
   }

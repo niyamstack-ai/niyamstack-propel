@@ -53,8 +53,38 @@ function sitePath(slug: string | undefined, path = "") {
   return `/s/${slug}${suffix}`;
 }
 
+function PasswordInput({
+  value,
+  onChange,
+  placeholder,
+  autoComplete,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  autoComplete?: string;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <span className="relative block">
+      <input
+        className="w-full rounded-lg border border-line px-3 py-2"
+        type={show ? "text" : "password"}
+        placeholder={placeholder}
+        autoComplete={autoComplete}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-brand" onClick={() => setShow((v) => !v)}>
+        {show ? "Hide" : "Show"}
+      </button>
+    </span>
+  );
+}
+
 type PublicCourse = {
   id: string;
+  shareSlug?: string;
   code?: string;
   name: string;
   description?: string;
@@ -500,7 +530,7 @@ function CatalogPage() {
     <div className="grid gap-4 sm:grid-cols-2">
       {courses.length === 0 && <p className="text-sm text-slate-500">No published courses yet.</p>}
       {courses.map((c) => (
-        <Link key={c.id} to={`${sitePath(slug)}/courses/${c.id}`} className="overflow-hidden rounded-2xl border border-line bg-white hover:border-brand">
+        <Link key={c.id} to={`${sitePath(slug)}/courses/${c.shareSlug || c.id}`} className="overflow-hidden rounded-2xl border border-line bg-white hover:border-brand">
           <img src={`/api/public/sites/${slug}/courses/${c.id}/cover`} alt="" className="h-36 w-full bg-navy object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
           <div className="p-5">
             <p className="text-xs uppercase tracking-wide text-slate-400">{c.category && c.category !== "Others" ? c.category : "Course"}</p>
@@ -940,7 +970,7 @@ function StudentLoginPage() {
       {mode === "email" && (
         <form className="mt-4 space-y-3" onSubmit={emailLogin}>
           <input className="w-full rounded-lg border border-line px-3 py-2" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <input className="w-full rounded-lg border border-line px-3 py-2" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <PasswordInput placeholder="Password" value={password} onChange={setPassword} autoComplete="current-password" />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
             {busy ? "Signing in…" : "Login"}
@@ -1629,8 +1659,8 @@ function StudentForgotPage() {
               {method === "email" && !token && (
                 <input className="w-full rounded-lg border border-line px-3 py-2" placeholder="Reset token from email" value={token} onChange={(e) => setToken(e.target.value)} />
               )}
-              <input className="w-full rounded-lg border border-line px-3 py-2" type="password" placeholder="New password" value={password} onChange={(e) => setPassword(e.target.value)} />
-              <input className="w-full rounded-lg border border-line px-3 py-2" type="password" placeholder="Confirm password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+              <PasswordInput placeholder="New password" value={password} onChange={setPassword} autoComplete="new-password" />
+              <PasswordInput placeholder="Confirm password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
               {error && <p className="text-sm text-red-600">{error}</p>}
               <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
                 {busy ? "Saving…" : "Set password"}

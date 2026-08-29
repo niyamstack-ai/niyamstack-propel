@@ -59,6 +59,28 @@ function expireClientSession(path: string) {
   window.dispatchEvent(new Event("propel:unauthorized"));
 }
 
+function failHttp(path: string, status: number, message: string): never {
+  if (/suspended/i.test(message) && !isPublicAuthPath(path)) {
+    expireClientSession(path);
+  } else if (/not a paid user|subscribe to use this facility/i.test(message)) {
+    window.dispatchEvent(new CustomEvent("propel:subscribe-required", { detail: message }));
+  } else {
+    const sessionGone =
+      (status === 401 || (status === 403 && message === "Forbidden")) && !isPublicAuthPath(path);
+    if (sessionGone) {
+      expireClientSession(path);
+      throw new Error("Your session expired. Please sign in again.");
+    }
+  }
+  if (message === "Internal Server Error") {
+    message = "The server could not complete this request. Try again.";
+  }
+  if (/no static resource/i.test(message)) {
+    message = "Could not load this. Restart the API and try again.";
+  }
+  throw new Error(message);
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
@@ -78,19 +100,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     } catch {
       /* ignore */
     }
-    const sessionGone =
-      (res.status === 401 || (res.status === 403 && message === "Forbidden")) && !isPublicAuthPath(path);
-    if (sessionGone) {
-      expireClientSession(path);
-      throw new Error("Your session expired. Please sign in again.");
-    }
-    if (message === "Internal Server Error") {
-      message = "The server could not complete this request. Try again.";
-    }
-    if (/no static resource/i.test(message)) {
-      message = "Could not load this. Restart the API and try again.";
-    }
-    throw new Error(message);
+    failHttp(path, res.status, message);
   }
   if (res.status === 204) return undefined as T;
   const text = await res.text();

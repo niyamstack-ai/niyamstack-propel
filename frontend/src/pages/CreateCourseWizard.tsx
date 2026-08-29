@@ -29,6 +29,7 @@ type Draft = {
   allowPreview?: boolean;
   allowLive?: boolean;
   featured?: boolean;
+  shareSlug?: string;
   bundleCsv?: string;
 };
 

@@ -133,6 +133,7 @@ public final class Model {
         private Integer validityAltValue;
         private String validityAltUnit = "MONTH";
         private UUID termId;
+        private String shareSlug;
         private boolean active = true;
     }
 
