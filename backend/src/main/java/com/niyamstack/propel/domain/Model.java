@@ -480,6 +480,7 @@ public final class Model {
         private BigDecimal gstRate;
         private Integer installmentCount;
         private String hsn;
+        @Column(length = 20)
         private String sacCode;
         private UUID termId;
     }
@@ -504,6 +505,7 @@ public final class Model {
         private String buyerName;
         private String buyerGstin;
         private String placeOfSupply;
+        @Column(length = 20)
         private String sacCode;
         private String seriesPrefix;
         private Instant lastRemindedAt;

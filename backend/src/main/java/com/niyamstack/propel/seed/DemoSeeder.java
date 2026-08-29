@@ -621,11 +621,13 @@ public class DemoSeeder implements CommandLineRunner {
             org.setPaymentStatus("PAID");
             org.setBillingCycle("QUARTERLY");
             org.setDealAmount(new BigDecimal("45000"));
-            org.setProductPack("FULL_OPS");
-            org.setModulesCsv("STUDENTS,CRM,LMS,FEES,PLACEMENT,COMMS,ANALYTICS,WEBSITE,TESTS,STAFF,GROW");
-            org.setModulesCsv("STUDENTS,CRM,LMS,FEES,PLACEMENT,COMMS,ANALYTICS,WEBSITE,TESTS,STAFF,GROW");
             org.setMaxStudents(500);
             org.setMaxCenters(5);
+        }
+        String modules = org.getModulesCsv() == null ? "" : org.getModulesCsv();
+        if (!modules.contains("WEBSITE") || !modules.contains("GROW")) {
+            org.setProductPack("FULL_OPS");
+            org.setModulesCsv("STUDENTS,CRM,LMS,FEES,PLACEMENT,COMMS,ANALYTICS,WEBSITE,TESTS,STAFF,GROW");
         }
         org.setWebsitePublished(true);
         if (org.getWebsiteUrl() == null || org.getWebsiteUrl().isBlank()) {

@@ -7,9 +7,15 @@ node_modules/
 *.iml
 .DS_Store
 Thumbs.db
+*.tsbuildinfo
 backend/data/
 data/files/
 .tools/
+
+# Local ops notes (passwords / VPS details — keep on this PC only)
+Niyamstack-Propel-Testing-Logins.docx
+Niyamstack-Propel-VPS-Everyday-Guide.docx
+scripts/write-propel-guide.doc.ps1
 
 # Env / secrets
 .env
