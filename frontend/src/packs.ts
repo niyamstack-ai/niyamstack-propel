@@ -63,6 +63,7 @@ export function pathAllowed(path: string, modules?: string[]) {
   if (path.startsWith("/fees")) return hasModule(modules, "FEES");
   if (path.startsWith("/analytics")) return hasModule(modules, "ANALYTICS");
   if (path.startsWith("/intelligence")) return hasModule(modules, "ANALYTICS");
+  if (path.startsWith("/enterprise")) return hasModule(modules, "ANALYTICS", "LMS");
   if (path.startsWith("/placement") || path.startsWith("/readiness")) return hasModule(modules, "PLACEMENT");
   if (path.startsWith("/comms") || path.startsWith("/chats") || path.startsWith("/one-to-one")) return hasModule(modules, "COMMS");
   if (path.startsWith("/ess")) return hasModule(modules, "ESS");
@@ -82,4 +83,12 @@ export function hasGrowthTier(tier?: string | null, modules?: string[]) {
     rank = Math.max(rank, 2);
   }
   return rank >= 2;
+}
+
+export function hasEnterpriseTier(tier?: string | null, modules?: string[]) {
+  let rank = packageRank(tier);
+  if (modules?.some((m) => ["LMS", "ANALYTICS", "PLACEMENT"].includes(m))) {
+    rank = Math.max(rank, 2);
+  }
+  return rank >= 3;
 }

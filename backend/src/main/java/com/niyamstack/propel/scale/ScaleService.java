@@ -251,6 +251,7 @@ public class ScaleService {
     public List<Map<String, Object>> learningOutcomes() {
         PropelUser user = Auth.current();
         Access.requireAny(user, Roles.OWNER, Roles.FACULTY);
+        Access.requirePackage(user, "ENTERPRISE");
         UUID org = user.organizationId();
         Map<UUID, int[]> byCourse = new LinkedHashMap<>();
         for (XapiStatement s : store.list(XapiStatement.class, org)) {
@@ -312,6 +313,7 @@ public class ScaleService {
 
     public Map<String, Object> ltiLaunch(UUID packageId) {
         PropelUser user = Auth.current();
+        Access.requirePackage(user, "ENTERPRISE");
         LmsPackage pkg = store.getOwned(LmsPackage.class, packageId, user.organizationId());
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("standard", pkg.getStandard());
@@ -326,6 +328,7 @@ public class ScaleService {
     public AccreditationFolder saveFolder(Map<String, String> body) {
         PropelUser user = Auth.current();
         Access.requireAny(user, Roles.OWNER);
+        Access.requirePackage(user, "ENTERPRISE");
         AccreditationFolder folder = new AccreditationFolder();
         folder.setOrganizationId(user.organizationId());
         folder.setFramework(blank(str(body, "framework"), "NAAC").toUpperCase());
@@ -338,6 +341,7 @@ public class ScaleService {
     public AccreditationEvidence saveEvidence(Map<String, String> body) {
         PropelUser user = Auth.current();
         Access.requireAny(user, Roles.OWNER);
+        Access.requirePackage(user, "ENTERPRISE");
         UUID folderId = uuid(body, "folderId");
         if (folderId == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Pick a folder");
@@ -357,6 +361,7 @@ public class ScaleService {
     public AccreditationEvidence submitEvidence(UUID id) {
         PropelUser user = Auth.current();
         Access.requireAny(user, Roles.OWNER);
+        Access.requirePackage(user, "ENTERPRISE");
         AccreditationEvidence row = store.getOwned(AccreditationEvidence.class, id, user.organizationId());
         ApprovalRequest req = new ApprovalRequest();
         req.setOrganizationId(user.organizationId());
@@ -380,16 +385,19 @@ public class ScaleService {
     }
 
     public Map<String, String> aiCoach(Map<String, String> body) {
+        Access.requirePackage(Auth.current(), "ENTERPRISE");
         return Map.of("answer", complete("You are an academic and placement coach for an Indian coaching institute.",
                 blank(str(body, "question"), "How do I get placement ready this month?")));
     }
 
     public Map<String, String> aiResume(Map<String, String> body) {
+        Access.requirePackage(Auth.current(), "ENTERPRISE");
         return Map.of("suggestion", complete("You rewrite student resumes for campus placement in India. Be concrete.",
                 blank(str(body, "content"), "Improve this resume for a Java developer role.")));
     }
 
     public Map<String, Object> aiCareer(Map<String, String> body) {
+        Access.requirePackage(Auth.current(), "ENTERPRISE");
         String text = complete("You map coaching-institute students to IT career paths in India.",
                 blank(str(body, "question"), "Suggest a career path after Java full stack."));
         Map<String, Object> out = new LinkedHashMap<>();
@@ -403,6 +411,7 @@ public class ScaleService {
     public Map<String, Object> syncOffline(Map<String, Object> body) {
         PropelUser user = Auth.current();
         Access.requireTenant(user);
+        Access.requirePackage(user, "ENTERPRISE");
         Object raw = body == null ? List.of() : body.get("events");
         if (!(raw instanceof List<?> events)) {
             return Map.of("applied", 0);

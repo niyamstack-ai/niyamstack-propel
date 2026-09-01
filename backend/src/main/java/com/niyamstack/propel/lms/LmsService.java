@@ -137,7 +137,7 @@ public class LmsService {
     @Transactional
     public LmsPackage registerPackage(UUID contentItemId, String standard, String launchUrl, String version) {
         PropelUser user = Auth.current();
-        Access.requirePackage(user, "GROWTH");
+        Access.requirePackage(user, "ENTERPRISE");
         Access.requireAny(user, Roles.OWNER, Roles.FACULTY);
         ContentItem content = store.getOwned(ContentItem.class, contentItemId, user.organizationId());
         LmsPackage pkg = new LmsPackage();

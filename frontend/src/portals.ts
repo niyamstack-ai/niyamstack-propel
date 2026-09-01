@@ -143,6 +143,7 @@ function roleNav(role?: string): NavEntry[] {
             { to: "/fees", label: "Fees" },
             { to: "/analytics", label: "Analytics" },
             { to: "/intelligence", label: "Intelligence" },
+            { to: "/enterprise", label: "Enterprise" },
           ],
         },
         {
@@ -213,6 +214,8 @@ export function canOpen(role: string | undefined, path: string, modules?: string
       "/ess",
       "/academics",
       "/audit",
+      "/intelligence",
+      "/enterprise",
     ];
     return prefixes.some((p) => path === p || path.startsWith(p + "/"));
   }

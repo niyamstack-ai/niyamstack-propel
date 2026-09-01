@@ -4,6 +4,7 @@ import com.niyamstack.propel.catalog.Packs;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.*;
+import com.niyamstack.propel.enterprise.EnterpriseService;
 import com.niyamstack.propel.grow.GrowService;
 import com.niyamstack.propel.ess.EssService;
 import com.niyamstack.propel.security.Access;
@@ -39,15 +40,17 @@ public class SisService {
     private final StudentAccountService students;
     private final EssService ess;
     private final GrowService grow;
+    private final EnterpriseService enterprise;
     private final TransactionTemplate isolated;
 
     public SisService(Store store, PasswordEncoder encoder, StudentAccountService students, EssService ess,
-                      PlatformTransactionManager txManager, GrowService grow) {
+                      PlatformTransactionManager txManager, GrowService grow, EnterpriseService enterprise) {
         this.store = store;
         this.encoder = encoder;
         this.students = students;
         this.ess = ess;
         this.grow = grow;
+        this.enterprise = enterprise;
         this.isolated = new TransactionTemplate(txManager);
         this.isolated.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -383,6 +386,7 @@ public class SisService {
         req.setNote(str(body, "note"));
         req.setRequestedBy(Auth.current().userId());
         req.setPayloadJson(str(body, "payloadJson"));
+        enterprise.enrichApproval(req);
         return store.save(req);
     }
 

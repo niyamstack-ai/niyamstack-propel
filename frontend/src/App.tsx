@@ -23,6 +23,7 @@ import { CommsPage } from "./pages/CommsPage";
 import { InstitutePage } from "./pages/InstitutePage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { IntelligencePage } from "./pages/IntelligencePage";
+import { EnterprisePage } from "./pages/EnterprisePage";
 import { WebsitePage } from "./pages/WebsitePage";
 import { CourseWorkspacePage } from "./pages/CourseWorkspacePage";
 import { CoursesCommercePage } from "./pages/CoursesCommercePage";
@@ -219,6 +220,7 @@ export default function App() {
           <Route path="audit" element={<AuditPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="intelligence" element={<IntelligencePage />} />
+          <Route path="enterprise" element={<EnterprisePage />} />
         </Route>
       </Route>
     </Routes>

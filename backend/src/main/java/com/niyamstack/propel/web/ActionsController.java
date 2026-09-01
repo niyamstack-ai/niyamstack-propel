@@ -3,7 +3,10 @@ package com.niyamstack.propel.web;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.niyamstack.propel.analytics.AnalyticsService;
 import com.niyamstack.propel.analytics.IntelligenceService;
+import com.niyamstack.propel.compensation.CompensationService;
+import com.niyamstack.propel.enterprise.EnterpriseService;
 import com.niyamstack.propel.comms.OutreachService;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
@@ -54,12 +57,14 @@ public class ActionsController {
     private final AnalyticsService analytics;
     private final CompensationService compensation;
     private final IntelligenceService intelligence;
+    private final EnterpriseService enterprise;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public ActionsController(Store store, FeeService fees, LmsService lms, PlacementService placement,
                              IntegrationStatusService integrations, StorefrontService storefront, ObjectStorage storage,
                              OutreachService outreach, EssService ess, SisService sis, GrowService grow, ScaleService scale,
-                             AnalyticsService analytics, CompensationService compensation, IntelligenceService intelligence) {
+                             AnalyticsService analytics, CompensationService compensation, IntelligenceService intelligence,
+                             EnterpriseService enterprise) {
         this.store = store;
         this.fees = fees;
         this.lms = lms;
@@ -75,6 +80,7 @@ public class ActionsController {
         this.analytics = analytics;
         this.compensation = compensation;
         this.intelligence = intelligence;
+        this.enterprise = enterprise;
     }
 
     @GetMapping("/my-courses")
@@ -1070,6 +1076,36 @@ public class ActionsController {
     @GetMapping("/intelligence/pnl")
     public Map<String, Object> intelligencePnl(@RequestParam(defaultValue = "90") int days) {
         return intelligence.pnlSummary(days);
+    }
+
+    @GetMapping("/enterprise/hub")
+    public Map<String, Object> enterpriseHub() {
+        return enterprise.hub();
+    }
+
+    @GetMapping("/enterprise/workflows")
+    public List<Map<String, Object>> enterpriseWorkflows() {
+        return enterprise.workflows();
+    }
+
+    @PostMapping("/enterprise/workflows")
+    public Map<String, Object> saveEnterpriseWorkflow(@RequestBody Map<String, Object> body) {
+        return enterprise.saveWorkflow(body);
+    }
+
+    @GetMapping("/enterprise/workflows/{id}/preview")
+    public Map<String, Object> previewEnterpriseWorkflow(@PathVariable UUID id) {
+        return enterprise.previewWorkflow(id);
+    }
+
+    @GetMapping("/enterprise/accreditation")
+    public Map<String, Object> enterpriseAccreditation() {
+        return enterprise.accreditationDashboard();
+    }
+
+    @GetMapping("/enterprise/ai")
+    public Map<String, Object> enterpriseAi() {
+        return enterprise.aiSuite();
     }
 
     @GetMapping("/dashboard")
