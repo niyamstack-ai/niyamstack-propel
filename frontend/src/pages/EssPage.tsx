@@ -76,18 +76,40 @@ type Candidate = {
   offerJoiningDate?: string;
 };
 type Center = { id: string; name: string };
+type Reg = {
+  id: string;
+  employeeName?: string;
+  workDate?: string;
+  shift?: string;
+  requestedStatus?: string;
+  status?: string;
+  canApprove?: boolean;
+  canCancel?: boolean;
+  reason?: string;
+};
+type Resign = { id: string; employeeName?: string; lastWorkingDate?: string; status?: string; canDecide?: boolean; reason?: string };
+type Doc = { id: string; docType?: string; fileName?: string; storageUrl?: string };
+type ManagerInbox = {
+  pendingLeave?: number;
+  pendingRegularization?: number;
+  pendingResignation?: number;
+  leave?: Leave[];
+  regularization?: Reg[];
+  resignation?: Resign[];
+  teamSize?: number;
+};
 
-const TABS = ["profile", "employees", "attendance", "leave", "payroll", "hiring", "devices"] as const;
-type Tab = (typeof TABS)[number];
+const HR_TABS = ["profile", "team", "employees", "attendance", "leave", "payroll", "hiring", "devices"] as const;
+const MANAGER_TABS = ["profile", "team", "attendance", "leave", "payroll"] as const;
+const STAFF_TABS = ["profile", "attendance", "leave", "payroll"] as const;
+type Tab = (typeof HR_TABS)[number];
 
 export function EssPage() {
   const { user } = useAuth();
   const hr = user?.role === "OWNER" || user?.role === "ACCOUNTANT" || (user?.capabilities ?? []).includes("ESS_MANAGE");
   const manager = (user?.capabilities ?? []).includes("LEAVE_APPROVE");
-  const [tab, setTab] = useState<Tab>(hr ? "employees" : "profile");
-  const tabs = hr ? TABS : manager
-    ? (["profile", "attendance", "leave", "payroll"] as const)
-    : (["profile", "attendance", "leave", "payroll"] as const);
+  const [tab, setTab] = useState<Tab>(hr ? "employees" : manager ? "team" : "profile");
+  const tabs = hr ? HR_TABS : manager ? MANAGER_TABS : STAFF_TABS;
 
   return (
     <div className="space-y-6">
@@ -114,6 +136,7 @@ export function EssPage() {
         ))}
       </div>
       {tab === "profile" && <ProfileTab hr={hr} />}
+      {tab === "team" && (hr || manager) && <TeamTab hr={hr} />}
       {tab === "employees" && hr && <EmployeesTab />}
       {tab === "attendance" && <AttendanceTab hr={hr} />}
       {tab === "leave" && <LeaveTab hr={hr} manager={manager} />}
@@ -127,6 +150,7 @@ export function EssPage() {
 function ProfileTab({ hr }: { hr: boolean }) {
   const profile = useApi<Employee>("/api/actions/ess/profile");
   const orgChart = useApi<Employee[]>(hr ? "/api/actions/ess/org-chart" : "");
+  const docs = useApi<Doc[]>(profile.data?.id ? `/api/employees/${profile.data.id}/documents` : "");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
@@ -135,6 +159,11 @@ function ProfileTab({ hr }: { hr: boolean }) {
   const [pan, setPan] = useState("");
   const [uan, setUan] = useState("");
   const [esiNumber, setEsiNumber] = useState("");
+  const [docType, setDocType] = useState("ID_PROOF");
+  const [fileName, setFileName] = useState("");
+  const [storageUrl, setStorageUrl] = useState("");
+  const [resignDate, setResignDate] = useState("");
+  const [resignReason, setResignReason] = useState("");
 
   const p = profile.data;
 
@@ -158,6 +187,34 @@ function ProfileTab({ hr }: { hr: boolean }) {
       });
       profile.reload();
       setNotice("Profile updated.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function addDoc() {
+    if (!p) return;
+    setError(null);
+    try {
+      await createRecord("/api/employee-documents", { employeeId: p.id, docType, fileName, storageUrl });
+      docs.reload();
+      setFileName("");
+      setStorageUrl("");
+      setNotice("Document added.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function submitResignation() {
+    setError(null);
+    try {
+      await api("/api/actions/ess/resignation", {
+        method: "POST",
+        body: JSON.stringify({ lastWorkingDate: resignDate, reason: resignReason }),
+      });
+      setResignReason("");
+      setNotice("Resignation submitted to HR.");
     } catch (e) {
       setError((e as Error).message);
     }
@@ -192,6 +249,39 @@ function ProfileTab({ hr }: { hr: boolean }) {
           <p className="text-sm text-slate-500">No employee record linked to your login yet. Ask the owner to link you under People → Staff.</p>
         )}
       </Card>
+      {p && (
+        <>
+          <Card title="My documents">
+            <Table
+              empty="No documents uploaded yet."
+              columns={["Type", "Name", "Link"]}
+              rows={(docs.data ?? []).map((d) => [prettyLabel(d.docType), d.fileName || "—", d.storageUrl ? <a key={d.id} href={d.storageUrl} className="text-brand hover:underline" target="_blank" rel="noreferrer">Open</a> : "—"])}
+            />
+            <FormGrid>
+              <Field label="Document type" value={docType} onChange={setDocType} placeholder="ID_PROOF / OFFER" />
+              <Field label="File name" value={fileName} onChange={setFileName} />
+              <Field label="URL or path" value={storageUrl} onChange={setStorageUrl} />
+            </FormGrid>
+            <div className="mt-3">
+              <PrimaryButton disabled={!storageUrl} onClick={() => void addDoc()}>Add document</PrimaryButton>
+            </div>
+          </Card>
+          {!hr && (
+            <Card title="Resignation">
+              <p className="mb-3 text-sm text-slate-500">Submit your notice period request to HR.</p>
+              <FormGrid>
+                <Field label="Last working date" type="date" value={resignDate} onChange={setResignDate} />
+              </FormGrid>
+              <div className="mt-3">
+                <TextArea label="Reason" value={resignReason} onChange={setResignReason} rows={3} />
+              </div>
+              <div className="mt-3">
+                <PrimaryButton disabled={!resignDate} onClick={() => void submitResignation()}>Submit resignation</PrimaryButton>
+              </div>
+            </Card>
+          )}
+        </>
+      )}
       {hr && (
         <Card title="Org chart">
           <Table
@@ -205,6 +295,213 @@ function ProfileTab({ hr }: { hr: boolean }) {
               String((e as Employee & { reportCount?: number }).reportCount ?? 0),
             ])}
           />
+        </Card>
+      )}
+    </>
+  );
+}
+
+function TeamTab({ hr }: { hr: boolean }) {
+  const inbox = useApi<ManagerInbox>("/api/actions/ess/manager/inbox");
+  const now = new Date();
+  const teamAtt = useApi<Attendance[]>(`/api/actions/ess/team/attendance?year=${now.getFullYear()}&month=${now.getMonth() + 1}`);
+  const teamLeave = useApi<Leave[]>(`/api/actions/ess/team/leave-calendar?year=${now.getFullYear()}&month=${now.getMonth() + 1}`);
+  const policy = useApi<{ clAnnual?: number; slAnnual?: number; elAnnual?: number; excludeHolidays?: boolean }>(hr ? "/api/leave-policy" : "");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [selectedLeave, setSelectedLeave] = useState<string[]>([]);
+  const [clAnnual, setClAnnual] = useState("12");
+  const [slAnnual, setSlAnnual] = useState("6");
+  const [elAnnual, setElAnnual] = useState("15");
+
+  useEffect(() => {
+    if (!policy.data) return;
+    setClAnnual(String(policy.data.clAnnual ?? 12));
+    setSlAnnual(String(policy.data.slAnnual ?? 6));
+    setElAnnual(String(policy.data.elAnnual ?? 15));
+  }, [policy.data?.clAnnual, policy.data?.slAnnual, policy.data?.elAnnual]);
+
+  const box = inbox.data;
+
+  async function decideOneLeave(id: string, approve: boolean) {
+    setError(null);
+    try {
+      await api(`/api/actions/ess/leave/${id}/decide`, { method: "POST", body: JSON.stringify({ approve }) });
+      inbox.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function bulkLeave(approve: boolean) {
+    if (!selectedLeave.length) return;
+    setError(null);
+    try {
+      const out = await api<{ processed?: number }>("/api/actions/ess/leave/bulk-decide", {
+        method: "POST",
+        body: JSON.stringify({ ids: selectedLeave, approve }),
+      });
+      setSelectedLeave([]);
+      inbox.reload();
+      setNotice(`${approve ? "Approved" : "Rejected"} ${out.processed ?? 0} leave request(s).`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function decideReg(id: string, approve: boolean) {
+    setError(null);
+    try {
+      await api(`/api/actions/ess/regularization/${id}/decide`, { method: "POST", body: JSON.stringify({ approve }) });
+      inbox.reload();
+      teamAtt.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function decideResign(id: string, approve: boolean) {
+    setError(null);
+    try {
+      await api(`/api/actions/ess/resignation/${id}/decide`, { method: "POST", body: JSON.stringify({ approve }) });
+      inbox.reload();
+      setNotice(approve ? "Resignation accepted. Employee is on notice." : "Resignation rejected.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function savePolicy() {
+    setError(null);
+    try {
+      await api("/api/leave-policy", { method: "PUT", body: JSON.stringify({ clAnnual, slAnnual, elAnnual }) });
+      policy.reload();
+      setNotice("Leave policy saved for this year.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function toggleLeave(id: string) {
+    setSelectedLeave((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  return (
+    <>
+      <ErrorText error={error || inbox.error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card title="Pending leave">
+          <p className="text-3xl font-bold text-navy">{box?.pendingLeave ?? 0}</p>
+        </Card>
+        <Card title="Regularization">
+          <p className="text-3xl font-bold text-navy">{box?.pendingRegularization ?? 0}</p>
+        </Card>
+        <Card title="Resignations">
+          <p className="text-3xl font-bold text-navy">{box?.pendingResignation ?? 0}</p>
+        </Card>
+      </div>
+      <Card title="Pending leave">
+        <div className="mb-3 flex flex-wrap gap-2">
+          <PrimaryButton disabled={!selectedLeave.length} onClick={() => void bulkLeave(true)}>Approve selected</PrimaryButton>
+          <PrimaryButton disabled={!selectedLeave.length} onClick={() => void bulkLeave(false)}>Reject selected</PrimaryButton>
+        </div>
+        <Table
+          empty="No pending leave for your team."
+          columns={["", "Employee", "Type", "From", "To", "Days", ""]}
+          rows={(box?.leave ?? []).map((r) => [
+            r.canApprove ? (
+              <input key={`${r.id}-cb`} type="checkbox" checked={selectedLeave.includes(r.id)} onChange={() => toggleLeave(r.id)} />
+            ) : (
+              ""
+            ),
+            r.employeeName || "—",
+            r.leaveType || "—",
+            formatDay(r.fromDate) || "—",
+            formatDay(r.toDate) || "—",
+            String(r.days ?? ""),
+            r.canApprove ? (
+              <span key={r.id} className="flex gap-2">
+                <LinkButton onClick={() => void decideOneLeave(r.id, true)}>Approve</LinkButton>
+                <LinkButton onClick={() => void decideOneLeave(r.id, false)}>Reject</LinkButton>
+              </span>
+            ) : (
+              ""
+            ),
+          ])}
+        />
+      </Card>
+      <Card title="Attendance regularization">
+        <Table
+          empty="No pending regularization requests."
+          columns={["Employee", "Date", "Requested", "Reason", ""]}
+          rows={(box?.regularization ?? []).map((r) => [
+            r.employeeName || "—",
+            formatDay(r.workDate) || "—",
+            prettyLabel(r.requestedStatus),
+            r.reason || "—",
+            r.canApprove ? (
+              <span key={r.id} className="flex gap-2">
+                <LinkButton onClick={() => void decideReg(r.id, true)}>Approve</LinkButton>
+                <LinkButton onClick={() => void decideReg(r.id, false)}>Reject</LinkButton>
+              </span>
+            ) : (
+              ""
+            ),
+          ])}
+        />
+      </Card>
+      {hr && (
+        <Card title="Resignation requests">
+          <Table
+            empty="No pending resignations."
+            columns={["Employee", "Last day", "Reason", ""]}
+            rows={(box?.resignation ?? []).map((r) => [
+              r.employeeName || "—",
+              formatDay(r.lastWorkingDate) || "—",
+              r.reason || "—",
+              r.canDecide ? (
+                <span key={r.id} className="flex gap-2">
+                  <LinkButton onClick={() => void decideResign(r.id, true)}>Accept</LinkButton>
+                  <LinkButton onClick={() => void decideResign(r.id, false)}>Reject</LinkButton>
+                </span>
+              ) : (
+                ""
+              ),
+            ])}
+          />
+        </Card>
+      )}
+      <Card title="Team attendance this month">
+        <Table
+          empty="No team attendance marks this month."
+          columns={["Date", "Employee", "Status", "Shift", "Source"]}
+          rows={(teamAtt.data ?? []).map((a) => [
+            formatDay(a.workDate) || "—",
+            a.employeeName || "—",
+            prettyLabel(a.status),
+            prettyLabel(a.shift),
+            prettyLabel(a.source),
+          ])}
+        />
+      </Card>
+      <Card title="Team leave this month">
+        <Table
+          empty="Nobody on approved leave this month."
+          columns={["Employee", "Type", "From", "To"]}
+          rows={(teamLeave.data ?? []).map((r) => [r.employeeName || "—", r.leaveType || "—", formatDay(r.fromDate) || "—", formatDay(r.toDate) || "—"])}
+        />
+      </Card>
+      {hr && (
+        <Card title="Leave policy (this year)">
+          <FormGrid>
+            <Field label="CL days" value={clAnnual} onChange={setClAnnual} />
+            <Field label="SL days" value={slAnnual} onChange={setSlAnnual} />
+            <Field label="EL days" value={elAnnual} onChange={setElAnnual} />
+          </FormGrid>
+          <div className="mt-3">
+            <PrimaryButton onClick={() => void savePolicy()}>Save policy</PrimaryButton>
+          </div>
         </Card>
       )}
     </>
@@ -384,13 +681,18 @@ function EmployeesTab() {
 function AttendanceTab({ hr }: { hr: boolean }) {
   const people = useApi<Employee[]>("/api/employees");
   const rows = useApi<Attendance[]>("/api/staff-attendance");
+  const regs = useApi<Reg[]>("/api/attendance-regularizations");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [employeeId, setEmployeeId] = useState("");
   const [workDate, setWorkDate] = useState(today());
   const [shift, setShift] = useState("FULL");
   const [status, setStatus] = useState("PRESENT");
   const [inTime, setInTime] = useState("");
   const [outTime, setOutTime] = useState("");
+  const [regDate, setRegDate] = useState(today());
+  const [regStatus, setRegStatus] = useState("PRESENT");
+  const [regReason, setRegReason] = useState("");
 
   const options = people.data ?? [];
   const selfId = options[0]?.id ?? "";
@@ -415,9 +717,35 @@ function AttendanceTab({ hr }: { hr: boolean }) {
     }
   }
 
+  async function requestReg() {
+    setError(null);
+    try {
+      await api("/api/actions/ess/regularization", {
+        method: "POST",
+        body: JSON.stringify({ workDate: regDate, shift, requestedStatus: regStatus, reason: regReason }),
+      });
+      regs.reload();
+      setRegReason("");
+      setNotice("Regularization request submitted.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function cancelReg(id: string) {
+    setError(null);
+    try {
+      await api(`/api/actions/ess/regularization/${id}/cancel`, { method: "POST" });
+      regs.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   return (
     <>
       <ErrorText error={error || rows.error || people.error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       <Card title="Staff attendance">
         <p className="mb-3 text-sm text-slate-500">Separate from student LMS attendance. Mark a day or a shift.</p>
         <Table
@@ -473,6 +801,39 @@ function AttendanceTab({ hr }: { hr: boolean }) {
         </FormGrid>
         <div className="mt-3">
           <PrimaryButton onClick={() => void mark()}>Save attendance</PrimaryButton>
+        </div>
+      </Card>
+      <Card title="Request attendance correction">
+        <p className="mb-3 text-sm text-slate-500">Missed punch or wrong mark? Submit for manager approval.</p>
+        <Table
+          empty="No regularization requests yet."
+          columns={["Date", "Requested", "Status", ""]}
+          rows={(regs.data ?? []).map((r) => [
+            formatDay(r.workDate) || "—",
+            prettyLabel(r.requestedStatus),
+            prettyLabel(r.status),
+            r.canCancel ? <LinkButton key={r.id} onClick={() => void cancelReg(r.id)}>Cancel</LinkButton> : r.reason || "",
+          ])}
+        />
+        <FormGrid>
+          <Field label="Date to correct" type="date" value={regDate} onChange={setRegDate} />
+          <Select
+            label="Correct status"
+            value={regStatus}
+            onChange={setRegStatus}
+            allowEmpty={false}
+            options={[
+              { value: "PRESENT", label: "Present" },
+              { value: "ABSENT", label: "Absent" },
+              { value: "HALF", label: "Half day" },
+            ]}
+          />
+        </FormGrid>
+        <div className="mt-3">
+          <TextArea label="Reason" value={regReason} onChange={setRegReason} rows={2} />
+        </div>
+        <div className="mt-3">
+          <PrimaryButton onClick={() => void requestReg()}>Submit correction</PrimaryButton>
         </div>
       </Card>
     </>

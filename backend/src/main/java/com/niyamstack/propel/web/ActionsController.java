@@ -533,6 +533,57 @@ public class ActionsController {
         return ess.publishPayslip(id);
     }
 
+    @GetMapping("/ess/manager/inbox")
+    public Map<String, Object> managerInbox() {
+        return ess.managerInbox();
+    }
+
+    @GetMapping("/ess/team/attendance")
+    public List<Map<String, Object>> teamAttendance(
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month) {
+        LocalDate now = LocalDate.now();
+        return ess.teamAttendance(year == null ? now.getYear() : year, month == null ? now.getMonthValue() : month);
+    }
+
+    @GetMapping("/ess/team/leave-calendar")
+    public List<Map<String, Object>> teamLeaveCalendar(
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month) {
+        LocalDate now = LocalDate.now();
+        return ess.teamLeaveCalendar(year == null ? now.getYear() : year, month == null ? now.getMonthValue() : month);
+    }
+
+    @PostMapping("/ess/leave/bulk-decide")
+    public Map<String, Object> bulkDecideLeave(@RequestBody Map<String, Object> body) {
+        return ess.bulkDecideLeave(body);
+    }
+
+    @PostMapping("/ess/regularization")
+    public Map<String, Object> applyRegularization(@RequestBody Map<String, Object> body) {
+        return ess.applyRegularization(body);
+    }
+
+    @PostMapping("/ess/regularization/{id}/decide")
+    public Map<String, Object> decideRegularization(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return ess.decideRegularization(id, body);
+    }
+
+    @PostMapping("/ess/regularization/{id}/cancel")
+    public Map<String, Object> cancelRegularization(@PathVariable UUID id) {
+        return ess.cancelRegularization(id);
+    }
+
+    @PostMapping("/ess/resignation")
+    public Map<String, Object> applyResignation(@RequestBody Map<String, Object> body) {
+        return ess.applyResignation(body);
+    }
+
+    @PostMapping("/ess/resignation/{id}/decide")
+    public Map<String, Object> decideResignation(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return ess.decideResignation(id, body);
+    }
+
     @GetMapping("/ess/leave/calendar")
     public List<Map<String, Object>> leaveCalendar(@RequestParam(required = false) Integer year,
                                                    @RequestParam(required = false) Integer month) {

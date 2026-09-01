@@ -212,6 +212,16 @@ public class ResourceController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteHoliday(@PathVariable UUID id) { ess.deleteHoliday(id); }
 
+    @GetMapping("/attendance-regularizations") public List<Map<String, Object>> regularizations() { return ess.regularizations(); }
+    @GetMapping("/leave-policy") public Map<String, Object> leavePolicy() { return ess.leavePolicy(); }
+    @PutMapping("/leave-policy") public Map<String, Object> saveLeavePolicy(@RequestBody Map<String, Object> body) { return ess.saveLeavePolicy(body); }
+    @GetMapping("/employees/{id}/documents") public List<Map<String, Object>> employeeDocuments(@PathVariable UUID id) { return ess.employeeDocuments(id); }
+    @PostMapping("/employee-documents") public Map<String, Object> addEmployeeDocument(@RequestBody Map<String, Object> body) { return ess.addEmployeeDocument(body); }
+    @DeleteMapping("/employee-documents/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteEmployeeDocument(@PathVariable UUID id) { ess.deleteEmployeeDocument(id); }
+    @GetMapping("/resignations") public List<Map<String, Object>> resignations() { return ess.resignations(); }
+
     @GetMapping("/staff-attendance") public List<Map<String, Object>> staffAttendance() { return ess.attendance(); }
     @GetMapping("/biometric-punches") public List<Map<String, Object>> biometricPunches() { return ess.punches(); }
     @GetMapping("/leave-requests") public List<Map<String, Object>> leaveRequests() { return ess.leaves(); }

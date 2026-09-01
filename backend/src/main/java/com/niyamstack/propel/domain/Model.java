@@ -1082,6 +1082,52 @@ public final class Model {
         private UUID centerId;
     }
 
+    @Entity(name = "AttendanceRegularization") @Table(name = "attendance_regularizations") @Getter @Setter
+    public static class AttendanceRegularization extends TenantEntity {
+        private UUID employeeId;
+        private LocalDate workDate;
+        private String shift = "FULL";
+        private String requestedStatus = "PRESENT";
+        private LocalTime inTime;
+        private LocalTime outTime;
+        @Column(length = 1000)
+        private String reason;
+        private String status = "PENDING";
+        private UUID decidedBy;
+        private Instant decidedAt;
+    }
+
+    @Entity(name = "EmployeeDocument") @Table(name = "employee_documents") @Getter @Setter
+    public static class EmployeeDocument extends TenantEntity {
+        private UUID employeeId;
+        private String docType;
+        private String fileName;
+        private String storageUrl;
+    }
+
+    @Entity(name = "LeavePolicy") @Table(name = "leave_policies") @Getter @Setter
+    public static class LeavePolicy extends TenantEntity {
+        private Integer leaveYear;
+        @Column(precision = 8, scale = 1)
+        private BigDecimal clAnnual = new BigDecimal("12");
+        @Column(precision = 8, scale = 1)
+        private BigDecimal slAnnual = new BigDecimal("6");
+        @Column(precision = 8, scale = 1)
+        private BigDecimal elAnnual = new BigDecimal("15");
+        private Boolean excludeHolidays = false;
+    }
+
+    @Entity(name = "ResignationRequest") @Table(name = "resignation_requests") @Getter @Setter
+    public static class ResignationRequest extends TenantEntity {
+        private UUID employeeId;
+        private LocalDate lastWorkingDate;
+        @Column(length = 1000)
+        private String reason;
+        private String status = "PENDING";
+        private UUID decidedBy;
+        private Instant decidedAt;
+    }
+
     @Entity(name = "InstituteRole") @Table(name = "institute_roles") @Getter @Setter
     public static class InstituteRole extends TenantEntity {
         private String name;
