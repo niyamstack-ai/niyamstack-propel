@@ -146,7 +146,6 @@ function ImportTab() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [studentCsv, setStudentCsv] = useState("fullName,phone,email,studentCode\n");
-  const [empCsv, setEmpCsv] = useState("fullName,phone,email,employeeCode,department,designation\n");
 
   async function run(path: string, csv: string) {
     setError(null);
@@ -172,12 +171,7 @@ function ImportTab() {
           <PrimaryButton onClick={() => void run("/api/actions/sis/import/students", studentCsv)}>Import students</PrimaryButton>
         </div>
       </Card>
-      <Card title="Import employees">
-        <TextArea label="CSV" value={empCsv} onChange={setEmpCsv} rows={6} />
-        <div className="mt-3">
-          <PrimaryButton onClick={() => void run("/api/actions/sis/import/employees", empCsv)}>Import employees</PrimaryButton>
-        </div>
-      </Card>
+      <p className="text-sm text-slate-500">Employee CSV import moved to People → Employees.</p>
     </>
   );
 }

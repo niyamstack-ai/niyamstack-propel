@@ -56,6 +56,7 @@ export function pathAllowed(path: string, modules?: string[]) {
   if (path.startsWith("/content-hub")) return hasModule(modules, "TESTS", "LMS");
   if (path.startsWith("/lms") || path.startsWith("/courses") || path.startsWith("/academics")) return hasModule(modules, "LMS", "STUDENTS");
   if (path.startsWith("/people/staff")) return hasModule(modules, "STAFF");
+  if (path.startsWith("/people/employees")) return hasModule(modules, "ESS", "STAFF");
   if (path.startsWith("/people/alumni") || path.startsWith("/alumni")) return hasModule(modules, "PLACEMENT", "STUDENTS");
   if (path.startsWith("/people") || path.startsWith("/students")) return hasModule(modules, "STUDENTS");
   if (path.startsWith("/crm")) return hasModule(modules, "CRM");

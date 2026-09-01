@@ -1,13 +1,13 @@
-import { NavLink, Navigate, useParams } from "react-router-dom";
+import { NavLink, Navigate, useParams, Link } from "react-router-dom";
 import { useState } from "react";
 import { api } from "../api";
-import { createRecord } from "../ops";
+import { createRecord, updateRecord } from "../ops";
 import { AlumniPage } from "./AlumniPage";
 import { StaffStudents } from "./StudentsPage";
 import { useAuth } from "../auth";
 import { STAFF_RIGHTS } from "../packs";
 import { prettyLabel } from "../labels";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, TextArea, useApi, formatDay } from "../ui";
 
 type Staff = {
   id: string;
@@ -25,6 +25,7 @@ type InstituteRole = { id: string; name: string; baseRole: string; capabilities?
 const tabs = [
   { id: "students", label: "Students", to: "/people/students" },
   { id: "staff", label: "Staff", to: "/people/staff" },
+  { id: "employees", label: "Employees", to: "/people/employees" },
   { id: "alumni", label: "Alumni", to: "/people/alumni" },
 ] as const;
 
@@ -33,7 +34,7 @@ export function PeoplePage() {
   const { user } = useAuth();
   const current = tab || "students";
   if (!tab) return <Navigate to="/people/students" replace />;
-  if (current !== "students" && current !== "staff" && current !== "alumni") {
+  if (current !== "students" && current !== "staff" && current !== "employees" && current !== "alumni") {
     return <Navigate to="/people/students" replace />;
   }
   const canEnroll = user?.role === "OWNER" || user?.role === "COUNSELOR" || (user?.capabilities ?? []).includes("STUDENTS");
@@ -42,7 +43,7 @@ export function PeoplePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-navy">People</h1>
-        <p className="text-sm text-slate-500">Students, teachers, and alumni of this institute.</p>
+        <p className="text-sm text-slate-500">Students, staff HR records, and alumni of this institute.</p>
       </div>
       <div className="flex flex-wrap gap-2">
         {tabs.map((item) => (
@@ -57,6 +58,7 @@ export function PeoplePage() {
       </div>
       {current === "students" && <StaffStudents canEnroll={!!canEnroll} embedded />}
       {current === "staff" && <InstituteStaff />}
+      {current === "employees" && <InstituteEmployees />}
       {current === "alumni" && <AlumniPage embedded />}
     </div>
   );
@@ -219,6 +221,180 @@ function InstituteStaff() {
           </PrimaryButton>
         </div>
       </Card>
+    </>
+  );
+}
+
+type EmployeeRow = {
+  id: string;
+  employeeCode?: string;
+  fullName: string;
+  email?: string;
+  phone?: string;
+  department?: string;
+  designation?: string;
+  joiningDate?: string;
+  managerName?: string;
+  managerId?: string;
+  centerId?: string;
+  status?: string;
+  employmentType?: string;
+  hasLogin?: boolean;
+  loginEmail?: string;
+  bankAccount?: string;
+  pan?: string;
+  uan?: string;
+  esiNumber?: string;
+};
+
+function InstituteEmployees() {
+  const employees = useApi<EmployeeRow[]>("/api/employees");
+  const centers = useApi<{ id: string; name: string }[]>("/api/centers");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState("");
+  const [csv, setCsv] = useState("fullName,email,phone,department,designation\n");
+  const selected = (employees.data ?? []).find((e) => e.id === selectedId);
+
+  const [fullName, setFullName] = useState("");
+  const [employeeCode, setEmployeeCode] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [department, setDepartment] = useState("");
+  const [designation, setDesignation] = useState("");
+  const [joiningDate, setJoiningDate] = useState("");
+  const [centerId, setCenterId] = useState("");
+  const [managerId, setManagerId] = useState("");
+  const [bankAccount, setBankAccount] = useState("");
+  const [pan, setPan] = useState("");
+  const [uan, setUan] = useState("");
+  const [esiNumber, setEsiNumber] = useState("");
+
+  function loadEdit(e: EmployeeRow) {
+    setSelectedId(e.id);
+    setFullName(e.fullName);
+    setEmployeeCode(e.employeeCode || "");
+    setEmail(e.email || "");
+    setPhone(e.phone || "");
+    setDepartment(e.department || "");
+    setDesignation(e.designation || "");
+    setJoiningDate(e.joiningDate?.slice(0, 10) || "");
+    setCenterId(e.centerId || "");
+    setManagerId(e.managerId || "");
+    setBankAccount(e.bankAccount || "");
+    setPan(e.pan || "");
+    setUan(e.uan || "");
+    setEsiNumber(e.esiNumber || "");
+  }
+
+  async function saveEmployee() {
+    if (!selectedId) return;
+    setError(null);
+    try {
+      await updateRecord(`/api/employees/${selectedId}`, {
+        fullName,
+        employeeCode,
+        email,
+        phone,
+        department,
+        designation,
+        joiningDate: joiningDate || null,
+        centerId: centerId || null,
+        managerId: managerId || null,
+        bankAccount,
+        pan,
+        uan,
+        esiNumber,
+      });
+      employees.reload();
+      setNotice("Employee profile saved.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function importCsv() {
+    setError(null);
+    setNotice(null);
+    try {
+      const out = await api<{ created?: number; skipped?: number }>("/api/actions/sis/import/employees", {
+        method: "POST",
+        body: JSON.stringify({ csv }),
+      });
+      employees.reload();
+      setNotice(`Imported ${out.created ?? 0} employee(s). Skipped ${out.skipped ?? 0}.`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <>
+      <Card title="Employee directory">
+        <p className="mb-3 text-sm text-slate-500">
+          HR records for everyone on payroll. Portal logins live under Staff; use{" "}
+          <Link className="font-semibold text-brand hover:underline" to="/ess">
+            ESS
+          </Link>{" "}
+          for attendance, leave, and payroll.
+        </p>
+        <Table
+          empty="No employees yet. Add them in ESS or import CSV below."
+          columns={["Code", "Name", "Department", "Designation", "Manager", "Login", ""]}
+          rows={(employees.data ?? []).map((e) => [
+            e.employeeCode || "—",
+            e.fullName,
+            e.department || "—",
+            e.designation || "—",
+            e.managerName || "—",
+            e.hasLogin ? (e.loginEmail || "Yes") : "—",
+            <button key={e.id} type="button" className="text-xs font-semibold text-brand hover:underline" onClick={() => loadEdit(e)}>
+              Edit
+            </button>,
+          ])}
+        />
+      </Card>
+      {selected && (
+        <Card title={`Edit ${selected.fullName}`}>
+          <FormGrid>
+            <Field label="Name" value={fullName} onChange={setFullName} />
+            <Field label="Code" value={employeeCode} onChange={setEmployeeCode} />
+            <Field label="Email" value={email} onChange={setEmail} />
+            <Field label="Phone" value={phone} onChange={setPhone} />
+            <Field label="Department" value={department} onChange={setDepartment} />
+            <Field label="Designation" value={designation} onChange={setDesignation} />
+            <Field label="Joining date" type="date" value={joiningDate} onChange={setJoiningDate} />
+            <Select
+              label="Center"
+              value={centerId}
+              onChange={setCenterId}
+              options={(centers.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
+            />
+            <Select
+              label="Manager"
+              value={managerId}
+              onChange={setManagerId}
+              options={(employees.data ?? []).filter((e) => e.id !== selectedId).map((e) => ({ value: e.id, label: e.fullName }))}
+            />
+            <Field label="Bank account" value={bankAccount} onChange={setBankAccount} />
+            <Field label="PAN" value={pan} onChange={setPan} />
+            <Field label="UAN" value={uan} onChange={setUan} />
+            <Field label="ESI number" value={esiNumber} onChange={setEsiNumber} />
+          </FormGrid>
+          <div className="mt-3">
+            <PrimaryButton onClick={() => void saveEmployee()}>Save profile</PrimaryButton>
+          </div>
+        </Card>
+      )}
+      <Card title="Bulk import">
+        <p className="mb-2 text-sm text-slate-500">CSV columns: fullName, email, phone, department, designation, employeeCode (optional).</p>
+        <TextArea label="CSV" value={csv} onChange={setCsv} rows={6} />
+        <div className="mt-3">
+          <PrimaryButton onClick={() => void importCsv()}>Import employees</PrimaryButton>
+        </div>
+      </Card>
+      <ErrorText error={error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
     </>
   );
 }

@@ -202,8 +202,15 @@ public class ResourceController {
     @PostMapping("/attendance") public AttendanceRecord markAttendance(@RequestBody AttendanceRecord body) { return create(body, "LMS"); }
 
     @GetMapping("/employees") public List<Map<String, Object>> employees() { return ess.employees(); }
+    @GetMapping("/employees/{id}") public Map<String, Object> employeeProfile(@PathVariable UUID id) { return ess.profile(id); }
     @PostMapping("/employees") public Map<String, Object> createEmployee(@RequestBody Map<String, Object> body) { return ess.createEmployee(body); }
     @PutMapping("/employees/{id}") public Map<String, Object> updateEmployee(@PathVariable UUID id, @RequestBody Map<String, Object> body) { return ess.updateEmployee(id, body); }
+
+    @GetMapping("/holidays") public List<Map<String, Object>> holidays() { return ess.holidays(); }
+    @PostMapping("/holidays") public Map<String, Object> createHoliday(@RequestBody Map<String, Object> body) { return ess.saveHoliday(body); }
+    @DeleteMapping("/holidays/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteHoliday(@PathVariable UUID id) { ess.deleteHoliday(id); }
 
     @GetMapping("/staff-attendance") public List<Map<String, Object>> staffAttendance() { return ess.attendance(); }
     @GetMapping("/biometric-punches") public List<Map<String, Object>> biometricPunches() { return ess.punches(); }

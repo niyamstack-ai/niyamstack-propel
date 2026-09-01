@@ -452,6 +452,17 @@ public class SchemaPatch {
                     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     updated_at TIMESTAMP WITH TIME ZONE NOT NULL
                 )
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS institute_holidays (
+                    id UUID PRIMARY KEY,
+                    organization_id UUID NOT NULL,
+                    name VARCHAR(200) NOT NULL,
+                    holiday_date DATE NOT NULL,
+                    center_id UUID,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+                )
                 """
         );
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {

@@ -1075,6 +1075,13 @@ public final class Model {
         private UUID hiredEmployeeId;
     }
 
+    @Entity(name = "InstituteHoliday") @Table(name = "institute_holidays") @Getter @Setter
+    public static class InstituteHoliday extends TenantEntity {
+        private String name;
+        private LocalDate holidayDate;
+        private UUID centerId;
+    }
+
     @Entity(name = "InstituteRole") @Table(name = "institute_roles") @Getter @Setter
     public static class InstituteRole extends TenantEntity {
         private String name;

@@ -513,6 +513,26 @@ public class ActionsController {
         return ess.decideLeave(id, body);
     }
 
+    @PostMapping("/ess/leave/{id}/cancel")
+    public Map<String, Object> cancelLeave(@PathVariable UUID id) {
+        return ess.cancelLeave(id);
+    }
+
+    @GetMapping("/ess/profile")
+    public Map<String, Object> myProfile() {
+        return ess.profile(null);
+    }
+
+    @GetMapping("/ess/org-chart")
+    public List<Map<String, Object>> orgChart() {
+        return ess.orgChart();
+    }
+
+    @PostMapping("/ess/payslips/{id}/publish")
+    public Map<String, Object> publishPayslip(@PathVariable UUID id) {
+        return ess.publishPayslip(id);
+    }
+
     @GetMapping("/ess/leave/calendar")
     public List<Map<String, Object>> leaveCalendar(@RequestParam(required = false) Integer year,
                                                    @RequestParam(required = false) Integer month) {

@@ -1,5 +1,7 @@
 package com.niyamstack.propel.ess;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.niyamstack.propel.catalog.Packs;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
@@ -23,6 +25,7 @@ import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +44,8 @@ public class EssService {
     private static final BigDecimal CL_DEFAULT = new BigDecimal("12");
     private static final BigDecimal SL_DEFAULT = new BigDecimal("6");
     private static final BigDecimal EL_DEFAULT = new BigDecimal("15");
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final Set<String> HR_JSON_KEYS = Set.of("bankAccount", "pan", "uan", "esiNumber");
 
     private final Store store;
     private final PasswordEncoder encoder;
@@ -120,12 +125,105 @@ public class EssService {
     @Transactional
     public Map<String, Object> updateEmployee(UUID id, Map<String, Object> body) {
         requireEss();
-        requireHrAdmin();
         Employee e = store.getOwned(Employee.class, id, orgId());
-        applyEmployee(e, body);
+        if (hrAdmin()) {
+            applyEmployee(e, body);
+        } else {
+            Employee me = selfEmployee(true);
+            if (!me.getId().equals(e.getId())) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "You can only edit your own profile");
+            }
+            applySelfProfile(e, body);
+        }
         ensureUniqueCode(orgId(), e.getEmployeeCode(), e.getId());
         e = store.save(e);
         return employeeView(e, store.list(Center.class, orgId()));
+    }
+
+    public Map<String, Object> profile(UUID id) {
+        requireEss();
+        Employee e = id == null ? selfEmployee(true) : store.getOwned(Employee.class, id, orgId());
+        requireProfileAccess(e);
+        List<Center> centers = store.list(Center.class, orgId());
+        List<Employee> all = store.list(Employee.class, orgId());
+        Map<String, Object> out = employeeView(e, centers);
+        out.put("managerName", all.stream()
+                .filter(m -> m.getId().equals(e.getManagerId()))
+                .map(Employee::getFullName)
+                .findFirst()
+                .orElse(""));
+        out.put("directReports", all.stream()
+                .filter(r -> e.getId().equals(r.getManagerId()))
+                .map(Employee::getFullName)
+                .toList());
+        if (e.getUserId() != null) {
+            try {
+                AppUser user = store.get(AppUser.class, e.getUserId());
+                out.put("loginEmail", user.getEmail());
+                out.put("loginRole", user.getRole());
+            } catch (Exception ignored) {
+                out.put("loginEmail", "");
+            }
+        }
+        LeaveBalance bal = balanceFor(e, LocalDate.now().getYear());
+        out.put("cl", bal.getCl());
+        out.put("sl", bal.getSl());
+        out.put("el", bal.getEl());
+        return out;
+    }
+
+    public List<Map<String, Object>> orgChart() {
+        requireEss();
+        if (!hrAdmin() && !Access.hasCap(Auth.current(), Packs.CAP_ESS_VIEW)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "ESS access required");
+        }
+        List<Center> centers = store.list(Center.class, orgId());
+        List<Employee> all = store.list(Employee.class, orgId());
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Employee e : all) {
+            Map<String, Object> row = employeeView(e, centers);
+            row.put("managerName", all.stream()
+                    .filter(m -> m.getId().equals(e.getManagerId()))
+                    .map(Employee::getFullName)
+                    .findFirst()
+                    .orElse(""));
+            row.put("reportCount", all.stream().filter(r -> e.getId().equals(r.getManagerId())).count());
+            out.add(row);
+        }
+        return out;
+    }
+
+    public List<Map<String, Object>> holidays() {
+        requireEss();
+        return store.list(InstituteHoliday.class, orgId()).stream()
+                .sorted(java.util.Comparator.comparing(InstituteHoliday::getHolidayDate,
+                        java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())))
+                .map(this::holidayView)
+                .toList();
+    }
+
+    @Transactional
+    public Map<String, Object> saveHoliday(Map<String, Object> body) {
+        requireEss();
+        requireHrAdmin();
+        String name = str(body, "name");
+        LocalDate day = date(body, "holidayDate");
+        if (name.isBlank() || day == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Holiday name and date are required");
+        }
+        InstituteHoliday h = new InstituteHoliday();
+        h.setOrganizationId(orgId());
+        h.setName(name);
+        h.setHolidayDate(day);
+        h.setCenterId(uuid(body, "centerId"));
+        return holidayView(store.save(h));
+    }
+
+    @Transactional
+    public void deleteHoliday(UUID id) {
+        requireEss();
+        requireHrAdmin();
+        store.deleteOwned(InstituteHoliday.class, id, orgId());
     }
 
     @Transactional
@@ -290,13 +388,15 @@ public class EssService {
     @Transactional
     public Map<String, Object> decideLeave(UUID id, Map<String, Object> body) {
         requireEss();
-        requireHrAdmin();
         LeaveRequest req = store.getOwned(LeaveRequest.class, id, orgId());
         if (!"PENDING".equals(req.getStatus())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "This leave is already decided");
         }
-        boolean approve = bool(body, "approve") || "APPROVED".equalsIgnoreCase(str(body, "status"));
         Employee e = store.getOwned(Employee.class, req.getEmployeeId(), orgId());
+        if (!canApproveLeaveFor(e)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You cannot approve this leave request");
+        }
+        boolean approve = bool(body, "approve") || "APPROVED".equalsIgnoreCase(str(body, "status"));
         if (approve) {
             LeaveBalance bal = balanceFor(e, req.getFromDate().getYear());
             if (remaining(bal, req.getLeaveType()).compareTo(req.getDays()) < 0) {
@@ -310,6 +410,20 @@ public class EssService {
         }
         req.setDecidedBy(Auth.current().userId());
         req.setDecidedAt(Instant.now());
+        req = store.save(req);
+        return leaveView(req, List.of(e));
+    }
+
+    @Transactional
+    public Map<String, Object> cancelLeave(UUID id) {
+        requireEss();
+        LeaveRequest req = store.getOwned(LeaveRequest.class, id, orgId());
+        if (!"PENDING".equals(req.getStatus())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Only pending leave can be cancelled");
+        }
+        Employee e = store.getOwned(Employee.class, req.getEmployeeId(), orgId());
+        requireOwnOrAdmin(e);
+        req.setStatus("CANCELLED");
         req = store.save(req);
         return leaveView(req, List.of(e));
     }
@@ -381,8 +495,10 @@ public class EssService {
         requireEss();
         List<Employee> visible = visibleEmployees();
         Set<UUID> ids = visible.stream().map(Employee::getId).collect(java.util.stream.Collectors.toSet());
+        boolean admin = hrAdmin();
         return store.list(Payslip.class, orgId()).stream()
                 .filter(p -> ids.contains(p.getEmployeeId()))
+                .filter(p -> admin || "PUBLISHED".equalsIgnoreCase(blank(p.getStatus(), "")))
                 .map(p -> payslipView(p, visible, false))
                 .toList();
     }
@@ -392,6 +508,21 @@ public class EssService {
         Payslip p = store.getOwned(Payslip.class, id, orgId());
         Employee e = store.getOwned(Employee.class, p.getEmployeeId(), orgId());
         requireOwnOrAdmin(e);
+        if (!hrAdmin() && !"PUBLISHED".equalsIgnoreCase(blank(p.getStatus(), ""))) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "This payslip is not published yet");
+        }
+        return payslipView(p, List.of(e), true);
+    }
+
+    @Transactional
+    public Map<String, Object> publishPayslip(UUID id) {
+        requireEss();
+        requireHrAdmin();
+        Payslip p = store.getOwned(Payslip.class, id, orgId());
+        p.setStatus("PUBLISHED");
+        p.setPaidAt(Instant.now());
+        p = store.save(p);
+        Employee e = store.getOwned(Employee.class, p.getEmployeeId(), orgId());
         return payslipView(p, List.of(e), true);
     }
 
@@ -742,6 +873,25 @@ public class EssService {
         if (e.getEmploymentType() == null || e.getEmploymentType().isBlank()) {
             e.setEmploymentType("SUPPORT");
         }
+        mergeHrJson(e, body);
+    }
+
+    private void applySelfProfile(Employee e, Map<String, Object> body) {
+        if (body.containsKey("phone")) {
+            e.setPhone(Phones.normalize(str(body, "phone")));
+        }
+        if (body.containsKey("email")) {
+            e.setEmail(str(body, "email").toLowerCase());
+        }
+        Map<String, Object> patch = new LinkedHashMap<>();
+        for (String key : HR_JSON_KEYS) {
+            if (body.containsKey(key)) {
+                patch.put(key, str(body, key));
+            }
+        }
+        if (!patch.isEmpty()) {
+            mergeHrJson(e, patch);
+        }
     }
 
     private void seedBalance(Employee e) {
@@ -835,7 +985,15 @@ public class EssService {
         if (me == null) {
             return List.of();
         }
-        return all.stream().filter(e -> me.getId().equals(e.getId())).toList();
+        Set<UUID> ids = new HashSet<>();
+        ids.add(me.getId());
+        if (leaveApprover()) {
+            all.stream()
+                    .filter(e -> me.getId().equals(e.getManagerId()))
+                    .map(Employee::getId)
+                    .forEach(ids::add);
+        }
+        return all.stream().filter(e -> ids.contains(e.getId())).toList();
     }
 
     private Employee selfEmployee(boolean required) {
@@ -903,6 +1061,74 @@ public class EssService {
         return Access.hasCap(Auth.current(), Packs.CAP_ESS_MANAGE);
     }
 
+    private boolean leaveApprover() {
+        return Access.hasCap(Auth.current(), Packs.CAP_LEAVE_APPROVE);
+    }
+
+    private boolean canApproveLeaveFor(Employee target) {
+        if (hrAdmin()) {
+            return true;
+        }
+        if (!leaveApprover()) {
+            return false;
+        }
+        Employee me = selfEmployee(false);
+        return me != null && me.getId().equals(target.getManagerId());
+    }
+
+    private void requireProfileAccess(Employee e) {
+        if (hrAdmin()) {
+            return;
+        }
+        Employee me = selfEmployee(false);
+        if (me != null && me.getId().equals(e.getId())) {
+            return;
+        }
+        if (me != null && leaveApprover() && me.getId().equals(e.getManagerId())) {
+            return;
+        }
+        throw new ApiException(HttpStatus.FORBIDDEN, "You cannot view this employee profile");
+    }
+
+    private Map<String, Object> holidayView(InstituteHoliday h) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", h.getId());
+        row.put("name", h.getName());
+        row.put("holidayDate", h.getHolidayDate());
+        row.put("centerId", h.getCenterId());
+        return row;
+    }
+
+    private Map<String, Object> parseCustom(String json) {
+        if (json == null || json.isBlank()) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            return JSON.readValue(json, new TypeReference<>() {});
+        } catch (Exception ex) {
+            return new LinkedHashMap<>();
+        }
+    }
+
+    private void mergeHrJson(Employee e, Map<String, Object> body) {
+        boolean touched = false;
+        Map<String, Object> current = parseCustom(e.getCustomJson());
+        for (String key : HR_JSON_KEYS) {
+            if (body.containsKey(key)) {
+                current.put(key, str(body, key));
+                touched = true;
+            }
+        }
+        if (!touched) {
+            return;
+        }
+        try {
+            e.setCustomJson(JSON.writeValueAsString(current));
+        } catch (Exception ex) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Could not save employee HR details");
+        }
+    }
+
     private void ensureUniqueCode(UUID org, String code, UUID ignoreId) {
         if (code == null || code.isBlank()) {
             return;
@@ -941,6 +1167,10 @@ public class EssService {
         row.put("status", e.getStatus());
         row.put("employmentType", e.getEmploymentType());
         row.put("hasLogin", e.getUserId() != null);
+        Map<String, Object> hr = parseCustom(e.getCustomJson());
+        for (String key : HR_JSON_KEYS) {
+            row.put(key, hr.getOrDefault(key, ""));
+        }
         return row;
     }
 
@@ -975,14 +1205,14 @@ public class EssService {
     }
 
     private Map<String, Object> leaveView(LeaveRequest r, List<Employee> staff) {
+        Employee subject = staff.stream()
+                .filter(e -> e.getId().equals(r.getEmployeeId()))
+                .findFirst()
+                .orElseGet(() -> store.getOwned(Employee.class, r.getEmployeeId(), orgId()));
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", r.getId());
         row.put("employeeId", r.getEmployeeId());
-        row.put("employeeName", staff.stream()
-                .filter(e -> e.getId().equals(r.getEmployeeId()))
-                .map(Employee::getFullName)
-                .findFirst()
-                .orElse(""));
+        row.put("employeeName", subject.getFullName());
         row.put("leaveType", r.getLeaveType());
         row.put("fromDate", r.getFromDate());
         row.put("toDate", r.getToDate());
@@ -990,6 +1220,9 @@ public class EssService {
         row.put("reason", r.getReason());
         row.put("status", r.getStatus());
         row.put("decidedAt", r.getDecidedAt());
+        row.put("canApprove", canApproveLeaveFor(subject));
+        Employee me = selfEmployee(false);
+        row.put("canCancel", "PENDING".equals(r.getStatus()) && me != null && me.getId().equals(r.getEmployeeId()));
         return row;
     }
 

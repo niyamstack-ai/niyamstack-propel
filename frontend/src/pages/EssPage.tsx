@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { createRecord } from "../ops";
@@ -16,8 +16,10 @@ type Employee = {
   designation?: string;
   joiningDate?: string;
   centerId?: string;
+  centerName?: string;
   managerId?: string;
   managerName?: string;
+  directReports?: string[];
   status?: string;
   employmentType?: string;
   hasLogin?: boolean;
@@ -26,11 +28,17 @@ type Employee = {
   el?: number;
   tempPassword?: string;
   loginEmail?: string;
+  loginRole?: string;
+  bankAccount?: string;
+  pan?: string;
+  uan?: string;
+  esiNumber?: string;
 };
 type Attendance = { id: string; employeeId: string; employeeName?: string; workDate?: string; shift?: string; status?: string; source?: string; inTime?: string; outTime?: string };
 type Punch = { id: string; employeeId?: string; studentId?: string; deviceId?: string; punchAt?: string; punchType?: string; employeeName?: string; studentName?: string };
-type Leave = { id: string; employeeId: string; employeeName?: string; leaveType?: string; fromDate?: string; toDate?: string; days?: number; reason?: string; status?: string };
+type Leave = { id: string; employeeId: string; employeeName?: string; leaveType?: string; fromDate?: string; toDate?: string; days?: number; reason?: string; status?: string; canApprove?: boolean; canCancel?: boolean };
 type Balance = { id: string; employeeId: string; employeeName?: string; year?: number; cl?: number; sl?: number; el?: number };
+type Holiday = { id: string; name: string; holidayDate?: string; centerId?: string };
 type Structure = { id: string; employeeId: string; employeeName?: string; basic?: number; hra?: number; special?: number; effectiveFrom?: string };
 type Payslip = {
   id: string;
@@ -69,14 +77,17 @@ type Candidate = {
 };
 type Center = { id: string; name: string };
 
-const TABS = ["employees", "attendance", "leave", "payroll", "hiring", "devices"] as const;
+const TABS = ["profile", "employees", "attendance", "leave", "payroll", "hiring", "devices"] as const;
 type Tab = (typeof TABS)[number];
 
 export function EssPage() {
   const { user } = useAuth();
-  const hr = user?.role === "OWNER" || user?.role === "ACCOUNTANT";
-  const [tab, setTab] = useState<Tab>(hr ? "employees" : "attendance");
-  const tabs = hr ? TABS : (["attendance", "leave", "payroll"] as const);
+  const hr = user?.role === "OWNER" || user?.role === "ACCOUNTANT" || (user?.capabilities ?? []).includes("ESS_MANAGE");
+  const manager = (user?.capabilities ?? []).includes("LEAVE_APPROVE");
+  const [tab, setTab] = useState<Tab>(hr ? "employees" : "profile");
+  const tabs = hr ? TABS : manager
+    ? (["profile", "attendance", "leave", "payroll"] as const)
+    : (["profile", "attendance", "leave", "payroll"] as const);
 
   return (
     <div className="space-y-6">
@@ -85,7 +96,9 @@ export function EssPage() {
         <p className="text-sm text-slate-500">
           {hr
             ? "Employee master, staff attendance, leave, payroll, and institute hiring. Staff logins stay under People → Staff."
-            : "Mark attendance, apply for leave, and download your payslip."}
+            : manager
+              ? "Your profile, team leave approvals, attendance, and payslips."
+              : "Your profile, attendance, leave, and payslips."}
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -100,13 +113,101 @@ export function EssPage() {
           </button>
         ))}
       </div>
+      {tab === "profile" && <ProfileTab hr={hr} />}
       {tab === "employees" && hr && <EmployeesTab />}
       {tab === "attendance" && <AttendanceTab hr={hr} />}
-      {tab === "leave" && <LeaveTab hr={hr} />}
+      {tab === "leave" && <LeaveTab hr={hr} manager={manager} />}
       {tab === "payroll" && <PayrollTab hr={hr} />}
       {tab === "hiring" && hr && <HiringTab />}
       {tab === "devices" && hr && <DevicesTab />}
     </div>
+  );
+}
+
+function ProfileTab({ hr }: { hr: boolean }) {
+  const profile = useApi<Employee>("/api/actions/ess/profile");
+  const orgChart = useApi<Employee[]>(hr ? "/api/actions/ess/org-chart" : "");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [bankAccount, setBankAccount] = useState("");
+  const [pan, setPan] = useState("");
+  const [uan, setUan] = useState("");
+  const [esiNumber, setEsiNumber] = useState("");
+
+  const p = profile.data;
+
+  useEffect(() => {
+    if (!p) return;
+    setPhone(p.phone || "");
+    setEmail(p.email || "");
+    setBankAccount(p.bankAccount || "");
+    setPan(p.pan || "");
+    setUan(p.uan || "");
+    setEsiNumber(p.esiNumber || "");
+  }, [p?.id, p?.phone, p?.email, p?.bankAccount, p?.pan, p?.uan, p?.esiNumber]);
+
+  async function save() {
+    if (!p) return;
+    setError(null);
+    try {
+      await api(`/api/employees/${p.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ phone, email, bankAccount, pan, uan, esiNumber }),
+      });
+      profile.reload();
+      setNotice("Profile updated.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <>
+      <ErrorText error={error || profile.error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <Card title="My profile">
+        {p ? (
+          <>
+            <p className="mb-3 text-sm text-slate-600">
+              {p.employeeCode} · {p.designation || "Staff"} · {p.department || "—"}
+            </p>
+            <p className="mb-3 text-sm text-slate-500">
+              Manager: {p.managerName || "—"} · Joined {formatDay(p.joiningDate) || "—"} · Leave CL/SL/EL: {p.cl ?? 0}/{p.sl ?? 0}/{p.el ?? 0}
+            </p>
+            <FormGrid>
+              <Field label="Email" value={email} onChange={setEmail} />
+              <Field label="Phone" value={phone} onChange={setPhone} />
+              <Field label="Bank account" value={bankAccount} onChange={setBankAccount} />
+              <Field label="PAN" value={pan} onChange={setPan} />
+              <Field label="UAN" value={uan} onChange={setUan} />
+              <Field label="ESI number" value={esiNumber} onChange={setEsiNumber} />
+            </FormGrid>
+            <div className="mt-3">
+              <PrimaryButton onClick={() => void save()}>Save my details</PrimaryButton>
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-slate-500">No employee record linked to your login yet. Ask the owner to link you under People → Staff.</p>
+        )}
+      </Card>
+      {hr && (
+        <Card title="Org chart">
+          <Table
+            empty="No employees yet."
+            columns={["Code", "Name", "Department", "Manager", "Reports"]}
+            rows={(orgChart.data ?? []).map((e) => [
+              e.employeeCode || "—",
+              e.fullName,
+              e.department || "—",
+              e.managerName || "—",
+              String((e as Employee & { reportCount?: number }).reportCount ?? 0),
+            ])}
+          />
+        </Card>
+      )}
+    </>
   );
 }
 
@@ -378,18 +479,23 @@ function AttendanceTab({ hr }: { hr: boolean }) {
   );
 }
 
-function LeaveTab({ hr }: { hr: boolean }) {
+function LeaveTab({ hr, manager }: { hr: boolean; manager: boolean }) {
   const people = useApi<Employee[]>("/api/employees");
   const leaves = useApi<Leave[]>("/api/leave-requests");
   const bals = useApi<Balance[]>("/api/leave-balances");
+  const holidays = useApi<Holiday[]>("/api/holidays");
   const now = new Date();
   const calendar = useApi<Leave[]>(`/api/actions/ess/leave/calendar?year=${now.getFullYear()}&month=${now.getMonth() + 1}`);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [employeeId, setEmployeeId] = useState("");
   const [leaveType, setLeaveType] = useState("CL");
   const [fromDate, setFromDate] = useState(today());
   const [toDate, setToDate] = useState(today());
   const [reason, setReason] = useState("");
+  const [holidayName, setHolidayName] = useState("");
+  const [holidayDate, setHolidayDate] = useState(today());
+  const canDecide = hr || manager;
 
   async function apply() {
     setError(null);
@@ -419,9 +525,53 @@ function LeaveTab({ hr }: { hr: boolean }) {
     }
   }
 
+  async function cancel(id: string) {
+    setError(null);
+    try {
+      await api(`/api/actions/ess/leave/${id}/cancel`, { method: "POST" });
+      leaves.reload();
+      calendar.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function addHoliday() {
+    setError(null);
+    try {
+      await createRecord("/api/holidays", { name: holidayName, holidayDate });
+      holidays.reload();
+      setHolidayName("");
+      setNotice("Holiday added.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   return (
     <>
       <ErrorText error={error || leaves.error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <Card title="Institute holidays">
+        <Table
+          empty="No holidays listed yet."
+          columns={["Date", "Name"]}
+          rows={(holidays.data ?? []).map((h) => [formatDay(h.holidayDate) || "—", h.name])}
+        />
+        {hr && (
+          <>
+            <FormGrid>
+              <Field label="Holiday name" value={holidayName} onChange={setHolidayName} placeholder="Republic Day" />
+              <Field label="Date" type="date" value={holidayDate} onChange={setHolidayDate} />
+            </FormGrid>
+            <div className="mt-3">
+              <PrimaryButton disabled={!holidayName} onClick={() => void addHoliday()}>
+                Add holiday
+              </PrimaryButton>
+            </div>
+          </>
+        )}
+      </Card>
       <Card title="Balances this year">
         <Table
           empty="No leave balances yet."
@@ -440,11 +590,13 @@ function LeaveTab({ hr }: { hr: boolean }) {
             formatDay(r.toDate) || "—",
             String(r.days ?? ""),
             prettyLabel(r.status),
-            hr && r.status === "PENDING" ? (
+            r.status === "PENDING" && r.canApprove && canDecide ? (
               <span key={r.id} className="flex gap-2">
                 <LinkButton onClick={() => void decide(r.id, true)}>Approve</LinkButton>
                 <LinkButton onClick={() => void decide(r.id, false)}>Reject</LinkButton>
               </span>
+            ) : r.canCancel ? (
+              <LinkButton key={r.id} onClick={() => void cancel(r.id)}>Cancel</LinkButton>
             ) : (
               r.reason || ""
             ),
@@ -536,6 +688,17 @@ function PayrollTab({ hr }: { hr: boolean }) {
     }
   }
 
+  async function publishSlip(id: string) {
+    setError(null);
+    try {
+      await api(`/api/actions/ess/payslips/${id}/publish`, { method: "POST" });
+      slips.reload();
+      setNotice("Payslip published. Staff can now view and print it.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function printSlip(id: string) {
     setError(null);
     try {
@@ -622,16 +785,22 @@ function PayrollTab({ hr }: { hr: boolean }) {
         )}
         <Table
           empty="No payslips yet."
-          columns={["Employee", "Period", "Gross", "Deductions", "Net", ""]}
+          columns={["Employee", "Period", "Gross", "Deductions", "Net", "Status", ""]}
           rows={(slips.data ?? []).map((p) => [
             p.employeeName || "—",
             `${p.month}/${p.year}`,
             formatInr(p.gross),
             formatInr(p.deductions),
             formatInr(p.net),
-            <LinkButton key={p.id} onClick={() => void printSlip(p.id)}>
-              Print
-            </LinkButton>,
+            prettyLabel(p.status),
+            <span key={p.id} className="flex gap-2">
+              {(hr || p.status === "PUBLISHED") && (
+                <LinkButton onClick={() => void printSlip(p.id)}>Print</LinkButton>
+              )}
+              {hr && p.status === "DRAFT" && (
+                <LinkButton onClick={() => void publishSlip(p.id)}>Publish</LinkButton>
+              )}
+            </span>,
           ])}
         />
       </Card>
