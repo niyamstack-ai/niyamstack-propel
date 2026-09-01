@@ -51,6 +51,11 @@ public final class Model {
         private Instant paidAt;
         private Instant approvedAt;
         private UUID approvedBy;
+        @JsonProperty("indiaDataResidency")
+        private boolean indiaDataResidency = true;
+        private String dataMode = "SHARED";
+        @Column(precision = 6, scale = 4)
+        private BigDecimal defaultRoyaltyPct = BigDecimal.ZERO;
     }
 
     @Entity(name = "Center") @Table(name = "centers") @Getter @Setter
@@ -61,6 +66,8 @@ public final class Model {
         private String city;
         private String phone;
         private boolean active = true;
+        @Column(precision = 6, scale = 4)
+        private BigDecimal royaltyPct = BigDecimal.ZERO;
     }
 
     @Entity(name = "AppUser") @Table(name = "users") @Getter @Setter
@@ -81,6 +88,7 @@ public final class Model {
         @Column(length = 500)
         private String capabilitiesCsv;
         private UUID companyId;
+        private String uiLocale = "en";
     }
 
     @Entity(name = "AcademicYear") @Table(name = "academic_years") @Getter @Setter
@@ -679,6 +687,7 @@ public final class Model {
         private String title;
         private String company;
         private String status;
+        private UUID routedDriveId;
     }
 
     @Entity(name = "IndustryAccount") @Table(name = "industry_accounts") @Getter @Setter
@@ -695,6 +704,8 @@ public final class Model {
         private LocalDate eventDate;
         private Integer attendanceCount;
         private String feedback;
+        private UUID accountId;
+        private String eventType = "CAMPUS_VISIT";
     }
 
     @Entity(name = "SupportTicket") @Table(name = "support_tickets") @Getter @Setter
@@ -1290,5 +1301,69 @@ public final class Model {
         @Column(columnDefinition = "TEXT")
         private String body;
         private Instant publishedAt;
+    }
+
+    @Entity(name = "ApiToken") @Table(name = "api_tokens") @Getter @Setter
+    public static class ApiToken extends TenantEntity {
+        private String name;
+        private String tokenHash;
+        private String tokenPrefix;
+        @Column(length = 500)
+        private String scopesCsv;
+        private Instant lastUsedAt;
+        private boolean active = true;
+    }
+
+    @Entity(name = "StaffGoal") @Table(name = "staff_goals") @Getter @Setter
+    public static class StaffGoal extends TenantEntity {
+        private UUID employeeId;
+        private String title;
+        private String cycleLabel;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal targetValue = BigDecimal.valueOf(100);
+        @Column(precision = 12, scale = 2)
+        private BigDecimal progressValue = BigDecimal.ZERO;
+        private String status = "OPEN";
+    }
+
+    @Entity(name = "SuccessionPlan") @Table(name = "succession_plans") @Getter @Setter
+    public static class SuccessionPlan extends TenantEntity {
+        private String roleTitle;
+        private UUID incumbentEmployeeId;
+        private UUID successorEmployeeId;
+        private String readiness = "DEVELOPING";
+        @Column(length = 1000)
+        private String notes;
+    }
+
+    @Entity(name = "PoshCase") @Table(name = "posh_cases") @Getter @Setter
+    public static class PoshCase extends TenantEntity {
+        private String caseCode;
+        private String severity = "MEDIUM";
+        private String status = "OPEN";
+        @Column(length = 1000)
+        private String summary;
+        private UUID openedBy;
+        private Instant closedAt;
+    }
+
+    @Entity(name = "StudyPlan") @Table(name = "study_plans") @Getter @Setter
+    public static class StudyPlan extends TenantEntity {
+        private UUID studentId;
+        private String title;
+        @Column(columnDefinition = "TEXT")
+        private String planJson;
+        private String status = "ACTIVE";
+    }
+
+    @Entity(name = "HelpArticle") @Table(name = "help_articles") @Getter @Setter
+    public static class HelpArticle extends BaseEntity {
+        private UUID organizationId;
+        private String locale = "en";
+        private String pageKey;
+        private String title;
+        @Column(columnDefinition = "TEXT")
+        private String body;
+        private Integer sortOrder = 0;
     }
 }

@@ -460,10 +460,23 @@ public class PlacementService {
 
     public List<Map<String, Object>> salaryBenchmarks() {
         Access.requirePackage(Auth.current(), "GROWTH");
+        UUID org = Auth.current().organizationId();
+        List<Offer> offers = store.list(Offer.class, org).stream()
+                .filter(o -> o.getPackageLpa() != null && o.getPackageLpa().signum() > 0)
+                .toList();
+        if (offers.isEmpty()) {
+            return List.of(
+                    Map.of("role", "Java Developer", "city", "Pune", "medianLpa", 6.5, "course", "Java Full Stack", "source", "market"),
+                    Map.of("role", "Data Analyst", "city", "Hyderabad", "medianLpa", 5.8, "course", "Data Analytics", "source", "market"),
+                    Map.of("role", "QA Engineer", "city", "Bengaluru", "medianLpa", 5.2, "course", "Testing", "source", "market")
+            );
+        }
+        List<Double> packages = offers.stream().map(o -> o.getPackageLpa().doubleValue()).sorted().toList();
+        double median = packages.get(packages.size() / 2);
+        double avg = packages.stream().mapToDouble(d -> d).average().orElse(0);
         return List.of(
-                Map.of("role", "Java Developer", "city", "Pune", "medianLpa", 6.5, "course", "Java Full Stack"),
-                Map.of("role", "Data Analyst", "city", "Hyderabad", "medianLpa", 5.8, "course", "Data Analytics"),
-                Map.of("role", "QA Engineer", "city", "Bengaluru", "medianLpa", 5.2, "course", "Testing")
+                Map.of("role", "Accepted offers", "city", "All centers", "medianLpa", Math.round(median * 10) / 10.0, "course", "Institute", "source", "offers", "count", offers.size()),
+                Map.of("role", "Average package", "city", "All centers", "medianLpa", Math.round(avg * 10) / 10.0, "course", "Institute", "source", "offers", "count", offers.size())
         );
     }
 

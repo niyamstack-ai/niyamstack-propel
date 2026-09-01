@@ -7,6 +7,7 @@ import com.niyamstack.propel.domain.Model.AdmissionForm;
 import com.niyamstack.propel.domain.Model.Course;
 import com.niyamstack.propel.domain.Model.Organization;
 import com.niyamstack.propel.integration.PaymentGateway;
+import com.niyamstack.propel.depth.DepthService;
 import com.niyamstack.propel.grow.GrowService;
 import com.niyamstack.propel.storefront.StorefrontService;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,6 +33,7 @@ public class PublicController {
     private final PaymentGateway payments;
     private final EssService ess;
     private final GrowService grow;
+    private final DepthService depth;
     private final Path filesRoot;
 
     public PublicController(
@@ -40,6 +42,7 @@ public class PublicController {
             PaymentGateway payments,
             EssService ess,
             GrowService grow,
+            DepthService depth,
             @Value("${app.storage.local-dir:./data/files}") String dir
     ) {
         this.store = store;
@@ -47,6 +50,7 @@ public class PublicController {
         this.payments = payments;
         this.ess = ess;
         this.grow = grow;
+        this.depth = depth;
         this.filesRoot = Path.of(dir).toAbsolutePath().normalize();
     }
 
@@ -60,6 +64,30 @@ public class PublicController {
     @GetMapping("/packs")
     public Map<String, Object> packs() {
         return com.niyamstack.propel.catalog.Packs.catalogMap();
+    }
+
+    @GetMapping("/v1/students")
+    public List<Map<String, Object>> apiStudents(@RequestHeader(value = "Authorization", required = false) String auth) {
+        Organization org = requireApiOrg(auth);
+        return depth.publicStudents(org.getId());
+    }
+
+    @GetMapping("/v1/courses")
+    public List<Map<String, Object>> apiCourses(@RequestHeader(value = "Authorization", required = false) String auth) {
+        Organization org = requireApiOrg(auth);
+        return depth.publicCourses(org.getId());
+    }
+
+    private Organization requireApiOrg(String auth) {
+        String token = auth == null ? "" : auth.trim();
+        if (token.toLowerCase().startsWith("bearer ")) {
+            token = token.substring(7).trim();
+        }
+        Organization org = depth.resolveOrgByApiToken(token);
+        if (org == null) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid API token");
+        }
+        return org;
     }
 
     @GetMapping("/sites/by-host")

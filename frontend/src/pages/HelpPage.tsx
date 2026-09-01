@@ -1,0 +1,68 @@
+import { useState } from "react";
+import { useLocation } from "react-router-dom";
+import { Card, PrimaryButton, useApi } from "../ui";
+
+type Article = { pageKey?: string; title?: string; body?: string; locale?: string };
+type Tour = { pageKey?: string; steps?: { title: string; body: string }[] };
+
+export function HelpPage() {
+  const location = useLocation();
+  const page = new URLSearchParams(location.search).get("page") || "dashboard";
+  const [locale, setLocale] = useState("en");
+  const articles = useApi<Article[]>(`/api/actions/help/articles?locale=${locale}`);
+  const tour = useApi<Tour>(`/api/actions/help/tour?page=${page}`);
+  const [step, setStep] = useState(0);
+
+  const steps = tour.data?.steps ?? [];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-navy">{locale === "hi" ? "मदद केंद्र" : "Help center"}</h1>
+          <p className="text-sm text-slate-500">
+            {locale === "hi" ? "मार्गदर्शित टूर और पृष्ठ सहायता।" : "Guided tours and page tips for your institute."}
+          </p>
+        </div>
+        <select className="rounded-lg border border-line px-3 py-2 text-sm" value={locale} onChange={(e) => setLocale(e.target.value)}>
+          <option value="en">English</option>
+          <option value="hi">हिन्दी</option>
+        </select>
+      </div>
+
+      <Card title={locale === "hi" ? "मार्गदर्शित टूर" : "Guided tour"}>
+        {steps.length === 0 ? (
+          <p className="text-sm text-slate-500">Loading tour…</p>
+        ) : (
+          <div>
+            <p className="text-lg font-semibold text-navy">{steps[Math.min(step, steps.length - 1)].title}</p>
+            <p className="mt-2 text-sm text-slate-600">{steps[Math.min(step, steps.length - 1)].body}</p>
+            <div className="mt-4 flex gap-2">
+              <PrimaryButton disabled={step <= 0} onClick={() => setStep((s) => Math.max(0, s - 1))}>
+                Back
+              </PrimaryButton>
+              <PrimaryButton disabled={step >= steps.length - 1} onClick={() => setStep((s) => Math.min(steps.length - 1, s + 1))}>
+                Next
+              </PrimaryButton>
+            </div>
+            <p className="mt-2 text-xs text-slate-400">
+              Step {Math.min(step + 1, steps.length)} / {steps.length} · page: {page}
+            </p>
+          </div>
+        )}
+      </Card>
+
+      <Card title={locale === "hi" ? "लेख" : "Articles"}>
+        <ul className="space-y-4 text-sm">
+          {(articles.data ?? []).map((a, i) => (
+            <li key={i} className="border-b border-line pb-3 last:border-0">
+              <p className="font-medium text-navy">{a.title}</p>
+              <p className="mt-1 text-slate-600">{a.body}</p>
+              <p className="mt-1 text-xs text-slate-400">{a.pageKey}</p>
+            </li>
+          ))}
+        </ul>
+      </Card>
+    </div>
+  );
+}

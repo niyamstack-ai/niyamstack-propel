@@ -16,6 +16,8 @@ type Hub = {
   usageByModule?: { module: string; events: number }[];
   releaseNotes?: { version: string; title: string; body?: string; publishedAt?: string }[];
   maskedFields?: string[];
+  indiaDataResidency?: boolean;
+  dataMode?: string;
 };
 
 type Student = { id: string; fullName: string; studentCode?: string };
@@ -90,12 +92,23 @@ export function CompliancePage() {
                 <span className="text-slate-500">Deal amount</span>
                 <span className="font-medium">{hub.data.dealAmount != null ? formatInr(hub.data.dealAmount) : "—"}</span>
               </li>
+              <li className="flex justify-between gap-2">
+                <span className="text-slate-500">India data residency</span>
+                <span className="font-medium">{hub.data.indiaDataResidency ? "On" : "Off"}</span>
+              </li>
+              <li className="flex justify-between gap-2">
+                <span className="text-slate-500">Data mode</span>
+                <span className="font-medium">{hub.data.dataMode ?? "SHARED"}</span>
+              </li>
             </ul>
           ) : (
             <p className="text-sm text-slate-500">Loading billing snapshot…</p>
           )}
-          <Link className="mt-3 inline-block text-sm text-brand hover:underline" to="/audit">
+          <Link className="mt-3 mr-3 inline-block text-sm text-brand hover:underline" to="/audit">
             View activity log
+          </Link>
+          <Link className="mt-3 inline-block text-sm text-brand hover:underline" to="/scale">
+            Open scale depth
           </Link>
         </Card>
 

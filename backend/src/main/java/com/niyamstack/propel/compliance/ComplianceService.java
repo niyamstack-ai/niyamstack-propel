@@ -66,6 +66,8 @@ public class ComplianceService {
                 .toList());
         out.put("releaseNotes", releaseNotes());
         out.put("maskedFields", DEFAULT_MASK);
+        out.put("indiaDataResidency", organization.isIndiaDataResidency());
+        out.put("dataMode", organization.getDataMode() == null ? "SHARED" : organization.getDataMode());
         return out;
     }
 

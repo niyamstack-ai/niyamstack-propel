@@ -7,6 +7,7 @@ import com.niyamstack.propel.analytics.AnalyticsService;
 import com.niyamstack.propel.analytics.IntelligenceService;
 import com.niyamstack.propel.compensation.CompensationService;
 import com.niyamstack.propel.compliance.ComplianceService;
+import com.niyamstack.propel.depth.DepthService;
 import com.niyamstack.propel.enterprise.EnterpriseService;
 import com.niyamstack.propel.comms.OutreachService;
 import com.niyamstack.propel.common.ApiException;
@@ -60,13 +61,14 @@ public class ActionsController {
     private final IntelligenceService intelligence;
     private final EnterpriseService enterprise;
     private final ComplianceService compliance;
+    private final DepthService depth;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public ActionsController(Store store, FeeService fees, LmsService lms, PlacementService placement,
                              IntegrationStatusService integrations, StorefrontService storefront, ObjectStorage storage,
                              OutreachService outreach, EssService ess, SisService sis, GrowService grow, ScaleService scale,
                              AnalyticsService analytics, CompensationService compensation, IntelligenceService intelligence,
-                             EnterpriseService enterprise, ComplianceService compliance) {
+                             EnterpriseService enterprise, ComplianceService compliance, DepthService depth) {
         this.store = store;
         this.fees = fees;
         this.lms = lms;
@@ -84,6 +86,7 @@ public class ActionsController {
         this.intelligence = intelligence;
         this.enterprise = enterprise;
         this.compliance = compliance;
+        this.depth = depth;
     }
 
     @GetMapping("/my-courses")
@@ -1141,6 +1144,117 @@ public class ActionsController {
     @GetMapping("/compliance/delete-requests")
     public List<Map<String, Object>> complianceDeleteRequests() {
         return compliance.deletionRequests();
+    }
+
+    @GetMapping("/depth/hub")
+    public Map<String, Object> depthHub() {
+        return depth.hub();
+    }
+
+    @GetMapping("/depth/center-pnl")
+    public Map<String, Object> depthCenterPnl(@RequestParam(defaultValue = "90") int days) {
+        return depth.centerPnl(days);
+    }
+
+    @PostMapping("/depth/org")
+    public Map<String, Object> depthUpdateOrg(@RequestBody Map<String, Object> body) {
+        return depth.updateOrgDepth(body);
+    }
+
+    @PostMapping("/depth/centers/{id}/royalty")
+    public Map<String, Object> depthCenterRoyalty(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return depth.updateCenterRoyalty(id, body);
+    }
+
+    @GetMapping("/support/hub")
+    public List<Map<String, Object>> supportHub() {
+        return depth.supportHub();
+    }
+
+    @PostMapping("/support/tickets")
+    public Map<String, Object> supportCreate(@RequestBody Map<String, Object> body) {
+        return depth.createTicket(body);
+    }
+
+    @PostMapping("/support/tickets/{id}")
+    public Map<String, Object> supportUpdate(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return depth.updateTicket(id, body);
+    }
+
+    @PostMapping("/billing/upgrade-request")
+    public Map<String, Object> billingUpgrade(@RequestBody(required = false) Map<String, Object> body) {
+        return depth.requestUpgrade(body == null ? Map.of() : body);
+    }
+
+    @GetMapping("/help/articles")
+    public List<Map<String, Object>> helpArticles(@RequestParam(required = false) String locale,
+                                                  @RequestParam(required = false) String page) {
+        return depth.helpArticles(locale, page);
+    }
+
+    @GetMapping("/help/tour")
+    public Map<String, Object> helpTour(@RequestParam(defaultValue = "dashboard") String page) {
+        return depth.guidedTour(page);
+    }
+
+    @GetMapping("/api-tokens")
+    public List<Map<String, Object>> apiTokens() {
+        return depth.apiTokens();
+    }
+
+    @PostMapping("/api-tokens")
+    public Map<String, Object> createApiToken(@RequestBody(required = false) Map<String, Object> body) {
+        return depth.createApiToken(body == null ? Map.of() : body);
+    }
+
+    @PostMapping("/webhooks/test")
+    public Map<String, Object> testWebhook() {
+        return depth.testWebhook();
+    }
+
+    @GetMapping("/hr/goals")
+    public List<Map<String, Object>> staffGoals() {
+        return depth.staffGoals();
+    }
+
+    @PostMapping("/hr/goals")
+    public Map<String, Object> saveStaffGoal(@RequestBody Map<String, Object> body) {
+        return depth.saveStaffGoal(body);
+    }
+
+    @GetMapping("/hr/succession")
+    public List<Map<String, Object>> successionPlans() {
+        return depth.successionPlans();
+    }
+
+    @PostMapping("/hr/succession")
+    public Map<String, Object> saveSuccession(@RequestBody Map<String, Object> body) {
+        return depth.saveSuccession(body);
+    }
+
+    @GetMapping("/hr/posh")
+    public List<Map<String, Object>> poshCases() {
+        return depth.poshCases();
+    }
+
+    @PostMapping("/hr/posh")
+    public Map<String, Object> openPosh(@RequestBody Map<String, Object> body) {
+        return depth.openPoshCase(body);
+    }
+
+    @PostMapping("/ai/study-plan")
+    public Map<String, Object> studyPlan(@RequestBody Map<String, Object> body) {
+        return depth.createStudyPlan(body);
+    }
+
+    @GetMapping("/locale")
+    public Map<String, Object> localeBundle() {
+        return depth.localeBundle();
+    }
+
+    @PostMapping("/locale")
+    public Map<String, Object> setLocale(@RequestBody Map<String, Object> body) {
+        return depth.setLocale(body);
     }
 
     @GetMapping("/dashboard")

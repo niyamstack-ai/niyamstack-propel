@@ -189,6 +189,56 @@ public class FoundationService {
         return out;
     }
 
+    @Transactional
+    public void seedStarter(UUID orgId, UUID ownerUserId) {
+        if (orgId == null) {
+            return;
+        }
+        if (!store.list(Center.class, orgId).isEmpty()) {
+            return;
+        }
+        Organization org = store.get(Organization.class, orgId);
+        Center center = new Center();
+        center.setOrganizationId(orgId);
+        center.setName(blank(org.getName(), "Main") + " — Main center");
+        center.setCode("MAIN");
+        center.setCity("—");
+        center.setActive(true);
+        center = store.save(center);
+
+        AppUser owner = store.get(AppUser.class, ownerUserId);
+        owner.setCenterId(center.getId());
+        store.save(owner);
+
+        AcademicYear year = new AcademicYear();
+        year.setOrganizationId(orgId);
+        int y = LocalDate.now().getYear();
+        year.setName(y + "-" + (y + 1));
+        year.setStartDate(LocalDate.of(y, 4, 1));
+        year.setEndDate(LocalDate.of(y + 1, 3, 31));
+        year.setActive(true);
+        year = store.save(year);
+
+        Course course = new Course();
+        course.setOrganizationId(orgId);
+        course.setName("Starter course");
+        course.setCode("START-01");
+        course.setPublished(false);
+        course.setActive(true);
+        store.save(course);
+
+        HelpArticle tip = new HelpArticle();
+        tip.setOrganizationId(orgId);
+        tip.setLocale("en");
+        tip.setPageKey("dashboard");
+        tip.setTitle("Welcome to your institute");
+        tip.setBody("Complete onboarding: publish website, invite staff, and add students.");
+        tip.setSortOrder(1);
+        store.save(tip);
+
+        audit.log("SIGNUP_SEED", "Organization", orgId, "Starter center/course seeded");
+    }
+
     public Employee ensureEmployeeForStaff(AppUser user) {
         if (user == null || user.getOrganizationId() == null || !STAFF_ROLES.contains(user.getRole())) {
             return null;

@@ -208,6 +208,9 @@ public final class Packs {
             case "ReportDefinition", "ScheduledReport" -> new String[]{MOD_ANALYTICS};
             case "XapiStatement" -> new String[]{MOD_LMS};
             case "AccreditationFolder", "AccreditationEvidence" -> new String[]{MOD_LMS, MOD_ANALYTICS};
+            case "UsageEvent", "DataDeletionRequest", "TenantReleaseNote", "ApiToken", "HelpArticle" -> new String[]{MOD_ANALYTICS};
+            case "StaffGoal", "SuccessionPlan", "PoshCase" -> new String[]{MOD_ESS};
+            case "StudyPlan" -> new String[]{MOD_LMS, MOD_STUDENTS};
             default -> new String[0];
         };
     }

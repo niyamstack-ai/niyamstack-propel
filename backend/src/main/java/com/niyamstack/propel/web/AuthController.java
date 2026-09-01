@@ -5,6 +5,7 @@ import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.AppUser;
 import com.niyamstack.propel.domain.Model.Organization;
+import com.niyamstack.propel.foundation.FoundationService;
 import com.niyamstack.propel.integration.MailService;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.OtpService;
@@ -37,6 +38,7 @@ public class AuthController {
     private final ResetTokenService resets;
     private final SessionService sessions;
     private final MailService mail;
+    private final FoundationService foundation;
     private final ConcurrentHashMap<String, Integer> ipFailures = new ConcurrentHashMap<>();
 
     public AuthController(
@@ -46,7 +48,8 @@ public class AuthController {
             OtpService otp,
             ResetTokenService resets,
             SessionService sessions,
-            MailService mail
+            MailService mail,
+            FoundationService foundation
     ) {
         this.store = store;
         this.encoder = encoder;
@@ -55,6 +58,7 @@ public class AuthController {
         this.resets = resets;
         this.sessions = sessions;
         this.mail = mail;
+        this.foundation = foundation;
     }
 
     public record LoginRequest(
@@ -174,7 +178,8 @@ public class AuthController {
         user.setRole(Roles.OWNER);
         user.setActive(true);
         user.setPasswordChangedAt(Instant.now());
-        store.save(user);
+        user = store.save(user);
+        foundation.seedStarter(org.getId(), user.getId());
         audit.log("SIGNUP", "Organization", org.getId(), email);
         var issued = otp.issue(phone, OtpService.LOGIN);
         emailOtp(user, OtpService.LOGIN, issued.code());

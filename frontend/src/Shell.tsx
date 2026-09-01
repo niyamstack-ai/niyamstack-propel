@@ -1,10 +1,34 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { api } from "./api";
 import { useAuth } from "./auth";
 import { NiyamstackLogo } from "./brand/NiyamstackLogo";
 import { isNavGroup, navForRole, portalTitle, type NavGroup } from "./portals";
 import { UserMenu } from "./UserMenu";
 import { UnifiedSearch } from "./UnifiedSearch";
+
+function LocaleToggle() {
+  const [locale, setLocale] = useState("en");
+  useEffect(() => {
+    void api<{ locale?: string }>("/api/actions/locale")
+      .then((r) => setLocale(r.locale ?? "en"))
+      .catch(() => undefined);
+  }, []);
+  return (
+    <select
+      className="w-full rounded-lg border border-white/15 bg-transparent px-3 py-2 text-sm text-slate-300"
+      value={locale}
+      onChange={(e) => {
+        const next = e.target.value;
+        setLocale(next);
+        void api("/api/actions/locale", { method: "POST", body: JSON.stringify({ locale: next }) });
+      }}
+    >
+      <option value="en">English</option>
+      <option value="hi">हिन्दी</option>
+    </select>
+  );
+}
 
 function linkClass(isActive: boolean, nested = false) {
   return `${nested ? "block rounded-lg px-3 py-1.5 pl-7 text-[13px]" : "block rounded-lg px-3 py-2 text-sm"} ${
@@ -172,7 +196,7 @@ export function Shell() {
       >
         <SidebarBrand />
         <SidebarNav onNavigate={() => setMenuOpen(false)} />
-        <div className="px-3 pb-4">
+        <div className="space-y-2 px-3 pb-4">
           <a
             href="mailto:support@niyamstack.com"
             className="flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-300 hover:bg-white/5 hover:text-white"
@@ -182,6 +206,10 @@ export function Shell() {
             </svg>
             Email support
           </a>
+          <NavLink to="/help" className="block rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-white/5 hover:text-white">
+            Help center
+          </NavLink>
+          <LocaleToggle />
         </div>
       </aside>
       <div className="min-w-0 sm:pl-60">
