@@ -111,9 +111,30 @@ export function CompliancePage() {
           <Link className="mt-3 mr-3 inline-block text-sm text-brand hover:underline" to="/audit">
             View activity log
           </Link>
-          <Link className="mt-3 inline-block text-sm text-brand hover:underline" to="/scale">
+          <Link className="mt-3 mr-3 inline-block text-sm text-brand hover:underline" to="/scale">
             Open scale depth
           </Link>
+          <Link className="mt-3 mr-3 inline-block text-sm text-brand hover:underline" to="/support">
+            Support tickets
+          </Link>
+          <button
+            type="button"
+            className="mt-3 inline-block text-sm font-medium text-brand hover:underline"
+            onClick={async () => {
+              setError(null);
+              try {
+                await api("/api/actions/billing/upgrade-request", {
+                  method: "POST",
+                  body: JSON.stringify({ tier: "GROWTH", note: "Upgrade from compliance billing card" }),
+                });
+                alert("Upgrade request sent. Track it under Support.");
+              } catch (e) {
+                setError((e as Error).message);
+              }
+            }}
+          >
+            Request upgrade
+          </button>
         </Card>
 
         <Card title="Module usage (30 days)">
@@ -215,7 +236,8 @@ export function CompliancePage() {
 
       <Card title="Masked bulk export">
         <p className="mb-3 text-sm text-slate-500">
-          Server-side masking for email, phone, and custom fields. Fields masked: {(hub.data?.maskedFields ?? []).join(", ") || "email, phone, customJson"}.
+          Server-side masking for email, phone, and custom fields. Fields masked:{" "}
+          {(hub.data?.maskedFields ?? ["email", "phone", "customJson"]).join(", ")}.
         </p>
         <div className="flex flex-wrap gap-2">
           {(["students", "invoices", "applications", "inquiries"] as const).map((resource) => (

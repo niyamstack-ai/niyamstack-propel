@@ -585,7 +585,8 @@ public class EssService {
     @Transactional
     public Map<String, Object> markAttendance(Map<String, Object> body) {
         requireEss();
-        Employee e = store.getOwned(Employee.class, uuid(body, "employeeId"), orgId());
+        UUID employeeId = uuid(body, "employeeId");
+        Employee e = employeeId == null ? selfEmployee(true) : store.getOwned(Employee.class, employeeId, orgId());
         requireOwnOrAdmin(e);
         LocalDate parsed = date(body, "workDate");
         final LocalDate day = parsed == null ? LocalDate.now() : parsed;
@@ -1940,12 +1941,12 @@ public class EssService {
                 .map(Employee::getFullName)
                 .findFirst()
                 .orElse(""));
-        row.put("workDate", a.getWorkDate());
+        row.put("workDate", a.getWorkDate() == null ? null : a.getWorkDate().toString());
         row.put("shift", a.getShift());
         row.put("status", a.getStatus());
         row.put("source", a.getSource());
-        row.put("inTime", a.getInTime());
-        row.put("outTime", a.getOutTime());
+        row.put("inTime", a.getInTime() == null ? null : a.getInTime().toString());
+        row.put("outTime", a.getOutTime() == null ? null : a.getOutTime().toString());
         return row;
     }
 

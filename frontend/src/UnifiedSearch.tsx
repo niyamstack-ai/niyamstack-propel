@@ -9,13 +9,14 @@ type Hit = { module: string; id: string; title: string; subtitle?: string; path:
 export function UnifiedSearch() {
   const { user } = useAuth();
   const growth = hasGrowthTier(user?.packageTier, user?.modules);
+  const canSearch = growth && ["OWNER", "ACCOUNTANT", "COUNSELOR", "PLACEMENT_HEAD", "FACULTY"].includes(user?.role ?? "");
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[]>([]);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!growth || q.trim().length < 2) {
+    if (!canSearch || q.trim().length < 2) {
       setHits([]);
       setError(null);
       return;
@@ -29,9 +30,9 @@ export function UnifiedSearch() {
         });
     }, 250);
     return () => window.clearTimeout(handle);
-  }, [q, growth]);
+  }, [q, canSearch]);
 
-  if (!growth) {
+  if (!canSearch) {
     return null;
   }
 

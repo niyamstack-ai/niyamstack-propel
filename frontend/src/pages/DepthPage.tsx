@@ -75,6 +75,15 @@ export function DepthPage() {
         <p className="text-sm text-slate-500">Multi-center P&L, franchise royalty, public API, HR enterprise, billing upgrade, and study plans.</p>
       </div>
       <ErrorText error={error} />
+      {(hub.error || employees.error || students.error) && (
+        <ErrorText error={[hub.error, employees.error, students.error].filter(Boolean).join(" · ")} />
+      )}
+
+      {hub.loading && !hub.data ? (
+        <Card title="Loading">
+          <p className="text-sm text-slate-500">Loading scale depth…</p>
+        </Card>
+      ) : null}
 
       {hub.data && (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -88,8 +97,8 @@ export function DepthPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Residency & data mode">
           <p className="mb-3 text-sm text-slate-500">
-            India residency: {hub.data?.indiaDataResidency ? "On" : "Off"} · Royalty default:{" "}
-            {((hub.data?.defaultRoyaltyPct ?? 0) * 100).toFixed(1)}%
+            India residency: {hub.data?.indiaDataResidency === false ? "Off" : "On"} · Royalty default:{" "}
+            {((Number(hub.data?.defaultRoyaltyPct) || 0) * 100).toFixed(1)}%
           </p>
           <FormGrid>
             <Field label="Default royalty (0–1)" value={royalty} onChange={setRoyalty} />
@@ -103,7 +112,7 @@ export function DepthPage() {
                     method: "POST",
                     body: JSON.stringify({
                       indiaDataResidency: true,
-                      dataMode: hub.data?.dataMode === "CENTER_SCOPED" ? "SHARED" : "CENTER_SCOPED",
+                      dataMode: hub.data?.dataMode ?? "SHARED",
                       defaultRoyaltyPct: Number(royalty) || 0,
                     }),
                   });
@@ -113,8 +122,26 @@ export function DepthPage() {
                 }
               }}
             >
-              Save / toggle data mode
+              Save residency & royalty
             </PrimaryButton>
+            <LinkButton
+              onClick={async () => {
+                setError(null);
+                try {
+                  await api("/api/actions/depth/org", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      dataMode: hub.data?.dataMode === "CENTER_SCOPED" ? "SHARED" : "CENTER_SCOPED",
+                    }),
+                  });
+                  hub.reload();
+                } catch (e) {
+                  setError((e as Error).message);
+                }
+              }}
+            >
+              Toggle center-scoped mode
+            </LinkButton>
             <LinkButton
               onClick={async () => {
                 setError(null);
