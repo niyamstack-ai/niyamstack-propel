@@ -1,6 +1,6 @@
 package com.niyamstack.propel.web;
 
-import com.niyamstack.propel.catalog.Features;
+import com.niyamstack.propel.compensation.CompensationService;
 import com.niyamstack.propel.catalog.Packs;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
@@ -50,10 +50,12 @@ public class ResourceController {
     private final SisService sis;
     private final GrowService grow;
     private final FoundationService foundation;
+    private final CompensationService compensation;
 
     public ResourceController(Store store, DataScope scope, LmsService lms, PasswordEncoder encoder, FeeService fees,
                               StudentAccountService studentAccounts, SessionService sessions, LicenseService licenses,
-                              EssService ess, SisService sis, GrowService grow, FoundationService foundation) {
+                              EssService ess, SisService sis, GrowService grow, FoundationService foundation,
+                              CompensationService compensation) {
         this.store = store;
         this.scope = scope;
         this.lms = lms;
@@ -66,6 +68,7 @@ public class ResourceController {
         this.sis = sis;
         this.grow = grow;
         this.foundation = foundation;
+        this.compensation = compensation;
     }
 
     @GetMapping("/features")
@@ -228,6 +231,14 @@ public class ResourceController {
     @GetMapping("/leave-balances") public List<Map<String, Object>> leaveBalances() { return ess.balances(); }
     @GetMapping("/salary-structures") public List<Map<String, Object>> salaryStructures() { return ess.structures(); }
     @GetMapping("/payslips") public List<Map<String, Object>> payslips() { return ess.payslips(); }
+    @GetMapping("/compensation-plans") public List<Map<String, Object>> compensationPlans() { return compensation.plans(); }
+    @GetMapping("/commission-ledger") public List<Map<String, Object>> commissionLedger(
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month,
+            @RequestParam(required = false) UUID employeeId,
+            @RequestParam(required = false) String status) {
+        return compensation.ledger(year, month, employeeId, status);
+    }
     @GetMapping("/staff-vacancies") public List<Map<String, Object>> staffVacancies() { return ess.vacancies(); }
     @PostMapping("/staff-vacancies") public Map<String, Object> createVacancy(@RequestBody Map<String, Object> body) { return ess.createVacancy(body); }
     @PutMapping("/staff-vacancies/{id}") public Map<String, Object> updateVacancy(@PathVariable UUID id, @RequestBody Map<String, Object> body) { return ess.updateVacancy(id, body); }

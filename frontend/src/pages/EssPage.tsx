@@ -52,6 +52,8 @@ type Payslip = {
   basic?: number;
   hra?: number;
   special?: number;
+  variablePay?: number;
+  commissionPay?: number;
   gross?: number;
   pfEmployee?: number;
   esiEmployee?: number;
@@ -135,7 +137,7 @@ type ManagerInbox = {
   teamSize?: number;
 };
 
-const HR_TABS = ["profile", "team", "employees", "attendance", "leave", "payroll", "hiring", "devices"] as const;
+const HR_TABS = ["profile", "team", "employees", "attendance", "leave", "payroll", "compensation", "hiring", "devices"] as const;
 const MANAGER_TABS = ["profile", "team", "attendance", "leave", "payroll"] as const;
 const STAFF_TABS = ["profile", "attendance", "leave", "payroll"] as const;
 type Tab = (typeof HR_TABS)[number];
@@ -177,6 +179,7 @@ export function EssPage() {
       {tab === "attendance" && <AttendanceTab hr={hr} />}
       {tab === "leave" && <LeaveTab hr={hr} manager={manager} />}
       {tab === "payroll" && <PayrollTab hr={hr} />}
+      {tab === "compensation" && hr && <CompensationTab />}
       {tab === "hiring" && hr && <HiringTab />}
       {tab === "devices" && hr && <DevicesTab />}
     </div>
@@ -1219,6 +1222,8 @@ function PayrollTab({ hr }: { hr: boolean }) {
             <tr><td>Basic</td><td>${escHtml(formatInr(rec.basic))}</td></tr>
             <tr><td>HRA</td><td>${escHtml(formatInr(rec.hra))}</td></tr>
             <tr><td>Special</td><td>${escHtml(formatInr(rec.special))}</td></tr>
+            <tr><td>Variable pay</td><td>${escHtml(formatInr(rec.variablePay))}</td></tr>
+            <tr><td>Commission</td><td>${escHtml(formatInr(rec.commissionPay))}</td></tr>
             <tr><td>Gross</td><td>${escHtml(formatInr(rec.gross))}</td></tr>
             <tr><td>LOP (${rec.lopDays ?? 0} days)</td><td>${escHtml(formatInr(rec.lopDeduction))}</td></tr>
             <tr><td>PF (employee)</td><td>${escHtml(formatInr(rec.pfEmployee))}</td></tr>
@@ -1579,6 +1584,131 @@ function DevicesTab() {
             prettyLabel(p.punchType),
             p.deviceId || "—",
             p.employeeId ? "Staff" : p.studentId ? "Student" : "—",
+          ])}
+        />
+      </Card>
+    </>
+  );
+}
+
+function CompensationTab() {
+  const employees = useApi<Employee[]>("/api/employees");
+  const plans = useApi<{ id: string; employeeId: string; employeeName: string; planType: string; rateAmount?: number; effectiveFrom?: string }[]>(
+    "/api/compensation-plans",
+  );
+  const ledger = useApi<{ employeeName: string; sourceType: string; amount: number; description?: string; status: string; periodMonth?: number; periodYear?: number }[]>(
+    "/api/commission-ledger",
+  );
+  const settings = useApi<{ conversionFlat?: number; feePercent?: number; enabled?: boolean }>("/api/actions/compensation/settings");
+  const facultyPreview = useApi<{ employeeName: string; planType: string; variablePay: number }[]>("/api/actions/compensation/faculty/preview");
+  const [employeeId, setEmployeeId] = useState("");
+  const [planType, setPlanType] = useState("HOURLY");
+  const [rateAmount, setRateAmount] = useState("500");
+  const [conversionFlat, setConversionFlat] = useState("500");
+  const [feePercent, setFeePercent] = useState("0.02");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (settings.data?.conversionFlat != null) setConversionFlat(String(settings.data.conversionFlat));
+    if (settings.data?.feePercent != null) setFeePercent(String(settings.data.feePercent));
+  }, [settings.data]);
+
+  async function saveSettings() {
+    setError(null);
+    setNotice(null);
+    try {
+      await api("/api/actions/compensation/settings", {
+        method: "PUT",
+        body: JSON.stringify({ conversionFlat, feePercent, enabled: true }),
+      });
+      settings.reload();
+      setNotice("Commission rules saved.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function savePlan() {
+    setError(null);
+    setNotice(null);
+    try {
+      await api("/api/actions/compensation/plans", {
+        method: "POST",
+        body: JSON.stringify({ employeeId, planType, rateAmount }),
+      });
+      plans.reload();
+      facultyPreview.reload();
+      setNotice("Compensation plan saved.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <>
+      <ErrorText error={error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <Card title="Counselor commission rules">
+        <p className="mb-3 text-sm text-slate-500">Flat payout on lead conversion plus a percentage of captured fee payments.</p>
+        <FormGrid>
+          <Field label="Conversion flat ₹" value={conversionFlat} onChange={setConversionFlat} />
+          <Field label="Fee collection %" value={feePercent} onChange={setFeePercent} placeholder="0.02 = 2%" />
+          <div className="flex items-end">
+            <PrimaryButton onClick={() => void saveSettings()}>Save rules</PrimaryButton>
+          </div>
+        </FormGrid>
+      </Card>
+      <Card title="Faculty compensation plan">
+        <p className="mb-3 text-sm text-slate-500">Set hourly or per-batch variable pay for faculty employees linked to staff logins.</p>
+        <FormGrid>
+          <Select
+            label="Employee"
+            value={employeeId}
+            onChange={setEmployeeId}
+            options={(employees.data ?? []).map((e) => ({ value: e.id, label: `${e.fullName} (${e.employmentType || "staff"})` }))}
+          />
+          <Select
+            label="Plan type"
+            value={planType}
+            onChange={setPlanType}
+            options={[
+              { value: "HOURLY", label: "Hourly (from timetable)" },
+              { value: "PER_BATCH", label: "Per batch" },
+              { value: "FIXED", label: "Fixed only (salary structure)" },
+            ]}
+          />
+          <Field label="Rate ₹" value={rateAmount} onChange={setRateAmount} />
+          <div className="flex items-end">
+            <PrimaryButton disabled={!employeeId} onClick={() => void savePlan()}>
+              Save plan
+            </PrimaryButton>
+          </div>
+        </FormGrid>
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <Table
+            empty="No plans yet."
+            columns={["Employee", "Type", "Rate", "From"]}
+            rows={(plans.data ?? []).map((p) => [p.employeeName, p.planType, p.rateAmount ?? 0, p.effectiveFrom || "—"])}
+          />
+          <Table
+            empty="No faculty variable pay this month."
+            columns={["Faculty", "Plan", "Variable pay"]}
+            rows={(facultyPreview.data ?? []).map((p) => [p.employeeName, p.planType, formatInr(p.variablePay)])}
+          />
+        </div>
+      </Card>
+      <Card title="Commission ledger">
+        <Table
+          empty="Commissions accrue when leads convert or fees are collected."
+          columns={["Employee", "Type", "Amount", "Period", "Status", "Note"]}
+          rows={(ledger.data ?? []).map((r) => [
+            r.employeeName,
+            prettyLabel(r.sourceType),
+            formatInr(r.amount),
+            `${r.periodMonth}/${r.periodYear}`,
+            prettyLabel(r.status),
+            r.description || "—",
           ])}
         />
       </Card>

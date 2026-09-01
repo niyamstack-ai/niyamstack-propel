@@ -3,7 +3,7 @@ package com.niyamstack.propel.ess;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.niyamstack.propel.catalog.Packs;
-import com.niyamstack.propel.common.ApiException;
+import com.niyamstack.propel.compensation.CompensationService;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.*;
 import com.niyamstack.propel.security.Access;
@@ -49,10 +49,12 @@ public class EssService {
 
     private final Store store;
     private final PasswordEncoder encoder;
+    private final CompensationService compensation;
 
-    public EssService(Store store, PasswordEncoder encoder) {
+    public EssService(Store store, PasswordEncoder encoder, CompensationService compensation) {
         this.store = store;
         this.encoder = encoder;
+        this.compensation = compensation;
     }
 
     public List<Map<String, Object>> employees() {
@@ -1044,6 +1046,7 @@ public class EssService {
             }
             Payslip p = computePayslip(e, s, year, month, settings);
             p = store.save(p);
+            compensation.markCommissionsPaid(orgId(), e.getId(), year, month);
             out.add(payslipView(p, List.of(e), false));
         }
         return out;
@@ -1615,7 +1618,9 @@ public class EssService {
         BigDecimal basic = nz(s.getBasic());
         BigDecimal hra = nz(s.getHra());
         BigDecimal special = nz(s.getSpecial());
-        BigDecimal gross = basic.add(hra).add(special);
+        BigDecimal variablePay = compensation.facultyVariablePay(e.getOrganizationId(), e, year, month);
+        BigDecimal commissionPay = compensation.commissionForPayroll(e.getOrganizationId(), e.getId(), year, month);
+        BigDecimal gross = basic.add(hra).add(special).add(variablePay).add(commissionPay);
 
         YearMonth ym = YearMonth.of(year, month);
         int workingDays = weekdaysInMonth(ym);
@@ -1666,7 +1671,9 @@ public class EssService {
         p.setBasic(basic);
         p.setHra(hra);
         p.setSpecial(special);
-        p.setGross(basic.add(hra).add(special));
+        p.setVariablePay(variablePay);
+        p.setCommissionPay(commissionPay);
+        p.setGross(basic.add(hra).add(special).add(variablePay).add(commissionPay));
         p.setLopDays(lopDays);
         p.setLopDeduction(lopDeduction);
         p.setPfEmployee(pf);
@@ -2005,6 +2012,8 @@ public class EssService {
         row.put("basic", p.getBasic());
         row.put("hra", p.getHra());
         row.put("special", p.getSpecial());
+        row.put("variablePay", p.getVariablePay());
+        row.put("commissionPay", p.getCommissionPay());
         row.put("gross", p.getGross());
         row.put("pfEmployee", p.getPfEmployee());
         row.put("esiEmployee", p.getEsiEmployee());

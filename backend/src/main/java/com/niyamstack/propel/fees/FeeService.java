@@ -1,5 +1,6 @@
 package com.niyamstack.propel.fees;
 
+import com.niyamstack.propel.compensation.CompensationService;
 import com.niyamstack.propel.audit.AuditService;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
@@ -37,13 +38,16 @@ public class FeeService {
     private final MessagingGateway messaging;
     private final AuditService audit;
     private final EventHook hooks;
+    private final CompensationService compensation;
 
-    public FeeService(Store store, PaymentGateway payments, MessagingGateway messaging, AuditService audit, EventHook hooks) {
+    public FeeService(Store store, PaymentGateway payments, MessagingGateway messaging, AuditService audit, EventHook hooks,
+                      CompensationService compensation) {
         this.store = store;
         this.payments = payments;
         this.messaging = messaging;
         this.audit = audit;
         this.hooks = hooks;
+        this.compensation = compensation;
     }
 
     @Transactional
@@ -221,6 +225,7 @@ public class FeeService {
             invoice.setPaidAmount(nvl(invoice.getPaidAmount()).add(pending.getAmount()));
             invoice.setStatus(invoice.getPaidAmount().compareTo(invoice.getAmount()) >= 0 ? "PAID" : "PARTIAL");
             store.save(invoice);
+            compensation.accrueOnFeeCollected(orgId, pending, invoice.getStudentId());
             finishPaid(org, invoice, pending);
             return Map.of("status", invoice.getStatus(), "gatewayRef", razorpayPaymentId);
         }
@@ -247,6 +252,7 @@ public class FeeService {
             invoice.setPaidAmount(nvl(invoice.getPaidAmount()).add(pending.getAmount()));
             invoice.setStatus(invoice.getPaidAmount().compareTo(invoice.getAmount()) >= 0 ? "PAID" : "PARTIAL");
             store.save(invoice);
+            compensation.accrueOnFeeCollected(orgId, pending, invoice.getStudentId());
             finishPaid(org, invoice, pending);
             return;
         }
@@ -485,6 +491,7 @@ public class FeeService {
         invoice.setPaidAmount(nvl(invoice.getPaidAmount()).add(payAmt));
         invoice.setStatus(invoice.getPaidAmount().compareTo(invoice.getAmount()) >= 0 ? "PAID" : "PARTIAL");
         store.save(invoice);
+        compensation.accrueOnFeeCollected(org.getId(), payment, invoice.getStudentId());
         finishPaid(org, invoice, payment);
         return payment;
     }

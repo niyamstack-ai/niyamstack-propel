@@ -1032,6 +1032,10 @@ public final class Model {
         @Column(precision = 12, scale = 2)
         private BigDecimal special = BigDecimal.ZERO;
         @Column(precision = 12, scale = 2)
+        private BigDecimal variablePay = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal commissionPay = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
         private BigDecimal gross = BigDecimal.ZERO;
         @Column(precision = 12, scale = 2)
         private BigDecimal pfEmployee = BigDecimal.ZERO;
@@ -1080,6 +1084,41 @@ public final class Model {
         @Column(precision = 6, scale = 4)
         private BigDecimal tdsRate = BigDecimal.ZERO;
         private Boolean lopEnabled = true;
+    }
+
+    @Entity(name = "CommissionSettings") @Table(name = "commission_settings") @Getter @Setter
+    public static class CommissionSettings extends TenantEntity {
+        @Column(precision = 12, scale = 2)
+        private BigDecimal conversionFlat = new BigDecimal("500");
+        @Column(precision = 6, scale = 4)
+        private BigDecimal feePercent = new BigDecimal("0.02");
+        private Boolean enabled = true;
+    }
+
+    @Entity(name = "CompensationPlan") @Table(name = "compensation_plans") @Getter @Setter
+    public static class CompensationPlan extends TenantEntity {
+        private UUID employeeId;
+        private String planType = "FIXED";
+        @Column(precision = 12, scale = 2)
+        private BigDecimal rateAmount = BigDecimal.ZERO;
+        @Column(precision = 6, scale = 4)
+        private BigDecimal ratePercent = BigDecimal.ZERO;
+        private LocalDate effectiveFrom;
+        private Boolean active = true;
+    }
+
+    @Entity(name = "CommissionLedger") @Table(name = "commission_ledger") @Getter @Setter
+    public static class CommissionLedger extends TenantEntity {
+        private UUID employeeId;
+        private String sourceType;
+        private UUID sourceId;
+        private Integer periodYear;
+        private Integer periodMonth;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal amount = BigDecimal.ZERO;
+        @Column(length = 500)
+        private String description;
+        private String status = "APPROVED";
     }
 
     @Entity(name = "StaffVacancy") @Table(name = "staff_vacancies") @Getter @Setter

@@ -5,7 +5,7 @@ import { hasGrowthTier } from "../packs";
 import { api } from "../api";
 import { createRecord } from "../ops";
 import { prettyLabel } from "../labels";
-import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, useApi } from "../ui";
+import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, formatInr, useApi } from "../ui";
 
 type Inquiry = {
   id: string;
@@ -36,6 +36,9 @@ export function CrmPage() {
   const inquiries = useApi<Inquiry[]>("/api/inquiries");
   const funnel = useApi<{ bySource?: { name: string; leads: number; converted: number; conversionPct: number }[]; byCounselor?: { name: string; leads: number; converted: number; conversionPct: number }[] }>(
     growth ? "/api/actions/analytics/funnel?days=30" : "",
+  );
+  const myCommissions = useApi<{ totalApproved?: number; totalPaid?: number; rows?: { description?: string; amount: number; status: string }[] }>(
+    user?.role === "COUNSELOR" ? "/api/actions/compensation/my-commissions" : "",
   );
   const courses = useApi<{ id: string; name: string }[]>("/api/courses");
   const batches = useApi<{ id: string; name: string }[]>("/api/batches");
@@ -163,6 +166,19 @@ export function CrmPage() {
       </div>
       <ErrorText error={error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      {user?.role === "COUNSELOR" && myCommissions.data && (
+        <Card title="My commissions (this month)">
+          <p className="mb-2 text-sm">
+            Approved: {formatInr(myCommissions.data.totalApproved ?? 0)} · Paid via payroll:{" "}
+            {formatInr(myCommissions.data.totalPaid ?? 0)}
+          </p>
+          <Table
+            empty="Commissions appear when your leads convert or students pay fees."
+            columns={["Note", "Amount", "Status"]}
+            rows={(myCommissions.data.rows ?? []).map((r) => [r.description || "—", formatInr(r.amount), prettyLabel(r.status)])}
+          />
+        </Card>
+      )}
       <Card title="Capture inquiry">
         <FormGrid>
           <Field label="Name" value={name} onChange={setName} />

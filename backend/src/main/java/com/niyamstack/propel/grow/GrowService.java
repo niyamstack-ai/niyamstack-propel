@@ -1,5 +1,6 @@
 package com.niyamstack.propel.grow;
 
+import com.niyamstack.propel.compensation.CompensationService;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.*;
@@ -29,11 +30,13 @@ public class GrowService {
     private final Store store;
     private final FeeService fees;
     private final StudentAccountService students;
+    private final CompensationService compensation;
 
-    public GrowService(Store store, FeeService fees, StudentAccountService students) {
+    public GrowService(Store store, FeeService fees, StudentAccountService students, CompensationService compensation) {
         this.store = store;
         this.fees = fees;
         this.students = students;
+        this.compensation = compensation;
     }
 
     @Transactional
@@ -162,6 +165,7 @@ public class GrowService {
         }
         enrolled.put("inquiryId", inquiry.getId());
         enrolled.put("stage", "CONVERTED");
+        compensation.accrueOnConversion(inquiry);
         return enrolled;
     }
 

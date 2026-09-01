@@ -3,7 +3,7 @@ package com.niyamstack.propel.web;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.niyamstack.propel.analytics.AnalyticsService;
+import com.niyamstack.propel.compensation.CompensationService;
 import com.niyamstack.propel.comms.OutreachService;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
@@ -52,12 +52,13 @@ public class ActionsController {
     private final GrowService grow;
     private final ScaleService scale;
     private final AnalyticsService analytics;
+    private final CompensationService compensation;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public ActionsController(Store store, FeeService fees, LmsService lms, PlacementService placement,
                              IntegrationStatusService integrations, StorefrontService storefront, ObjectStorage storage,
                              OutreachService outreach, EssService ess, SisService sis, GrowService grow, ScaleService scale,
-                             AnalyticsService analytics) {
+                             AnalyticsService analytics, CompensationService compensation) {
         this.store = store;
         this.fees = fees;
         this.lms = lms;
@@ -71,6 +72,7 @@ public class ActionsController {
         this.grow = grow;
         this.scale = scale;
         this.analytics = analytics;
+        this.compensation = compensation;
     }
 
     @GetMapping("/my-courses")
@@ -639,6 +641,34 @@ public class ActionsController {
     @PutMapping("/ess/payroll/settings")
     public Map<String, Object> savePayrollSettings(@RequestBody Map<String, Object> body) {
         return ess.savePayrollSettings(body);
+    }
+
+    @GetMapping("/compensation/settings")
+    public Map<String, Object> commissionSettings() {
+        return compensation.settingsView();
+    }
+
+    @PutMapping("/compensation/settings")
+    public Map<String, Object> saveCommissionSettings(@RequestBody Map<String, Object> body) {
+        return compensation.saveSettings(body);
+    }
+
+    @PostMapping("/compensation/plans")
+    public Map<String, Object> saveCompensationPlan(@RequestBody Map<String, Object> body) {
+        return compensation.savePlan(body);
+    }
+
+    @GetMapping("/compensation/faculty/preview")
+    public List<Map<String, Object>> facultyCompPreview(
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month) {
+        LocalDate now = LocalDate.now();
+        return compensation.facultyPreview(year == null ? now.getYear() : year, month == null ? now.getMonthValue() : month);
+    }
+
+    @GetMapping("/compensation/my-commissions")
+    public Map<String, Object> myCommissions() {
+        return compensation.myCommissions();
     }
 
     @GetMapping("/ess/payslips/{id}")
