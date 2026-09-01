@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useAuth } from "../auth";
+import { hasGrowthTier } from "../packs";
 import { api } from "../api";
 import { createRecord } from "../ops";
 import { prettyLabel } from "../labels";
@@ -34,9 +36,49 @@ type Dash = {
   attendanceMarked?: number;
 };
 
+type Scorecard = {
+  conversionPct: number;
+  collectionPct: number;
+  attendancePct: number;
+  avgReadiness: number;
+  placementPct: number;
+  atRisk: number;
+  inquiries: number;
+  converted: number;
+  placed: number;
+  eligibleStudents: number;
+};
+
+type FunnelRow = { name: string; leads: number; converted: number; conversionPct: number };
+type Funnel = {
+  total: number;
+  converted: number;
+  byStage: Record<string, number>;
+  bySource: FunnelRow[];
+  byCounselor: FunnelRow[];
+  byLanding: FunnelRow[];
+};
+
+type PlacementAnalytics = {
+  placementPct: number;
+  placed: number;
+  eligibleStudents: number;
+  avgPackageLpa: number;
+  offersTotal: number;
+  offersAccepted: number;
+  offersPending: number;
+  byCourse: { course: string; placed: number; students: number; placementPct: number; avgPackageLpa: number }[];
+  byCompany: { company: string; offers: number; avgPackageLpa: number }[];
+};
+
 export function AnalyticsPage() {
+  const { user } = useAuth();
+  const growth = hasGrowthTier(user?.packageTier, user?.modules);
   const [range, setRange] = useState("30");
   const dash = useApi<Dash>(`/api/actions/dashboard?days=${range}`);
+  const scorecard = useApi<Scorecard>(growth ? `/api/actions/analytics/scorecard?days=${range}` : "");
+  const funnel = useApi<Funnel>(growth ? `/api/actions/analytics/funnel?days=${range}` : "");
+  const placement = useApi<PlacementAnalytics>(growth ? "/api/actions/analytics/placement" : "");
   const tickets = useApi<{ subject: string; status: string; category: string }[]>("/api/tickets");
   const payments = useApi<{ gatewayRef: string; amount: number; method: string }[]>("/api/payments");
   const reports = useApi<{ id: string; name: string; dataset: string }[]>("/api/report-definitions");
@@ -45,6 +87,8 @@ export function AnalyticsPage() {
   );
   const [reportName, setReportName] = useState("Students snapshot");
   const [dataset, setDataset] = useState("students");
+  const [filterStage, setFilterStage] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
   const [emailTo, setEmailTo] = useState("");
   const [runRows, setRunRows] = useState<{ columns: string[]; rows: string[][] } | null>(null);
   const [subject, setSubject] = useState("");
@@ -79,13 +123,16 @@ export function AnalyticsPage() {
   }
 
   const d = dash.data;
+  const sc = scorecard.data;
+  const fn = funnel.data;
+  const pl = placement.data;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-navy">Analytics</h1>
-          <p className="text-sm text-slate-500">Collection %, outstanding fees, and website activity for the selected period.</p>
+          <p className="text-sm text-slate-500">KPI scorecards, funnel analytics, placement outcomes, and exports for the selected period.</p>
         </div>
         <select className="rounded-lg border border-line px-3 py-2 text-sm" value={range} onChange={(e) => setRange(e.target.value)}>
           <option value="7">Last 7 Days</option>
@@ -95,6 +142,99 @@ export function AnalyticsPage() {
         </select>
       </div>
       <ErrorText error={error} />
+
+      {!growth && (
+        <Card title="Growth analytics">
+          <p className="text-sm text-slate-600">
+            KPI scorecards, funnel breakdowns, placement outcome analytics, and report builder v2 require the{" "}
+            <strong>Growth</strong> catalog tier. Upgrade in institute settings or contact Niyamstack to unlock conversion %,
+            counselor performance, and placement dashboards.
+          </p>
+        </Card>
+      )}
+
+      {growth && sc && (
+        <>
+          <div>
+            <h2 className="mb-3 text-lg font-semibold text-navy">KPI scorecard</h2>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <Metric label="Lead conversion" value={`${sc.conversionPct}%`} hint={`${sc.converted}/${sc.inquiries} leads`} />
+              <Metric label="Fee collection" value={`${sc.collectionPct}%`} />
+              <Metric label="Attendance" value={`${sc.attendancePct}%`} />
+              <Metric label="Avg readiness" value={`${sc.avgReadiness}%`} />
+              <Metric label="Placement rate" value={`${sc.placementPct}%`} hint={`${sc.placed}/${sc.eligibleStudents} students`} />
+              <Metric label="At-risk students" value={sc.atRisk} />
+            </div>
+          </div>
+        </>
+      )}
+
+      {growth && fn && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card title="Funnel by stage">
+            <Table
+              empty="No leads in this period."
+              columns={["Stage", "Count"]}
+              rows={Object.entries(fn.byStage ?? {}).map(([stage, count]) => [prettyLabel(stage), count])}
+            />
+          </Card>
+          <Card title="Funnel by source">
+            <Table
+              empty="No source data yet."
+              columns={["Source", "Leads", "Converted", "Conv %"]}
+              rows={(fn.bySource ?? []).map((r) => [r.name, r.leads, r.converted, `${r.conversionPct}%`])}
+            />
+          </Card>
+          <Card title="Counselor performance">
+            <Table
+              empty="Assign counselors to leads to see conversion."
+              columns={["Counselor", "Leads", "Converted", "Conv %"]}
+              rows={(fn.byCounselor ?? []).map((r) => [r.name, r.leads, r.converted, `${r.conversionPct}%`])}
+            />
+          </Card>
+          <Card title="Landing page performance">
+            <Table
+              empty="Route leads through landing pages to compare."
+              columns={["Page", "Leads", "Converted", "Conv %"]}
+              rows={(fn.byLanding ?? []).map((r) => [r.name, r.leads, r.converted, `${r.conversionPct}%`])}
+            />
+          </Card>
+        </div>
+      )}
+
+      {growth && pl && (
+        <div>
+          <h2 className="mb-3 text-lg font-semibold text-navy">Placement outcomes</h2>
+          <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Metric label="Placement rate" value={`${pl.placementPct}%`} />
+            <Metric label="Avg package (LPA)" value={pl.avgPackageLpa ?? 0} />
+            <Metric label="Offers accepted" value={pl.offersAccepted ?? 0} />
+            <Metric label="Offers pending" value={pl.offersPending ?? 0} />
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card title="By course">
+              <Table
+                empty="No placement data by course yet."
+                columns={["Course", "Placed", "Students", "Rate", "Avg LPA"]}
+                rows={(pl.byCourse ?? []).map((r) => [
+                  r.course,
+                  r.placed,
+                  r.students,
+                  `${r.placementPct}%`,
+                  r.avgPackageLpa ?? 0,
+                ])}
+              />
+            </Card>
+            <Card title="By company">
+              <Table
+                empty="No accepted offers yet."
+                columns={["Company", "Offers", "Avg LPA"]}
+                rows={(pl.byCompany ?? []).map((r) => [r.company, r.offers, r.avgPackageLpa ?? 0])}
+              />
+            </Card>
+          </div>
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="Collection %" value={`${d?.collectionPct ?? 0}%`} />
         <Metric label="Outstanding" value={formatInr(d?.outstanding ?? d?.due ?? 0)} />
@@ -205,8 +345,11 @@ export function AnalyticsPage() {
         </Card>
       </div>
 
-      <Card title="Report builder">
-        <p className="mb-3 text-sm text-slate-500">Pick a dataset, save it, run it, and email it on a weekly schedule.</p>
+      <Card title="Report builder v2">
+        <p className="mb-3 text-sm text-slate-500">
+          Pick a dataset, optional filters, save it, run it, and email it on a weekly schedule. Requires Growth tier.
+        </p>
+        {!growth && <p className="mb-3 text-sm text-amber-700">Upgrade to Growth to save and run custom reports.</p>}
         <FormGrid>
           <Field label="Report name" value={reportName} onChange={setReportName} />
           <Select
@@ -218,18 +361,43 @@ export function AnalyticsPage() {
               { value: "invoices", label: "Invoices" },
               { value: "attendance", label: "Attendance" },
               { value: "applications", label: "Applications" },
+              { value: "inquiries", label: "Inquiries / leads" },
+              { value: "offers", label: "Offers" },
             ]}
           />
+          {(dataset === "inquiries" || dataset === "applications" || dataset === "offers" || dataset === "invoices" || dataset === "students") && (
+            <Field
+              label={dataset === "inquiries" ? "Filter stage (optional)" : "Filter status (optional)"}
+              value={dataset === "inquiries" ? filterStage : filterStatus}
+              onChange={dataset === "inquiries" ? setFilterStage : setFilterStatus}
+              placeholder={dataset === "inquiries" ? "CONVERTED" : "ACTIVE"}
+            />
+          )}
+          {dataset === "inquiries" && (
+            <Field label="Filter source (optional)" value={filterStatus} onChange={setFilterStatus} placeholder="WALKIN" />
+          )}
           <Field label="Email to (schedule)" value={emailTo} onChange={setEmailTo} placeholder="owner@institute.com" />
           <div className="flex items-end">
             <PrimaryButton
-              disabled={!reportName}
+              disabled={!reportName || !growth}
               onClick={async () => {
                 setError(null);
                 try {
+                  const filters: Record<string, string> = {};
+                  if (dataset === "inquiries") {
+                    if (filterStage) filters.stage = filterStage;
+                    if (filterStatus) filters.source = filterStatus;
+                  } else if (filterStatus) {
+                    filters.status = filterStatus;
+                  }
                   const saved = await api<{ id: string }>("/api/actions/reports", {
                     method: "POST",
-                    body: JSON.stringify({ name: reportName, dataset, columnsCsv: "fullName,status" }),
+                    body: JSON.stringify({
+                      name: reportName,
+                      dataset,
+                      columnsCsv: "fullName,status",
+                      filtersJson: Object.keys(filters).length ? JSON.stringify(filters) : "",
+                    }),
                   });
                   reports.reload();
                   if (emailTo) {
@@ -356,11 +524,12 @@ export function AnalyticsPage() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string | number }) {
+function Metric({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
     <div className="rounded-2xl border border-line bg-white p-4">
       <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-1 text-2xl font-bold text-navy">{value}</p>
+      {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
     </div>
   );
 }

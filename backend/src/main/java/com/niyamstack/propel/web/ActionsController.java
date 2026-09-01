@@ -3,6 +3,7 @@ package com.niyamstack.propel.web;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.niyamstack.propel.analytics.AnalyticsService;
 import com.niyamstack.propel.comms.OutreachService;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
@@ -50,11 +51,13 @@ public class ActionsController {
     private final SisService sis;
     private final GrowService grow;
     private final ScaleService scale;
+    private final AnalyticsService analytics;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public ActionsController(Store store, FeeService fees, LmsService lms, PlacementService placement,
                              IntegrationStatusService integrations, StorefrontService storefront, ObjectStorage storage,
-                             OutreachService outreach, EssService ess, SisService sis, GrowService grow, ScaleService scale) {
+                             OutreachService outreach, EssService ess, SisService sis, GrowService grow, ScaleService scale,
+                             AnalyticsService analytics) {
         this.store = store;
         this.fees = fees;
         this.lms = lms;
@@ -67,6 +70,7 @@ public class ActionsController {
         this.sis = sis;
         this.grow = grow;
         this.scale = scale;
+        this.analytics = analytics;
     }
 
     @GetMapping("/my-courses")
@@ -997,6 +1001,21 @@ public class ActionsController {
                   }
                 }
                 """.formatted(host, host, host);
+    }
+
+    @GetMapping("/analytics/scorecard")
+    public Map<String, Object> analyticsScorecard(@RequestParam(defaultValue = "30") int days) {
+        return analytics.scorecard(days);
+    }
+
+    @GetMapping("/analytics/funnel")
+    public Map<String, Object> analyticsFunnel(@RequestParam(defaultValue = "30") int days) {
+        return analytics.funnelAnalytics(days);
+    }
+
+    @GetMapping("/analytics/placement")
+    public Map<String, Object> analyticsPlacement() {
+        return analytics.placementOutcomes();
     }
 
     @GetMapping("/dashboard")

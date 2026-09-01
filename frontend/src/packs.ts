@@ -67,3 +67,18 @@ export function pathAllowed(path: string, modules?: string[]) {
   if (path.startsWith("/ess")) return hasModule(modules, "ESS");
   return true;
 }
+
+export function packageRank(tier?: string | null) {
+  const t = (tier || "STARTER").toUpperCase();
+  if (t === "GROWTH" || t === "PRO") return 2;
+  if (t === "ENTERPRISE" || t === "PLUS" || t === "SCALE") return 3;
+  return 1;
+}
+
+export function hasGrowthTier(tier?: string | null, modules?: string[]) {
+  let rank = packageRank(tier);
+  if (modules?.some((m) => ["PLACEMENT", "ANALYTICS", "LMS", "GROW"].includes(m))) {
+    rank = Math.max(rank, 2);
+  }
+  return rank >= 2;
+}

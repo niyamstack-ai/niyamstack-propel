@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
-import { pathAllowed } from "../packs";
+import { hasGrowthTier, pathAllowed } from "../packs";
 import { Card, PrimaryButton, formatInr, formatWhen, useApi } from "../ui";
 import { OnboardingWizard } from "./OnboardingWizard";
 
@@ -218,6 +218,7 @@ function PlacementHome({ recruiter }: { recruiter: boolean }) {
 
 function OwnerHome() {
   const { user } = useAuth();
+  const growth = hasGrowthTier(user?.packageTier, user?.modules);
   const dash = useApi<Dash & {
     coursesPublished?: number;
     coursesTotal?: number;
@@ -232,6 +233,9 @@ function OwnerHome() {
     transactions?: number;
     revenue?: number;
   }>("/api/actions/dashboard");
+  const scorecard = useApi<{ conversionPct: number; placementPct: number; avgReadiness: number; atRisk: number }>(
+    growth && pathAllowed("/analytics", user?.modules) ? "/api/actions/analytics/scorecard?days=30" : "",
+  );
   if (dash.error) return <p className="text-red-600">{dash.error}</p>;
   if (!dash.data) return <p>Loading…</p>;
   const data = dash.data;
@@ -333,6 +337,19 @@ function OwnerHome() {
           </Link>
         ))}
       </div>
+      {growth && scorecard.data && pathAllowed("/analytics", user?.modules) && (
+        <Card title="Growth KPI scorecard (30 days)">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <MiniStat label="Lead conversion" value={`${scorecard.data.conversionPct}%`} />
+            <MiniStat label="Placement rate" value={`${scorecard.data.placementPct}%`} />
+            <MiniStat label="Avg readiness" value={`${scorecard.data.avgReadiness}%`} />
+            <MiniStat label="At-risk" value={scorecard.data.atRisk} />
+          </div>
+          <Link to="/analytics" className="mt-3 inline-block text-sm text-brand hover:underline">
+            Open analytics
+          </Link>
+        </Card>
+      )}
     </div>
   );
 }

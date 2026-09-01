@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
+import { useAuth } from "../auth";
+import { hasGrowthTier } from "../packs";
 import { api } from "../api";
 import { createRecord } from "../ops";
 import { prettyLabel } from "../labels";
@@ -28,7 +31,12 @@ const STAGES = [
 ];
 
 export function CrmPage() {
+  const { user } = useAuth();
+  const growth = hasGrowthTier(user?.packageTier, user?.modules);
   const inquiries = useApi<Inquiry[]>("/api/inquiries");
+  const funnel = useApi<{ bySource?: { name: string; leads: number; converted: number; conversionPct: number }[]; byCounselor?: { name: string; leads: number; converted: number; conversionPct: number }[] }>(
+    growth ? "/api/actions/analytics/funnel?days=30" : "",
+  );
   const courses = useApi<{ id: string; name: string }[]>("/api/courses");
   const batches = useApi<{ id: string; name: string }[]>("/api/batches");
   const notes = useApi<CounselingNoteRow[]>("/api/counseling-notes");
@@ -361,6 +369,29 @@ export function CrmPage() {
           />
         </div>
       </Card>
+
+      {growth && funnel.data && (
+        <Card title="Funnel analytics (30 days)">
+          <p className="mb-3 text-sm text-slate-500">
+            Source and counselor conversion for recent leads.{" "}
+            <Link className="text-brand hover:underline" to="/analytics">
+              Full analytics
+            </Link>
+          </p>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Table
+              empty="No leads yet."
+              columns={["Source", "Leads", "Converted", "Conv %"]}
+              rows={(funnel.data.bySource ?? []).slice(0, 8).map((r) => [r.name, r.leads, r.converted, `${r.conversionPct}%`])}
+            />
+            <Table
+              empty="Assign counselors to compare."
+              columns={["Counselor", "Leads", "Converted", "Conv %"]}
+              rows={(funnel.data.byCounselor ?? []).slice(0, 8).map((r) => [r.name, r.leads, r.converted, `${r.conversionPct}%`])}
+            />
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

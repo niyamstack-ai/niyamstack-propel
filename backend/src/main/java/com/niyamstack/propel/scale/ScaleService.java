@@ -81,7 +81,9 @@ public class ScaleService {
                 Map.of("id", "students", "label", "Students", "columns", List.of("fullName", "studentCode", "status", "email", "phone")),
                 Map.of("id", "invoices", "label", "Invoices", "columns", List.of("invoiceNo", "amount", "status", "student")),
                 Map.of("id", "attendance", "label", "Attendance", "columns", List.of("sessionDate", "status", "student")),
-                Map.of("id", "applications", "label", "Applications", "columns", List.of("status", "currentRound", "student"))
+                Map.of("id", "applications", "label", "Applications", "columns", List.of("status", "currentRound", "student")),
+                Map.of("id", "inquiries", "label", "Inquiries / leads", "columns", List.of("fullName", "phone", "source", "stage", "counselor")),
+                Map.of("id", "offers", "label", "Offers", "columns", List.of("status", "packageLpa", "student", "joiningDate"))
         );
     }
 
@@ -95,7 +97,7 @@ public class ScaleService {
         if (name.isBlank() || dataset.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Name and dataset are required");
         }
-        if (!Set.of("students", "invoices", "attendance", "applications").contains(dataset)) {
+        if (!Set.of("students", "invoices", "attendance", "applications", "inquiries", "offers").contains(dataset)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Unknown dataset");
         }
         ReportDefinition row = new ReportDefinition();
@@ -111,6 +113,7 @@ public class ScaleService {
     public Map<String, Object> runReport(UUID id) {
         PropelUser user = Auth.current();
         Access.requireAny(user, Roles.OWNER, Roles.ACCOUNTANT, Roles.PLACEMENT_HEAD, Roles.FACULTY);
+        Access.requirePackage(user, "GROWTH");
         ReportDefinition def = store.getOwned(ReportDefinition.class, id, user.organizationId());
         return run(def);
     }
@@ -448,6 +451,7 @@ public class ScaleService {
 
     private Map<String, Object> run(ReportDefinition def) {
         UUID org = def.getOrganizationId();
+        JsonNode filters = parseFilters(def.getFiltersJson());
         String csv = def.getColumnsCsv() == null || def.getColumnsCsv().isBlank() ? "fullName" : def.getColumnsCsv();
         List<String> columns = java.util.Arrays.stream(csv.split("\\s*,\\s*")).toList();
         List<List<String>> rows = new ArrayList<>();
@@ -455,6 +459,9 @@ public class ScaleService {
             case "invoices" -> {
                 Map<UUID, String> names = studentNames(org);
                 for (Invoice i : store.list(Invoice.class, org)) {
+                    if (!filterMatch(filters, "status", i.getStatus())) {
+                        continue;
+                    }
                     rows.add(List.of(
                             blank(i.getInvoiceNo()),
                             i.getAmount() == null ? "0" : i.getAmount().toPlainString(),
@@ -466,6 +473,9 @@ public class ScaleService {
             case "attendance" -> {
                 Map<UUID, String> names = studentNames(org);
                 for (AttendanceRecord a : store.list(AttendanceRecord.class, org)) {
+                    if (!filterMatch(filters, "status", a.getStatus())) {
+                        continue;
+                    }
                     rows.add(List.of(
                             a.getSessionDate() == null ? "" : a.getSessionDate().toString(),
                             blank(a.getStatus()),
@@ -476,12 +486,56 @@ public class ScaleService {
             case "applications" -> {
                 Map<UUID, String> names = studentNames(org);
                 for (Application a : store.list(Application.class, org)) {
+                    if (!filterMatch(filters, "status", a.getStatus())) {
+                        continue;
+                    }
                     rows.add(List.of(blank(a.getStatus()), blank(a.getCurrentRound()), names.getOrDefault(a.getStudentId(), "")));
                 }
                 columns = List.of("status", "currentRound", "student");
             }
+            case "inquiries" -> {
+                Map<UUID, String> counselors = counselorNames(org);
+                for (Inquiry inq : store.list(Inquiry.class, org)) {
+                    if (!filterMatch(filters, "stage", inq.getStage())) {
+                        continue;
+                    }
+                    if (!filterMatch(filters, "source", inq.getSource())) {
+                        continue;
+                    }
+                    String counselor = inq.getCounselorUserId() == null ? "" : counselors.getOrDefault(inq.getCounselorUserId(), "");
+                    rows.add(List.of(
+                            blank(inq.getFullName()),
+                            blank(inq.getPhone()),
+                            blank(inq.getSource()),
+                            blank(inq.getStage()),
+                            counselor));
+                }
+                columns = List.of("fullName", "phone", "source", "stage", "counselor");
+            }
+            case "offers" -> {
+                Map<UUID, String> names = studentNames(org);
+                Map<UUID, UUID> studentByApp = new LinkedHashMap<>();
+                for (Application a : store.list(Application.class, org)) {
+                    studentByApp.put(a.getId(), a.getStudentId());
+                }
+                for (Offer o : store.list(Offer.class, org)) {
+                    if (!filterMatch(filters, "status", o.getStatus())) {
+                        continue;
+                    }
+                    UUID studentId = o.getApplicationId() == null ? null : studentByApp.get(o.getApplicationId());
+                    rows.add(List.of(
+                            blank(o.getStatus()),
+                            o.getPackageLpa() == null ? "0" : o.getPackageLpa().toPlainString(),
+                            names.getOrDefault(studentId, ""),
+                            o.getJoiningDate() == null ? "" : o.getJoiningDate().toString()));
+                }
+                columns = List.of("status", "packageLpa", "student", "joiningDate");
+            }
             default -> {
                 for (Student s : store.list(Student.class, org)) {
+                    if (!filterMatch(filters, "status", s.getStatus())) {
+                        continue;
+                    }
                     rows.add(List.of(blank(s.getFullName()), blank(s.getStudentCode()), blank(s.getStatus()),
                             blank(s.getEmail()), blank(s.getPhone())));
                 }
@@ -522,6 +576,36 @@ public class ScaleService {
             names.put(s.getId(), s.getFullName());
         }
         return names;
+    }
+
+    private Map<UUID, String> counselorNames(UUID org) {
+        Map<UUID, String> names = new LinkedHashMap<>();
+        for (AppUser u : store.listUsers(org)) {
+            names.put(u.getId(), u.getFullName());
+        }
+        return names;
+    }
+
+    private JsonNode parseFilters(String filtersJson) {
+        if (filtersJson == null || filtersJson.isBlank()) {
+            return null;
+        }
+        try {
+            return mapper.readTree(filtersJson);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private boolean filterMatch(JsonNode filters, String key, String value) {
+        if (filters == null || !filters.hasNonNull(key)) {
+            return true;
+        }
+        String expected = filters.get(key).asText("");
+        if (expected.isBlank()) {
+            return true;
+        }
+        return expected.equalsIgnoreCase(value == null ? "" : value);
     }
 
     private String complete(String system, String prompt) {
