@@ -24,6 +24,7 @@ import { InstitutePage } from "./pages/InstitutePage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { IntelligencePage } from "./pages/IntelligencePage";
 import { EnterprisePage } from "./pages/EnterprisePage";
+import { CompliancePage } from "./pages/CompliancePage";
 import { WebsitePage } from "./pages/WebsitePage";
 import { CourseWorkspacePage } from "./pages/CourseWorkspacePage";
 import { CoursesCommercePage } from "./pages/CoursesCommercePage";
@@ -221,6 +222,7 @@ export default function App() {
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="intelligence" element={<IntelligencePage />} />
           <Route path="enterprise" element={<EnterprisePage />} />
+          <Route path="compliance" element={<CompliancePage />} />
         </Route>
       </Route>
     </Routes>

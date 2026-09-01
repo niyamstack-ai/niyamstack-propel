@@ -270,6 +270,9 @@ export function AnalyticsPage() {
           ))}
         </div>
         {exportStatus && <p className="mt-2 text-sm text-emerald-700">{exportStatus}</p>}
+        <Link className="mt-3 inline-block text-sm text-brand hover:underline" to="/compliance">
+          Open compliance hub (masked export & deletion requests)
+        </Link>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">

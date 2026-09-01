@@ -64,6 +64,7 @@ export function pathAllowed(path: string, modules?: string[]) {
   if (path.startsWith("/analytics")) return hasModule(modules, "ANALYTICS");
   if (path.startsWith("/intelligence")) return hasModule(modules, "ANALYTICS");
   if (path.startsWith("/enterprise")) return hasModule(modules, "ANALYTICS", "LMS");
+  if (path.startsWith("/compliance")) return hasModule(modules, "ANALYTICS");
   if (path.startsWith("/placement") || path.startsWith("/readiness")) return hasModule(modules, "PLACEMENT");
   if (path.startsWith("/comms") || path.startsWith("/chats") || path.startsWith("/one-to-one")) return hasModule(modules, "COMMS");
   if (path.startsWith("/ess")) return hasModule(modules, "ESS");

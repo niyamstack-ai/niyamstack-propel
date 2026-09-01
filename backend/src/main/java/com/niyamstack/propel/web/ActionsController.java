@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.niyamstack.propel.analytics.AnalyticsService;
 import com.niyamstack.propel.analytics.IntelligenceService;
 import com.niyamstack.propel.compensation.CompensationService;
+import com.niyamstack.propel.compliance.ComplianceService;
 import com.niyamstack.propel.enterprise.EnterpriseService;
 import com.niyamstack.propel.comms.OutreachService;
 import com.niyamstack.propel.common.ApiException;
@@ -58,13 +59,14 @@ public class ActionsController {
     private final CompensationService compensation;
     private final IntelligenceService intelligence;
     private final EnterpriseService enterprise;
+    private final ComplianceService compliance;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public ActionsController(Store store, FeeService fees, LmsService lms, PlacementService placement,
                              IntegrationStatusService integrations, StorefrontService storefront, ObjectStorage storage,
                              OutreachService outreach, EssService ess, SisService sis, GrowService grow, ScaleService scale,
                              AnalyticsService analytics, CompensationService compensation, IntelligenceService intelligence,
-                             EnterpriseService enterprise) {
+                             EnterpriseService enterprise, ComplianceService compliance) {
         this.store = store;
         this.fees = fees;
         this.lms = lms;
@@ -81,6 +83,7 @@ public class ActionsController {
         this.compensation = compensation;
         this.intelligence = intelligence;
         this.enterprise = enterprise;
+        this.compliance = compliance;
     }
 
     @GetMapping("/my-courses")
@@ -1108,6 +1111,38 @@ public class ActionsController {
         return enterprise.aiSuite();
     }
 
+    @GetMapping("/compliance/hub")
+    public Map<String, Object> complianceHub() {
+        return compliance.hub();
+    }
+
+    @GetMapping("/compliance/usage")
+    public Map<String, Object> complianceUsage() {
+        return compliance.usageSummary();
+    }
+
+    @GetMapping("/compliance/release-notes")
+    public List<Map<String, Object>> complianceReleaseNotes() {
+        return compliance.releaseNotes();
+    }
+
+    @GetMapping("/compliance/export/subject/{studentId}")
+    public Map<String, Object> complianceExportSubject(@PathVariable UUID studentId) {
+        return compliance.exportSubject(studentId);
+    }
+
+    @PostMapping("/compliance/delete-request/{studentId}")
+    public Map<String, Object> complianceDeleteRequest(@PathVariable UUID studentId,
+                                                       @RequestBody(required = false) Map<String, String> body) {
+        String reason = body == null ? null : body.get("reason");
+        return compliance.requestDeletion(studentId, reason);
+    }
+
+    @GetMapping("/compliance/delete-requests")
+    public List<Map<String, Object>> complianceDeleteRequests() {
+        return compliance.deletionRequests();
+    }
+
     @GetMapping("/dashboard")
     public Map<String, Object> dashboard(@RequestParam(defaultValue = "0") int days) {
         UUID org = Auth.current().organizationId();
@@ -1176,8 +1211,17 @@ public class ActionsController {
     }
 
     @GetMapping("/export/{resource}")
-    public List<?> export(@PathVariable String resource) {
+    public List<?> export(@PathVariable String resource,
+                          @RequestParam(required = false) String mask) {
         Access.requireAny(Auth.current(), Roles.OWNER, Roles.ACCOUNTANT, Roles.PLACEMENT_HEAD);
+        if (mask != null && !mask.isBlank()) {
+            Set<String> fields = Arrays.stream(mask.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isBlank())
+                    .collect(Collectors.toSet());
+            return compliance.maskedExport(resource, fields);
+        }
+        compliance.recordUsage("ANALYTICS", "EXPORT");
         return switch (resource) {
             case "students" -> store.list(Student.class, Auth.current().organizationId());
             case "invoices" -> store.list(Invoice.class, Auth.current().organizationId());

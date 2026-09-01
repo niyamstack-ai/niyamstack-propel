@@ -1264,4 +1264,31 @@ public final class Model {
         private String status = "DRAFT";
         private UUID approvalRequestId;
     }
+
+    @Entity(name = "UsageEvent") @Table(name = "usage_events") @Getter @Setter
+    public static class UsageEvent extends TenantEntity {
+        private String module;
+        private String action;
+        private UUID actorUserId;
+    }
+
+    @Entity(name = "DataDeletionRequest") @Table(name = "data_deletion_requests") @Getter @Setter
+    public static class DataDeletionRequest extends TenantEntity {
+        private String subjectType;
+        private UUID subjectId;
+        private String status = "PENDING";
+        @Column(length = 1000)
+        private String reason;
+        private UUID requestedBy;
+    }
+
+    @Entity(name = "TenantReleaseNote") @Table(name = "tenant_release_notes") @Getter @Setter
+    public static class TenantReleaseNote extends BaseEntity {
+        private UUID organizationId;
+        private String version;
+        private String title;
+        @Column(columnDefinition = "TEXT")
+        private String body;
+        private Instant publishedAt;
+    }
 }
