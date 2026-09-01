@@ -375,6 +375,7 @@ public class PlacementService {
         drive.setPackageLpa(BigDecimal.ZERO);
         drive = store.save(drive);
         job.setStatus("ROUTED");
+        job.setRoutedDriveId(drive.getId());
         store.save(job);
         return drive;
     }

@@ -304,6 +304,16 @@ public class LmsService {
         return store.save(attempt);
     }
 
+    @Transactional
+    public Map<String, Object> logProctorEvent(UUID attemptId, String eventType) {
+        PropelUser user = Auth.current();
+        ExamAttempt attempt = store.getOwned(ExamAttempt.class, attemptId, user.organizationId());
+        requireAttemptOwner(user, attempt);
+        String kind = eventType == null || eventType.isBlank() ? "BLUR" : eventType.trim().toUpperCase();
+        audit.log("PROCTOR_EVENT", "ExamAttempt", attemptId, kind);
+        return Map.of("status", "logged", "type", kind, "attemptId", attemptId);
+    }
+
     public List<Map<String, Object>> examPaper(UUID assessmentId) {
         PropelUser user = Auth.current();
         Assessment exam = store.getOwned(Assessment.class, assessmentId, user.organizationId());

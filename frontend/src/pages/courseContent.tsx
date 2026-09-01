@@ -1881,7 +1881,13 @@ function TakeQuiz({
   useEffect(() => {
     if (!tabLock || result || !attemptId) return;
     function onHide() {
-      if (document.visibilityState === "hidden") void submitNow("TAB");
+      if (document.visibilityState === "hidden") {
+        void api(`/api/actions/attempts/${attemptId}/proctor`, {
+          method: "POST",
+          body: JSON.stringify({ type: "TAB_HIDE" }),
+        }).catch(() => undefined);
+        void submitNow("TAB");
+      }
     }
     document.addEventListener("visibilitychange", onHide);
     return () => document.removeEventListener("visibilitychange", onHide);

@@ -364,6 +364,11 @@ public class ActionsController {
         return lms.saveExamDraft(id, answers);
     }
 
+    @PostMapping("/attempts/{id}/proctor")
+    public Map<String, Object> logProctor(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> body) {
+        return lms.logProctorEvent(id, body == null ? null : body.get("type"));
+    }
+
     @PostMapping("/attempts/{id}/submit")
     public Map<String, Object> submitExam(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> answers) {
         String reason = answers == null ? null : answers.remove("_reason");

@@ -349,12 +349,13 @@ function FieldsTab() {
   const [fieldKey, setFieldKey] = useState("");
   const [entityType, setEntityType] = useState("STUDENT");
   const [fieldType, setFieldType] = useState("TEXT");
+  const [options, setOptions] = useState("");
 
   return (
     <>
       <ErrorText error={error} />
       <Card title="Custom fields">
-        <p className="mb-3 text-sm text-slate-500">Institute-specific fields on students, leads, and employees.</p>
+        <p className="mb-3 text-sm text-slate-500">Institute-specific fields on students, leads, and employees. Use Select with comma-separated options.</p>
         <Table
           empty="No custom fields yet."
           columns={["Applies to", "Label", "Key", "Type"]}
@@ -383,18 +384,27 @@ function FieldsTab() {
               { value: "TEXT", label: "Text" },
               { value: "NUMBER", label: "Number" },
               { value: "DATE", label: "Date" },
+              { value: "SELECT", label: "Select" },
             ]}
           />
+          {fieldType === "SELECT" && (
+            <Field label="Options (comma separated)" value={options} onChange={setOptions} placeholder="A+, B+, O+, AB+" />
+          )}
         </FormGrid>
         <div className="mt-3">
           <PrimaryButton
-            disabled={!label || !fieldKey}
+            disabled={!label || !fieldKey || (fieldType === "SELECT" && !options.trim())}
             onClick={async () => {
               setError(null);
               try {
-                await createRecord("/api/custom-fields", { label, fieldKey, entityType, fieldType });
+                const optionsJson =
+                  fieldType === "SELECT"
+                    ? JSON.stringify(options.split(",").map((s) => s.trim()).filter(Boolean))
+                    : undefined;
+                await createRecord("/api/custom-fields", { label, fieldKey, entityType, fieldType, optionsJson });
                 setLabel("");
                 setFieldKey("");
+                setOptions("");
                 fields.reload();
               } catch (e) {
                 setError((e as Error).message);

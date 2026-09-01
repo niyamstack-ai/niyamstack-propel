@@ -2,12 +2,12 @@ import { useMemo, useState } from "react";
 import { api } from "../api";
 import { createRecord } from "../ops";
 import { prettyLabel } from "../labels";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, useApi } from "../ui";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, useApi } from "../ui";
 
 type Alumnus = { id: string; fullName: string; company: string; role: string };
-type AlumniJob = { id: string; title: string; company: string; status?: string };
+type AlumniJob = { id: string; title: string; company: string; status?: string; routedDriveId?: string };
 type Industry = { id: string; name: string; mou: boolean };
-type EventRow = { id: string; title: string; eventDate: string; attendanceCount?: number };
+type EventRow = { id: string; title: string; eventDate: string; attendanceCount?: number; eventType?: string; accountId?: string };
 
 export function AlumniPage({ embedded }: { embedded?: boolean } = {}) {
   const alumni = useApi<Alumnus[]>("/api/alumni");
@@ -22,6 +22,8 @@ export function AlumniPage({ embedded }: { embedded?: boolean } = {}) {
   const [acct, setAcct] = useState("");
   const [eventTitle, setEventTitle] = useState("");
   const [eventDate, setEventDate] = useState(new Date().toISOString().slice(0, 10));
+  const [eventType, setEventType] = useState("CAMPUS_VISIT");
+  const [eventAccountId, setEventAccountId] = useState("");
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -112,12 +114,35 @@ export function AlumniPage({ embedded }: { embedded?: boolean } = {}) {
         <FormGrid>
           <Field label="Title" value={eventTitle} onChange={setEventTitle} />
           <Field label="Date" type="date" value={eventDate} onChange={setEventDate} />
+          <Select
+            label="Type"
+            value={eventType}
+            onChange={setEventType}
+            allowEmpty={false}
+            options={[
+              { value: "CAMPUS_VISIT", label: "Campus visit" },
+              { value: "GUEST_LECTURE", label: "Guest lecture" },
+              { value: "MOU_SIGNING", label: "MoU signing" },
+            ]}
+          />
+          <Select
+            label="Employer account"
+            value={eventAccountId}
+            onChange={setEventAccountId}
+            options={(industry.data ?? []).map((n) => ({ value: n.id, label: n.name }))}
+          />
           <div className="flex items-end">
             <PrimaryButton
               disabled={!eventTitle}
               onClick={() =>
                 run(async () => {
-                  await createRecord("/api/events", { title: eventTitle, eventDate, attendanceCount: 0 });
+                  await createRecord("/api/events", {
+                    title: eventTitle,
+                    eventDate,
+                    attendanceCount: 0,
+                    eventType,
+                    accountId: eventAccountId || null,
+                  });
                   setEventTitle("");
                   events.reload();
                 })
@@ -146,6 +171,7 @@ export function AlumniPage({ embedded }: { embedded?: boolean } = {}) {
               <li key={j.id} className="flex flex-wrap items-center gap-2">
                 <span>
                   {j.title} @ {j.company} — {prettyLabel(j.status)}
+                  {j.routedDriveId ? " (drive linked)" : ""}
                 </span>
                 {j.status !== "ROUTED" && (
                   <PrimaryButton
@@ -193,7 +219,7 @@ export function AlumniPage({ embedded }: { embedded?: boolean } = {}) {
             {(events.data ?? []).map((e) => (
               <li key={e.id} className="flex flex-wrap items-center gap-2">
                 <span>
-                  {e.title} — {e.eventDate} · {e.attendanceCount ?? 0} attended
+                  {e.title} — {prettyLabel(e.eventType || "EVENT")} · {e.eventDate} · {e.attendanceCount ?? 0} attended
                 </span>
                 <PrimaryButton
                   onClick={() =>

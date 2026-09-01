@@ -329,11 +329,27 @@ public class DataScope {
         return ids;
     }
 
-    private static UUID centerOf(TenantEntity e) {
+    private UUID centerOf(TenantEntity e) {
         if (e instanceof Student s) return s.getCenterId();
         if (e instanceof Inquiry i) return i.getCenterId();
         if (e instanceof Batch b) return b.getCenterId();
         if (e instanceof Center c) return c.getId();
+        if (e instanceof Employee emp) return emp.getCenterId();
+        if (e instanceof Invoice inv && inv.getStudentId() != null) {
+            try {
+                return store.getOwned(Student.class, inv.getStudentId(), inv.getOrganizationId()).getCenterId();
+            } catch (Exception ex) {
+                return null;
+            }
+        }
+        if (e instanceof Payment pay && pay.getInvoiceId() != null) {
+            try {
+                Invoice inv = store.getOwned(Invoice.class, pay.getInvoiceId(), pay.getOrganizationId());
+                return centerOf(inv);
+            } catch (Exception ex) {
+                return null;
+            }
+        }
         return null;
     }
 }
