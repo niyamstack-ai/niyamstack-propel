@@ -862,7 +862,167 @@ public class EssService {
         p.setPaidAt(Instant.now());
         p = store.save(p);
         Employee e = store.getOwned(Employee.class, p.getEmployeeId(), orgId());
+        notifyEmployee(e, "Payslip published",
+                "Your payslip for " + p.getPayMonth() + "/" + p.getPayYear() + " is ready. Open ESS → Payroll to view.");
         return payslipView(p, List.of(e), true);
+    }
+
+    public Map<String, Object> payrollSettingsView() {
+        requireEss();
+        requireHrAdmin();
+        return settingsView(payrollSettings());
+    }
+
+    @Transactional
+    public Map<String, Object> savePayrollSettings(Map<String, Object> body) {
+        requireEss();
+        requireHrAdmin();
+        PayrollSettings s = payrollSettings();
+        if (body.containsKey("pfEnabled")) {
+            s.setPfEnabled(bool(body, "pfEnabled"));
+        }
+        if (body.containsKey("pfRate")) {
+            s.setPfRate(money(body, "pfRate"));
+        }
+        if (body.containsKey("pfWageCap")) {
+            s.setPfWageCap(money(body, "pfWageCap"));
+        }
+        if (body.containsKey("esiEnabled")) {
+            s.setEsiEnabled(bool(body, "esiEnabled"));
+        }
+        if (body.containsKey("esiEmployeeRate")) {
+            s.setEsiEmployeeRate(money(body, "esiEmployeeRate"));
+        }
+        if (body.containsKey("esiEmployerRate")) {
+            s.setEsiEmployerRate(money(body, "esiEmployerRate"));
+        }
+        if (body.containsKey("esiWageCap")) {
+            s.setEsiWageCap(money(body, "esiWageCap"));
+        }
+        if (body.containsKey("ptEnabled")) {
+            s.setPtEnabled(bool(body, "ptEnabled"));
+        }
+        if (body.containsKey("ptAmount")) {
+            s.setPtAmount(money(body, "ptAmount"));
+        }
+        if (body.containsKey("tdsEnabled")) {
+            s.setTdsEnabled(bool(body, "tdsEnabled"));
+        }
+        if (body.containsKey("tdsRate")) {
+            s.setTdsRate(money(body, "tdsRate"));
+        }
+        if (body.containsKey("lopEnabled")) {
+            s.setLopEnabled(bool(body, "lopEnabled"));
+        }
+        s = store.save(s);
+        return settingsView(s);
+    }
+
+    public List<Map<String, Object>> previewPayroll(Map<String, Object> body) {
+        requireEss();
+        requireHrAdmin();
+        int year = integer(body, "year", LocalDate.now().getYear());
+        int month = integer(body, "month", LocalDate.now().getMonthValue());
+        PayrollSettings settings = payrollSettings();
+        List<Employee> staff = activeEmployees();
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Employee e : staff) {
+            SalaryStructure structure = salaryStructure(e);
+            if (structure == null) {
+                continue;
+            }
+            boolean exists = payslipExists(e.getId(), year, month);
+            Payslip draft = computePayslip(e, structure, year, month, settings);
+            Map<String, Object> row = payslipView(draft, List.of(e), false);
+            row.put("exists", exists);
+            row.put("skipped", exists);
+            out.add(row);
+        }
+        return out;
+    }
+
+    public Map<String, Object> statutorySummary(int year, int month) {
+        requireEss();
+        requireHrAdmin();
+        List<Payslip> slips = payslipsForPeriod(year, month);
+        BigDecimal pfEmp = BigDecimal.ZERO;
+        BigDecimal pfEr = BigDecimal.ZERO;
+        BigDecimal esiEmp = BigDecimal.ZERO;
+        BigDecimal esiEr = BigDecimal.ZERO;
+        BigDecimal pt = BigDecimal.ZERO;
+        BigDecimal tds = BigDecimal.ZERO;
+        BigDecimal gross = BigDecimal.ZERO;
+        BigDecimal net = BigDecimal.ZERO;
+        BigDecimal lop = BigDecimal.ZERO;
+        for (Payslip p : slips) {
+            pfEmp = pfEmp.add(nz(p.getPfEmployee()));
+            pfEr = pfEr.add(nz(p.getPfEmployer()));
+            esiEmp = esiEmp.add(nz(p.getEsiEmployee()));
+            esiEr = esiEr.add(nz(p.getEsiEmployer()));
+            pt = pt.add(nz(p.getPtEmployee()));
+            tds = tds.add(nz(p.getTdsEmployee()));
+            gross = gross.add(nz(p.getGross()));
+            net = net.add(nz(p.getNet()));
+            lop = lop.add(nz(p.getLopDeduction()));
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("year", year);
+        out.put("month", month);
+        out.put("employeeCount", slips.size());
+        out.put("publishedCount", slips.stream().filter(p -> "PUBLISHED".equalsIgnoreCase(blank(p.getStatus(), ""))).count());
+        out.put("draftCount", slips.stream().filter(p -> "DRAFT".equalsIgnoreCase(blank(p.getStatus(), ""))).count());
+        out.put("totalGross", gross);
+        out.put("totalNet", net);
+        out.put("totalPfEmployee", pfEmp);
+        out.put("totalPfEmployer", pfEr);
+        out.put("totalEsiEmployee", esiEmp);
+        out.put("totalEsiEmployer", esiEr);
+        out.put("totalPt", pt);
+        out.put("totalTds", tds);
+        out.put("totalLop", lop);
+        return out;
+    }
+
+    public List<Map<String, Object>> payrollRegister(int year, int month) {
+        requireEss();
+        requireHrAdmin();
+        List<Employee> all = store.list(Employee.class, orgId());
+        return payslipsForPeriod(year, month).stream()
+                .map(p -> {
+                    Employee e = all.stream().filter(x -> x.getId().equals(p.getEmployeeId())).findFirst().orElse(null);
+                    Map<String, Object> row = payslipView(p, e == null ? List.of() : List.of(e), false);
+                    row.put("pan", e == null ? "" : parseCustom(e.getCustomJson()).getOrDefault("pan", ""));
+                    row.put("uan", e == null ? "" : parseCustom(e.getCustomJson()).getOrDefault("uan", ""));
+                    row.put("bankAccount", e == null ? "" : parseCustom(e.getCustomJson()).getOrDefault("bankAccount", ""));
+                    return row;
+                })
+                .toList();
+    }
+
+    @Transactional
+    public Map<String, Object> bulkPublishPayroll(Map<String, Object> body) {
+        requireEss();
+        requireHrAdmin();
+        int year = integer(body, "year", LocalDate.now().getYear());
+        int month = integer(body, "month", LocalDate.now().getMonthValue());
+        int published = 0;
+        for (Payslip p : payslipsForPeriod(year, month)) {
+            if (!"DRAFT".equalsIgnoreCase(blank(p.getStatus(), ""))) {
+                continue;
+            }
+            p.setStatus("PUBLISHED");
+            p.setPaidAt(Instant.now());
+            store.save(p);
+            Employee e = store.getOwned(Employee.class, p.getEmployeeId(), orgId());
+            notifyEmployee(e, "Payslip published",
+                    "Your payslip for " + month + "/" + year + " is ready. Open ESS → Payroll to view.");
+            published++;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("published", published);
+        out.put("year", year);
+        out.put("month", month);
+        return out;
     }
 
     @Transactional
@@ -871,23 +1031,18 @@ public class EssService {
         requireHrAdmin();
         int year = integer(body, "year", LocalDate.now().getYear());
         int month = integer(body, "month", LocalDate.now().getMonthValue());
-        List<Employee> staff = store.list(Employee.class, orgId()).stream()
-                .filter(e -> "ACTIVE".equalsIgnoreCase(blank(e.getStatus(), "ACTIVE")))
-                .toList();
+        PayrollSettings settings = payrollSettings();
+        List<Employee> staff = activeEmployees();
         List<Map<String, Object>> out = new ArrayList<>();
         for (Employee e : staff) {
-            boolean exists = store.listBy(Payslip.class, orgId(), "employeeId", e.getId()).stream()
-                    .anyMatch(p -> yearEquals(p.getPayYear(), year) && yearEquals(p.getPayMonth(), month));
-            if (exists) {
+            if (payslipExists(e.getId(), year, month)) {
                 continue;
             }
-            SalaryStructure s = store.listBy(SalaryStructure.class, orgId(), "employeeId", e.getId()).stream()
-                    .findFirst()
-                    .orElse(null);
+            SalaryStructure s = salaryStructure(e);
             if (s == null) {
                 continue;
             }
-            Payslip p = buildPayslip(e, s, year, month);
+            Payslip p = computePayslip(e, s, year, month, settings);
             p = store.save(p);
             out.add(payslipView(p, List.of(e), false));
         }
@@ -1392,20 +1547,117 @@ public class EssService {
         }
     }
 
+    private PayrollSettings payrollSettings() {
+        return payrollSettings(orgId());
+    }
+
+    private PayrollSettings payrollSettings(UUID org) {
+        return store.list(PayrollSettings.class, org).stream()
+                .findFirst()
+                .orElseGet(() -> {
+                    PayrollSettings s = new PayrollSettings();
+                    s.setOrganizationId(org);
+                    return store.save(s);
+                });
+    }
+
+    private Map<String, Object> settingsView(PayrollSettings s) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", s.getId());
+        row.put("pfEnabled", s.getPfEnabled());
+        row.put("pfRate", s.getPfRate());
+        row.put("pfWageCap", s.getPfWageCap());
+        row.put("esiEnabled", s.getEsiEnabled());
+        row.put("esiEmployeeRate", s.getEsiEmployeeRate());
+        row.put("esiEmployerRate", s.getEsiEmployerRate());
+        row.put("esiWageCap", s.getEsiWageCap());
+        row.put("ptEnabled", s.getPtEnabled());
+        row.put("ptAmount", s.getPtAmount());
+        row.put("tdsEnabled", s.getTdsEnabled());
+        row.put("tdsRate", s.getTdsRate());
+        row.put("lopEnabled", s.getLopEnabled());
+        return row;
+    }
+
+    private List<Employee> activeEmployees() {
+        return store.list(Employee.class, orgId()).stream()
+                .filter(e -> "ACTIVE".equalsIgnoreCase(blank(e.getStatus(), "ACTIVE"))
+                        || "ON_NOTICE".equalsIgnoreCase(blank(e.getStatus(), "")))
+                .toList();
+    }
+
+    private SalaryStructure salaryStructure(Employee e) {
+        return store.listBy(SalaryStructure.class, orgId(), "employeeId", e.getId()).stream()
+                .findFirst()
+                .orElse(null);
+    }
+
+    private boolean payslipExists(UUID employeeId, int year, int month) {
+        return store.listBy(Payslip.class, orgId(), "employeeId", employeeId).stream()
+                .anyMatch(p -> yearEquals(p.getPayYear(), year) && yearEquals(p.getPayMonth(), month));
+    }
+
+    private List<Payslip> payslipsForPeriod(int year, int month) {
+        return store.list(Payslip.class, orgId()).stream()
+                .filter(p -> yearEquals(p.getPayYear(), year) && yearEquals(p.getPayMonth(), month))
+                .toList();
+    }
+
+    private Payslip computePayslip(Employee e, SalaryStructure s, int year, int month, PayrollSettings settings) {
+        return buildPayslip(e, s, year, month, settings);
+    }
+
     private Payslip buildPayslip(Employee e, SalaryStructure s, int year, int month) {
+        return buildPayslip(e, s, year, month, payrollSettings(e.getOrganizationId()));
+    }
+
+    private Payslip buildPayslip(Employee e, SalaryStructure s, int year, int month, PayrollSettings cfg) {
         BigDecimal basic = nz(s.getBasic());
         BigDecimal hra = nz(s.getHra());
         BigDecimal special = nz(s.getSpecial());
         BigDecimal gross = basic.add(hra).add(special);
-        BigDecimal pfBase = basic.min(PF_WAGE_CAP);
-        BigDecimal pf = pfBase.multiply(PF_RATE).setScale(2, RoundingMode.HALF_UP);
+
+        YearMonth ym = YearMonth.of(year, month);
+        int workingDays = weekdaysInMonth(ym);
+        AttendanceSummary att = attendanceSummaryFor(e.getId(), ym);
+        int presentDays = att.presentDays();
+        BigDecimal lopDays = att.lopDays();
+        BigDecimal lopDeduction = BigDecimal.ZERO;
+        if (Boolean.TRUE.equals(cfg.getLopEnabled()) && lopDays.signum() > 0 && workingDays > 0) {
+            lopDeduction = gross.multiply(lopDays)
+                    .divide(BigDecimal.valueOf(workingDays), 2, RoundingMode.HALF_UP);
+            gross = gross.subtract(lopDeduction).max(BigDecimal.ZERO);
+        }
+
+        BigDecimal pf = BigDecimal.ZERO;
+        BigDecimal pfEr = BigDecimal.ZERO;
+        if (Boolean.TRUE.equals(cfg.getPfEnabled())) {
+            BigDecimal cap = nz(cfg.getPfWageCap()).signum() > 0 ? cfg.getPfWageCap() : PF_WAGE_CAP;
+            BigDecimal rate = nz(cfg.getPfRate()).signum() > 0 ? cfg.getPfRate() : PF_RATE;
+            BigDecimal pfBase = basic.min(cap);
+            pf = pfBase.multiply(rate).setScale(2, RoundingMode.HALF_UP);
+            pfEr = pf;
+        }
+
         BigDecimal esiEmp = BigDecimal.ZERO;
         BigDecimal esiEr = BigDecimal.ZERO;
-        if (gross.compareTo(ESI_WAGE_CAP) <= 0) {
-            esiEmp = gross.multiply(ESI_EMPLOYEE).setScale(2, RoundingMode.HALF_UP);
-            esiEr = gross.multiply(ESI_EMPLOYER).setScale(2, RoundingMode.HALF_UP);
+        if (Boolean.TRUE.equals(cfg.getEsiEnabled())) {
+            BigDecimal cap = nz(cfg.getEsiWageCap()).signum() > 0 ? cfg.getEsiWageCap() : ESI_WAGE_CAP;
+            if (gross.compareTo(cap) <= 0) {
+                BigDecimal empRate = nz(cfg.getEsiEmployeeRate()).signum() > 0 ? cfg.getEsiEmployeeRate() : ESI_EMPLOYEE;
+                BigDecimal erRate = nz(cfg.getEsiEmployerRate()).signum() > 0 ? cfg.getEsiEmployerRate() : ESI_EMPLOYER;
+                esiEmp = gross.multiply(empRate).setScale(2, RoundingMode.HALF_UP);
+                esiEr = gross.multiply(erRate).setScale(2, RoundingMode.HALF_UP);
+            }
         }
-        BigDecimal deductions = pf.add(esiEmp);
+
+        BigDecimal pt = Boolean.TRUE.equals(cfg.getPtEnabled()) ? nz(cfg.getPtAmount()) : BigDecimal.ZERO;
+        BigDecimal tds = BigDecimal.ZERO;
+        if (Boolean.TRUE.equals(cfg.getTdsEnabled()) && nz(cfg.getTdsRate()).signum() > 0) {
+            tds = gross.multiply(cfg.getTdsRate()).setScale(2, RoundingMode.HALF_UP);
+        }
+
+        BigDecimal deductions = pf.add(esiEmp).add(pt).add(tds);
         Payslip p = new Payslip();
         p.setOrganizationId(e.getOrganizationId());
         p.setEmployeeId(e.getId());
@@ -1414,15 +1666,63 @@ public class EssService {
         p.setBasic(basic);
         p.setHra(hra);
         p.setSpecial(special);
-        p.setGross(gross);
+        p.setGross(basic.add(hra).add(special));
+        p.setLopDays(lopDays);
+        p.setLopDeduction(lopDeduction);
         p.setPfEmployee(pf);
         p.setEsiEmployee(esiEmp);
-        p.setPfEmployer(pf);
+        p.setPfEmployer(pfEr);
         p.setEsiEmployer(esiEr);
-        p.setDeductions(deductions);
-        p.setNet(gross.subtract(deductions));
+        p.setPtEmployee(pt);
+        p.setTdsEmployee(tds);
+        p.setDeductions(deductions.add(lopDeduction));
+        p.setNet(gross.subtract(pf.add(esiEmp).add(pt).add(tds)).max(BigDecimal.ZERO));
+        p.setWorkingDays(workingDays);
+        p.setPresentDays(presentDays);
         p.setStatus("DRAFT");
         return p;
+    }
+
+    private record AttendanceSummary(int presentDays, BigDecimal lopDays) {}
+
+    private AttendanceSummary attendanceSummaryFor(UUID employeeId, YearMonth ym) {
+        LocalDate start = ym.atDay(1);
+        LocalDate end = ym.atEndOfMonth();
+        BigDecimal lop = BigDecimal.ZERO;
+        int present = 0;
+        for (StaffAttendance a : store.listBy(StaffAttendance.class, orgId(), "employeeId", employeeId)) {
+            if (a.getWorkDate() == null || a.getWorkDate().isBefore(start) || a.getWorkDate().isAfter(end)) {
+                continue;
+            }
+            if (!isWeekday(a.getWorkDate())) {
+                continue;
+            }
+            String status = upper(blank(a.getStatus(), ""), "");
+            if ("ABSENT".equals(status)) {
+                lop = lop.add(BigDecimal.ONE);
+            } else if ("HALF".equals(status)) {
+                lop = lop.add(new BigDecimal("0.5"));
+                present++;
+            } else if ("PRESENT".equals(status) || "LATE".equals(status)) {
+                present++;
+            }
+        }
+        return new AttendanceSummary(present, lop);
+    }
+
+    private static int weekdaysInMonth(YearMonth ym) {
+        int count = 0;
+        for (LocalDate d = ym.atDay(1); !d.isAfter(ym.atEndOfMonth()); d = d.plusDays(1)) {
+            if (isWeekday(d)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static boolean isWeekday(LocalDate d) {
+        int dow = d.getDayOfWeek().getValue();
+        return dow >= 1 && dow <= 5;
     }
 
     private List<Employee> visibleEmployees() {
@@ -1710,6 +2010,12 @@ public class EssService {
         row.put("esiEmployee", p.getEsiEmployee());
         row.put("pfEmployer", p.getPfEmployer());
         row.put("esiEmployer", p.getEsiEmployer());
+        row.put("ptEmployee", p.getPtEmployee());
+        row.put("tdsEmployee", p.getTdsEmployee());
+        row.put("lopDays", p.getLopDays());
+        row.put("lopDeduction", p.getLopDeduction());
+        row.put("workingDays", p.getWorkingDays());
+        row.put("presentDays", p.getPresentDays());
         row.put("deductions", p.getDeductions());
         row.put("net", p.getNet());
         row.put("status", p.getStatus());

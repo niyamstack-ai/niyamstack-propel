@@ -520,7 +520,33 @@ public class SchemaPatch {
                     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     updated_at TIMESTAMP WITH TIME ZONE NOT NULL
                 )
+                """,
                 """
+                CREATE TABLE IF NOT EXISTS payroll_settings (
+                    id UUID PRIMARY KEY,
+                    organization_id UUID NOT NULL,
+                    pf_enabled BOOLEAN DEFAULT TRUE,
+                    pf_rate NUMERIC(6,4) DEFAULT 0.12,
+                    pf_wage_cap NUMERIC(12,2) DEFAULT 15000,
+                    esi_enabled BOOLEAN DEFAULT TRUE,
+                    esi_employee_rate NUMERIC(6,4) DEFAULT 0.0075,
+                    esi_employer_rate NUMERIC(6,4) DEFAULT 0.0325,
+                    esi_wage_cap NUMERIC(12,2) DEFAULT 21000,
+                    pt_enabled BOOLEAN DEFAULT FALSE,
+                    pt_amount NUMERIC(12,2) DEFAULT 200,
+                    tds_enabled BOOLEAN DEFAULT FALSE,
+                    tds_rate NUMERIC(6,4) DEFAULT 0,
+                    lop_enabled BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+                )
+                """,
+                "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS pt_employee NUMERIC(12,2) DEFAULT 0",
+                "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS tds_employee NUMERIC(12,2) DEFAULT 0",
+                "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS lop_days NUMERIC(8,1) DEFAULT 0",
+                "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS lop_deduction NUMERIC(12,2) DEFAULT 0",
+                "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS working_days INTEGER",
+                "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS present_days INTEGER"
         );
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
             for (String sql : statements) {

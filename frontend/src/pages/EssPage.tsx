@@ -57,10 +57,46 @@ type Payslip = {
   esiEmployee?: number;
   pfEmployer?: number;
   esiEmployer?: number;
+  ptEmployee?: number;
+  tdsEmployee?: number;
+  lopDays?: number;
+  lopDeduction?: number;
+  workingDays?: number;
+  presentDays?: number;
   deductions?: number;
   net?: number;
   status?: string;
   instituteName?: string;
+  skipped?: boolean;
+  exists?: boolean;
+};
+type PayrollSettings = {
+  pfEnabled?: boolean;
+  pfRate?: number;
+  pfWageCap?: number;
+  esiEnabled?: boolean;
+  esiEmployeeRate?: number;
+  esiEmployerRate?: number;
+  esiWageCap?: number;
+  ptEnabled?: boolean;
+  ptAmount?: number;
+  tdsEnabled?: boolean;
+  tdsRate?: number;
+  lopEnabled?: boolean;
+};
+type StatutorySummary = {
+  employeeCount?: number;
+  publishedCount?: number;
+  draftCount?: number;
+  totalGross?: number;
+  totalNet?: number;
+  totalPfEmployee?: number;
+  totalPfEmployer?: number;
+  totalEsiEmployee?: number;
+  totalEsiEmployer?: number;
+  totalPt?: number;
+  totalTds?: number;
+  totalLop?: number;
 };
 type Vacancy = { id: string; title: string; department?: string; openings?: number; status?: string; description?: string };
 type Candidate = {
@@ -1010,16 +1046,48 @@ function PayrollTab({ hr }: { hr: boolean }) {
   const people = useApi<Employee[]>("/api/employees");
   const structures = useApi<Structure[]>("/api/salary-structures");
   const slips = useApi<Payslip[]>("/api/payslips");
+  const settings = useApi<PayrollSettings>(hr ? "/api/actions/ess/payroll/settings" : "");
+  const now = new Date();
+  const [year, setYear] = useState(String(now.getFullYear()));
+  const [month, setMonth] = useState(String(now.getMonth() + 1));
+  const statutory = useApi<StatutorySummary>(hr ? `/api/actions/ess/payroll/statutory?year=${year}&month=${month}` : "");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [preview, setPreview] = useState<Payslip[] | null>(null);
   const [employeeId, setEmployeeId] = useState("");
   const [basic, setBasic] = useState("");
   const [hra, setHra] = useState("");
   const [special, setSpecial] = useState("");
   const [effectiveFrom, setEffectiveFrom] = useState(today());
-  const now = new Date();
-  const [year, setYear] = useState(String(now.getFullYear()));
-  const [month, setMonth] = useState(String(now.getMonth() + 1));
+  const [pfEnabled, setPfEnabled] = useState(true);
+  const [pfRate, setPfRate] = useState("0.12");
+  const [pfWageCap, setPfWageCap] = useState("15000");
+  const [esiEnabled, setEsiEnabled] = useState(true);
+  const [esiEmployeeRate, setEsiEmployeeRate] = useState("0.0075");
+  const [esiEmployerRate, setEsiEmployerRate] = useState("0.0325");
+  const [esiWageCap, setEsiWageCap] = useState("21000");
+  const [ptEnabled, setPtEnabled] = useState(false);
+  const [ptAmount, setPtAmount] = useState("200");
+  const [tdsEnabled, setTdsEnabled] = useState(false);
+  const [tdsRate, setTdsRate] = useState("0");
+  const [lopEnabled, setLopEnabled] = useState(true);
+
+  useEffect(() => {
+    const s = settings.data;
+    if (!s) return;
+    setPfEnabled(s.pfEnabled ?? true);
+    setPfRate(String(s.pfRate ?? 0.12));
+    setPfWageCap(String(s.pfWageCap ?? 15000));
+    setEsiEnabled(s.esiEnabled ?? true);
+    setEsiEmployeeRate(String(s.esiEmployeeRate ?? 0.0075));
+    setEsiEmployerRate(String(s.esiEmployerRate ?? 0.0325));
+    setEsiWageCap(String(s.esiWageCap ?? 21000));
+    setPtEnabled(s.ptEnabled ?? false);
+    setPtAmount(String(s.ptAmount ?? 200));
+    setTdsEnabled(s.tdsEnabled ?? false);
+    setTdsRate(String(s.tdsRate ?? 0));
+    setLopEnabled(s.lopEnabled ?? true);
+  }, [settings.data]);
 
   async function saveStructure() {
     setError(null);
@@ -1034,6 +1102,34 @@ function PayrollTab({ hr }: { hr: boolean }) {
     }
   }
 
+  async function saveSettings() {
+    setError(null);
+    try {
+      await api("/api/actions/ess/payroll/settings", {
+        method: "PUT",
+        body: JSON.stringify({ pfEnabled, pfRate, pfWageCap, esiEnabled, esiEmployeeRate, esiEmployerRate, esiWageCap, ptEnabled, ptAmount, tdsEnabled, tdsRate, lopEnabled }),
+      });
+      settings.reload();
+      setNotice("Payroll settings saved.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function runPreview() {
+    setError(null);
+    setPreview(null);
+    try {
+      const out = await api<Payslip[]>("/api/actions/ess/payroll/preview", {
+        method: "POST",
+        body: JSON.stringify({ year, month }),
+      });
+      setPreview(out);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function run() {
     setError(null);
     setNotice(null);
@@ -1043,7 +1139,49 @@ function PayrollTab({ hr }: { hr: boolean }) {
         body: JSON.stringify({ year, month }),
       });
       slips.reload();
-      setNotice(out.length ? `Created ${out.length} payslip(s). Employees without a salary structure were skipped.` : "No new payslips. Either they already exist or no salary structures are saved.");
+      statutory.reload();
+      setPreview(null);
+      setNotice(out.length ? `Created ${out.length} draft payslip(s). Review and publish when ready.` : "No new payslips. Either they already exist or no salary structures are saved.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function publishAll() {
+    setError(null);
+    try {
+      const out = await api<{ published?: number }>("/api/actions/ess/payroll/publish-all", {
+        method: "POST",
+        body: JSON.stringify({ year, month }),
+      });
+      slips.reload();
+      statutory.reload();
+      setNotice(`Published ${out.published ?? 0} payslip(s) for ${month}/${year}.`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function exportRegister() {
+    setError(null);
+    try {
+      const rows = await api<Record<string, unknown>[]>(`/api/actions/ess/payroll/register?year=${year}&month=${month}`);
+      if (!rows.length) {
+        setNotice("No payslips to export for this period.");
+        return;
+      }
+      const keys = Object.keys(rows[0]).filter((k) => !k.includes("password"));
+      const csv = [keys.join(",")]
+        .concat(rows.map((row) => keys.map((k) => JSON.stringify(row[k] ?? "")).join(",")))
+        .join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `payroll-register-${year}-${month}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setNotice(`Exported ${rows.length} payslip row(s).`);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -1054,6 +1192,7 @@ function PayrollTab({ hr }: { hr: boolean }) {
     try {
       await api(`/api/actions/ess/payslips/${id}/publish`, { method: "POST" });
       slips.reload();
+      statutory.reload();
       setNotice("Payslip published. Staff can now view and print it.");
     } catch (e) {
       setError((e as Error).message);
@@ -1075,14 +1214,17 @@ function PayrollTab({ hr }: { hr: boolean }) {
           <h1>${escHtml(rec.instituteName || "Payslip")}</h1>
           <p>${escHtml(rec.employeeName)} (${escHtml(rec.employeeCode)})</p>
           <p>${escHtml(rec.designation)} · ${escHtml(rec.department)}</p>
-          <p>${escHtml(String(rec.month))}/${escHtml(String(rec.year))}</p>
+          <p>${escHtml(String(rec.month))}/${escHtml(String(rec.year))} · Present ${rec.presentDays ?? "—"}/${rec.workingDays ?? "—"} weekdays</p>
           <table>
             <tr><td>Basic</td><td>${escHtml(formatInr(rec.basic))}</td></tr>
             <tr><td>HRA</td><td>${escHtml(formatInr(rec.hra))}</td></tr>
             <tr><td>Special</td><td>${escHtml(formatInr(rec.special))}</td></tr>
             <tr><td>Gross</td><td>${escHtml(formatInr(rec.gross))}</td></tr>
+            <tr><td>LOP (${rec.lopDays ?? 0} days)</td><td>${escHtml(formatInr(rec.lopDeduction))}</td></tr>
             <tr><td>PF (employee)</td><td>${escHtml(formatInr(rec.pfEmployee))}</td></tr>
             <tr><td>ESI (employee)</td><td>${escHtml(formatInr(rec.esiEmployee))}</td></tr>
+            <tr><td>Professional tax</td><td>${escHtml(formatInr(rec.ptEmployee))}</td></tr>
+            <tr><td>TDS</td><td>${escHtml(formatInr(rec.tdsEmployee))}</td></tr>
             <tr><td>PF (employer)</td><td>${escHtml(formatInr(rec.pfEmployer))}</td></tr>
             <tr><td>ESI (employer)</td><td>${escHtml(formatInr(rec.esiEmployer))}</td></tr>
             <tr><td>Net pay</td><td>${escHtml(formatInr(rec.net))}</td></tr>
@@ -1095,13 +1237,37 @@ function PayrollTab({ hr }: { hr: boolean }) {
     }
   }
 
+  const stat = statutory.data;
+
   return (
     <>
       <ErrorText error={error || slips.error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       {hr && (
+        <Card title="Statutory settings">
+          <p className="mb-3 text-sm text-slate-500">Configure PF, ESI, professional tax, TDS, and loss-of-pay rules for payroll runs.</p>
+          <FormGrid>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={pfEnabled} onChange={(e) => setPfEnabled(e.target.checked)} /> PF enabled</label>
+            <Field label="PF rate" value={pfRate} onChange={setPfRate} placeholder="0.12" />
+            <Field label="PF wage cap" value={pfWageCap} onChange={setPfWageCap} />
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={esiEnabled} onChange={(e) => setEsiEnabled(e.target.checked)} /> ESI enabled</label>
+            <Field label="ESI employee rate" value={esiEmployeeRate} onChange={setEsiEmployeeRate} />
+            <Field label="ESI employer rate" value={esiEmployerRate} onChange={setEsiEmployerRate} />
+            <Field label="ESI wage cap" value={esiWageCap} onChange={setEsiWageCap} />
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={ptEnabled} onChange={(e) => setPtEnabled(e.target.checked)} /> Professional tax</label>
+            <Field label="PT amount / month" value={ptAmount} onChange={setPtAmount} />
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={tdsEnabled} onChange={(e) => setTdsEnabled(e.target.checked)} /> TDS enabled</label>
+            <Field label="TDS rate on gross" value={tdsRate} onChange={setTdsRate} placeholder="0.05" />
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={lopEnabled} onChange={(e) => setLopEnabled(e.target.checked)} /> Deduct LOP from absent days</label>
+          </FormGrid>
+          <div className="mt-3">
+            <PrimaryButton onClick={() => void saveSettings()}>Save settings</PrimaryButton>
+          </div>
+        </Card>
+      )}
+      {hr && (
         <Card title="Salary structure">
-          <p className="mb-3 text-sm text-slate-500">Basic + HRA + special. Payroll deducts PF (12% of basic, capped at ₹1,800) and ESI (0.75% of gross if gross is ₹21,000 or less).</p>
+          <p className="mb-3 text-sm text-slate-500">Basic + HRA + special allowance per employee.</p>
           <Table
             empty="No salary structures yet."
             columns={["Employee", "Basic", "HRA", "Special", "From"]}
@@ -1114,53 +1280,73 @@ function PayrollTab({ hr }: { hr: boolean }) {
             ])}
           />
           <FormGrid>
-            <Select
-              label="Employee"
-              value={employeeId}
-              onChange={setEmployeeId}
-              options={(people.data ?? []).map((e) => ({ value: e.id, label: e.fullName }))}
-            />
+            <Select label="Employee" value={employeeId} onChange={setEmployeeId} options={(people.data ?? []).map((e) => ({ value: e.id, label: e.fullName }))} />
             <Field label="Basic" value={basic} onChange={setBasic} placeholder="25000" />
             <Field label="HRA" value={hra} onChange={setHra} placeholder="10000" />
             <Field label="Special" value={special} onChange={setSpecial} placeholder="5000" />
             <Field label="Effective from" type="date" value={effectiveFrom} onChange={setEffectiveFrom} />
           </FormGrid>
           <div className="mt-3">
-            <PrimaryButton disabled={!employeeId || !basic} onClick={() => void saveStructure()}>
-              Save structure
-            </PrimaryButton>
+            <PrimaryButton disabled={!employeeId || !basic} onClick={() => void saveStructure()}>Save structure</PrimaryButton>
+          </div>
+        </Card>
+      )}
+      {hr && stat && (
+        <Card title={`Statutory summary — ${month}/${year}`}>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+            <p><span className="text-slate-500">Employees</span><br /><strong>{stat.employeeCount ?? 0}</strong> ({stat.publishedCount ?? 0} published, {stat.draftCount ?? 0} draft)</p>
+            <p><span className="text-slate-500">Gross / Net</span><br /><strong>{formatInr(stat.totalGross)}</strong> / {formatInr(stat.totalNet)}</p>
+            <p><span className="text-slate-500">PF (EE + ER)</span><br /><strong>{formatInr(stat.totalPfEmployee)}</strong> + {formatInr(stat.totalPfEmployer)}</p>
+            <p><span className="text-slate-500">ESI (EE + ER)</span><br /><strong>{formatInr(stat.totalEsiEmployee)}</strong> + {formatInr(stat.totalEsiEmployer)}</p>
+            <p><span className="text-slate-500">PT / TDS / LOP</span><br />{formatInr(stat.totalPt)} / {formatInr(stat.totalTds)} / {formatInr(stat.totalLop)}</p>
           </div>
         </Card>
       )}
       <Card title="Payslips">
         {hr && (
-          <FormGrid>
-            <Field label="Year" value={year} onChange={setYear} />
-            <Field label="Month" value={month} onChange={setMonth} placeholder="1-12" />
-          </FormGrid>
+          <>
+            <FormGrid>
+              <Field label="Year" value={year} onChange={setYear} />
+              <Field label="Month" value={month} onChange={setMonth} placeholder="1-12" />
+            </FormGrid>
+            <div className="mb-3 mt-3 flex flex-wrap gap-2">
+              <PrimaryButton onClick={() => void runPreview()}>Preview payroll</PrimaryButton>
+              <PrimaryButton onClick={() => void run()}>Run payroll</PrimaryButton>
+              <PrimaryButton onClick={() => void publishAll()}>Publish all drafts</PrimaryButton>
+              <PrimaryButton onClick={() => void exportRegister()}>Export register</PrimaryButton>
+            </div>
+          </>
         )}
-        {hr && (
-          <div className="mb-3 mt-3">
-            <PrimaryButton onClick={() => void run()}>Run payroll</PrimaryButton>
-          </div>
+        {preview && (
+          <Table
+            empty="Nothing to preview."
+            columns={["Employee", "Gross", "LOP", "PF", "ESI", "PT", "Net", "Note"]}
+            rows={preview.map((p) => [
+              p.employeeName || "—",
+              formatInr(p.gross),
+              formatInr(p.lopDeduction),
+              formatInr(p.pfEmployee),
+              formatInr(p.esiEmployee),
+              formatInr(p.ptEmployee),
+              formatInr(p.net),
+              p.skipped || p.exists ? "Already exists" : "Will create",
+            ])}
+          />
         )}
         <Table
           empty="No payslips yet."
-          columns={["Employee", "Period", "Gross", "Deductions", "Net", "Status", ""]}
+          columns={["Employee", "Period", "Gross", "LOP", "Deductions", "Net", "Status", ""]}
           rows={(slips.data ?? []).map((p) => [
             p.employeeName || "—",
             `${p.month}/${p.year}`,
             formatInr(p.gross),
+            formatInr(p.lopDeduction),
             formatInr(p.deductions),
             formatInr(p.net),
             prettyLabel(p.status),
             <span key={p.id} className="flex gap-2">
-              {(hr || p.status === "PUBLISHED") && (
-                <LinkButton onClick={() => void printSlip(p.id)}>Print</LinkButton>
-              )}
-              {hr && p.status === "DRAFT" && (
-                <LinkButton onClick={() => void publishSlip(p.id)}>Publish</LinkButton>
-              )}
+              {(hr || p.status === "PUBLISHED") && <LinkButton onClick={() => void printSlip(p.id)}>Print</LinkButton>}
+              {hr && p.status === "DRAFT" && <LinkButton onClick={() => void publishSlip(p.id)}>Publish</LinkButton>}
             </span>,
           ])}
         />

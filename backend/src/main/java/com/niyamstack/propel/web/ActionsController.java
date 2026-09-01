@@ -601,6 +601,42 @@ public class ActionsController {
         return ess.runPayroll(body == null ? Map.of() : body);
     }
 
+    @PostMapping("/ess/payroll/preview")
+    public List<Map<String, Object>> previewPayroll(@RequestBody(required = false) Map<String, Object> body) {
+        return ess.previewPayroll(body == null ? Map.of() : body);
+    }
+
+    @PostMapping("/ess/payroll/publish-all")
+    public Map<String, Object> bulkPublishPayroll(@RequestBody Map<String, Object> body) {
+        return ess.bulkPublishPayroll(body);
+    }
+
+    @GetMapping("/ess/payroll/statutory")
+    public Map<String, Object> statutorySummary(
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month) {
+        LocalDate now = LocalDate.now();
+        return ess.statutorySummary(year == null ? now.getYear() : year, month == null ? now.getMonthValue() : month);
+    }
+
+    @GetMapping("/ess/payroll/register")
+    public List<Map<String, Object>> payrollRegister(
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month) {
+        LocalDate now = LocalDate.now();
+        return ess.payrollRegister(year == null ? now.getYear() : year, month == null ? now.getMonthValue() : month);
+    }
+
+    @GetMapping("/ess/payroll/settings")
+    public Map<String, Object> payrollSettings() {
+        return ess.payrollSettingsView();
+    }
+
+    @PutMapping("/ess/payroll/settings")
+    public Map<String, Object> savePayrollSettings(@RequestBody Map<String, Object> body) {
+        return ess.savePayrollSettings(body);
+    }
+
     @GetMapping("/ess/payslips/{id}")
     public Map<String, Object> payslip(@PathVariable UUID id) {
         return ess.payslip(id);

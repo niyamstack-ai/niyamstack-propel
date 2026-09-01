@@ -201,7 +201,7 @@ public final class Packs {
             case "Student", "Guardian", "StudentDocument" -> new String[]{MOD_STUDENTS};
             case "Course", "Batch" -> new String[]{MOD_LMS, MOD_STUDENTS, MOD_CRM};
             case "Employee", "StaffAttendance", "BiometricPunch", "LeaveBalance", "LeaveRequest",
-                 "SalaryStructure", "Payslip", "StaffVacancy", "StaffCandidate" -> new String[]{MOD_ESS};
+                 "SalaryStructure", "Payslip", "PayrollSettings", "StaffVacancy", "StaffCandidate" -> new String[]{MOD_ESS};
             case "InstituteRole" -> new String[]{MOD_STAFF};
             case "ApprovalRequest", "CustomField", "Workflow", "DocumentTemplate", "AcademicYear", "Term",
                  "Classroom" -> new String[]{MOD_STUDENTS, MOD_LMS};

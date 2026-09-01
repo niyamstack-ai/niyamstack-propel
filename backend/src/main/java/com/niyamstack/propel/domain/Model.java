@@ -1042,11 +1042,44 @@ public final class Model {
         @Column(precision = 12, scale = 2)
         private BigDecimal esiEmployer = BigDecimal.ZERO;
         @Column(precision = 12, scale = 2)
+        private BigDecimal ptEmployee = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal tdsEmployee = BigDecimal.ZERO;
+        @Column(precision = 8, scale = 1)
+        private BigDecimal lopDays = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal lopDeduction = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
         private BigDecimal deductions = BigDecimal.ZERO;
         @Column(precision = 12, scale = 2)
         private BigDecimal net = BigDecimal.ZERO;
+        private Integer workingDays;
+        private Integer presentDays;
         private String status = "DRAFT";
         private Instant paidAt;
+    }
+
+    @Entity(name = "PayrollSettings") @Table(name = "payroll_settings") @Getter @Setter
+    public static class PayrollSettings extends TenantEntity {
+        private Boolean pfEnabled = true;
+        @Column(precision = 6, scale = 4)
+        private BigDecimal pfRate = new BigDecimal("0.12");
+        @Column(precision = 12, scale = 2)
+        private BigDecimal pfWageCap = new BigDecimal("15000");
+        private Boolean esiEnabled = true;
+        @Column(precision = 6, scale = 4)
+        private BigDecimal esiEmployeeRate = new BigDecimal("0.0075");
+        @Column(precision = 6, scale = 4)
+        private BigDecimal esiEmployerRate = new BigDecimal("0.0325");
+        @Column(precision = 12, scale = 2)
+        private BigDecimal esiWageCap = new BigDecimal("21000");
+        private Boolean ptEnabled = false;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal ptAmount = new BigDecimal("200");
+        private Boolean tdsEnabled = false;
+        @Column(precision = 6, scale = 4)
+        private BigDecimal tdsRate = BigDecimal.ZERO;
+        private Boolean lopEnabled = true;
     }
 
     @Entity(name = "StaffVacancy") @Table(name = "staff_vacancies") @Getter @Setter
