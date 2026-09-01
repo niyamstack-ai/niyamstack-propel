@@ -417,8 +417,15 @@ public class FeeService {
             if (invoice.getLastRemindedAt() != null && invoice.getLastRemindedAt().isAfter(Instant.now().minusSeconds(20 * 3600))) {
                 continue;
             }
-            remindOne(org, invoice, false);
-            sent++;
+            if (invoice.getStudentId() == null) {
+                continue;
+            }
+            try {
+                remindOne(org, invoice, false);
+                sent++;
+            } catch (Exception ex) {
+                // Skip broken invoices so the scheduled pass does not abort the whole org.
+            }
         }
         return sent;
     }

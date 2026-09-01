@@ -264,7 +264,9 @@ function ProfileTab({ hr }: { hr: boolean }) {
       <ErrorText error={error || profile.error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       <Card title="My profile">
-        {p ? (
+        {profile.loading ? (
+          <p className="text-sm text-slate-500">Loading profile…</p>
+        ) : p ? (
           <>
             <p className="mb-3 text-sm text-slate-600">
               {p.employeeCode} · {p.designation || "Staff"} · {p.department || "—"}
@@ -633,6 +635,7 @@ function EmployeesTab() {
         </p>
         <Table
           empty="No employees yet. Add the first one below."
+          loading={people.loading}
           columns={["Code", "Name", "Dept", "Designation", "Joining", "Type", "Login", "Leave CL/SL/EL"]}
           rows={(people.data ?? []).map((e) => [
             e.employeeCode || "—",
@@ -1263,7 +1266,10 @@ function PayrollTab({ hr }: { hr: boolean }) {
             <Field label="PT amount / month" value={ptAmount} onChange={setPtAmount} />
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={tdsEnabled} onChange={(e) => setTdsEnabled(e.target.checked)} /> TDS enabled</label>
             <Field label="TDS rate on gross" value={tdsRate} onChange={setTdsRate} placeholder="0.05" />
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={lopEnabled} onChange={(e) => setLopEnabled(e.target.checked)} /> Deduct LOP from absent days</label>
+            <label className="col-span-full flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={lopEnabled} onChange={(e) => setLopEnabled(e.target.checked)} />
+              Deduct LOP from absent days
+            </label>
           </FormGrid>
           <div className="mt-3">
             <PrimaryButton onClick={() => void saveSettings()}>Save settings</PrimaryButton>

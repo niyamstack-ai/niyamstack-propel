@@ -23,9 +23,7 @@ public final class OrgSettings {
                 completed = onb.path("completed").asBoolean(false);
                 if (onb.has("steps") && onb.get("steps").isObject()) {
                     JsonNode saved = onb.get("steps");
-                    for (String key : saved.fieldNames()) {
-                        steps.put(key, saved.get(key).asBoolean(false));
-                    }
+                    saved.fields().forEachRemaining(entry -> steps.put(entry.getKey(), entry.getValue().asBoolean(false)));
                 }
             } catch (Exception ignored) {
                 /* use defaults */

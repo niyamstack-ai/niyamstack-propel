@@ -1,6 +1,7 @@
 package com.niyamstack.propel.web;
 
 import com.niyamstack.propel.compensation.CompensationService;
+import com.niyamstack.propel.catalog.Features;
 import com.niyamstack.propel.catalog.Packs;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
@@ -21,6 +22,7 @@ import com.niyamstack.propel.security.Roles;
 import com.niyamstack.propel.security.SessionService;
 import com.niyamstack.propel.security.LicenseService;
 import com.niyamstack.propel.foundation.FoundationService;
+import com.niyamstack.propel.grow.GrowService;
 import com.niyamstack.propel.sis.SisService;
 import com.niyamstack.propel.sis.StudentAccountService;
 import org.springframework.http.HttpStatus;

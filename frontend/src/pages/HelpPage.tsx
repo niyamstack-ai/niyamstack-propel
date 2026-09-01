@@ -31,8 +31,10 @@ export function HelpPage() {
       </div>
 
       <Card title={locale === "hi" ? "मार्गदर्शित टूर" : "Guided tour"}>
-        {steps.length === 0 ? (
+        {tour.loading ? (
           <p className="text-sm text-slate-500">Loading tour…</p>
+        ) : steps.length === 0 || tour.error ? (
+          <p className="text-sm text-slate-500">{tour.error || "No tour for this page."}</p>
         ) : (
           <div>
             <p className="text-lg font-semibold text-navy">{steps[Math.min(step, steps.length - 1)].title}</p>
@@ -53,15 +55,23 @@ export function HelpPage() {
       </Card>
 
       <Card title={locale === "hi" ? "लेख" : "Articles"}>
-        <ul className="space-y-4 text-sm">
-          {(articles.data ?? []).map((a, i) => (
-            <li key={i} className="border-b border-line pb-3 last:border-0">
-              <p className="font-medium text-navy">{a.title}</p>
-              <p className="mt-1 text-slate-600">{a.body}</p>
-              <p className="mt-1 text-xs text-slate-400">{a.pageKey}</p>
-            </li>
-          ))}
-        </ul>
+        {articles.loading ? (
+          <p className="text-sm text-slate-500">Loading articles…</p>
+        ) : articles.error ? (
+          <p className="text-sm text-red-600">{articles.error}</p>
+        ) : (articles.data ?? []).length === 0 ? (
+          <p className="text-sm text-slate-500">No articles yet.</p>
+        ) : (
+          <ul className="space-y-4 text-sm">
+            {(articles.data ?? []).map((a, i) => (
+              <li key={i} className="border-b border-line pb-3 last:border-0">
+                <p className="font-medium text-navy">{a.title}</p>
+                <p className="mt-1 text-slate-600">{a.body}</p>
+                <p className="mt-1 text-xs text-slate-400">{a.pageKey}</p>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
     </div>
   );

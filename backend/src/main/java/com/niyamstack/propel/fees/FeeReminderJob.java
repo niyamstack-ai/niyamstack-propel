@@ -22,7 +22,7 @@ public class FeeReminderJob {
                 log.info("Queued {} overdue fee reminder(s)", sent);
             }
         } catch (Exception e) {
-            log.warn("Fee reminder pass failed: {}", e.getMessage());
+            log.warn("Fee reminder pass failed: {}", e.toString());
         }
     }
 }

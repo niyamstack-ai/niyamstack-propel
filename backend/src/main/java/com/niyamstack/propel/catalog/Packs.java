@@ -274,7 +274,7 @@ public final class Packs {
 
     public static List<String> fullOpsModules() {
         return List.of(MOD_STUDENTS, MOD_CRM, MOD_LMS, MOD_FEES, MOD_PLACEMENT, MOD_COMMS, MOD_ANALYTICS,
-                MOD_WEBSITE, MOD_TESTS, MOD_STAFF, MOD_GROW);
+                MOD_WEBSITE, MOD_TESTS, MOD_STAFF, MOD_GROW, MOD_ESS);
     }
 
     public static List<String> essModules() {

@@ -49,7 +49,7 @@ public class DemoSeeder implements CommandLineRunner {
         org.setPaymentStatus("PAID");
         org.setBillingCycle("QUARTERLY");
         org.setDealAmount(new BigDecimal("45000"));
-        org.setModulesCsv("STUDENTS,CRM,LMS,FEES,PLACEMENT,COMMS,ANALYTICS,WEBSITE,TESTS,STAFF,GROW");
+        org.setModulesCsv("STUDENTS,CRM,LMS,FEES,PLACEMENT,COMMS,ANALYTICS,WEBSITE,TESTS,STAFF,GROW,ESS");
         org.setMaxStudents(500);
         org.setMaxCenters(5);
         org.setPaidAt(Instant.now());
@@ -625,15 +625,16 @@ public class DemoSeeder implements CommandLineRunner {
             org.setMaxCenters(5);
         }
         String modules = org.getModulesCsv() == null ? "" : org.getModulesCsv();
-        if (!modules.contains("WEBSITE") || !modules.contains("GROW")) {
+        if (!modules.contains("WEBSITE") || !modules.contains("GROW") || !modules.contains("ESS")) {
             org.setProductPack("FULL_OPS");
-            org.setModulesCsv("STUDENTS,CRM,LMS,FEES,PLACEMENT,COMMS,ANALYTICS,WEBSITE,TESTS,STAFF,GROW");
+            org.setModulesCsv("STUDENTS,CRM,LMS,FEES,PLACEMENT,COMMS,ANALYTICS,WEBSITE,TESTS,STAFF,GROW,ESS");
         }
         org.setWebsitePublished(true);
         if (org.getWebsiteUrl() == null || org.getWebsiteUrl().isBlank()) {
             org.setWebsiteUrl("/s/aarohan");
         }
         store.save(org);
+        ensureDemoEmployees(org.getId());
         remapDemoEmails(org.getId());
         refreshDemoCatalog(org.getId());
         if (store.list(CourseEnrollment.class, org.getId()).isEmpty()) {
@@ -653,6 +654,43 @@ public class DemoSeeder implements CommandLineRunner {
         phone("recruiter@yopmail.com", "9876500008");
         phone("student@aarohan.demo", "9876500002");
         phone("faculty@aarohan.demo", "9876500003");
+    }
+
+    private void ensureDemoEmployees(UUID orgId) {
+        List<AppUser> staff = store.em().createQuery(
+                        "select u from AppUser u where u.organizationId = :o and u.role in :roles", AppUser.class)
+                .setParameter("o", orgId)
+                .setParameter("roles", List.of("FACULTY", "COUNSELOR", "ACCOUNTANT", "PLACEMENT_HEAD", "OWNER"))
+                .getResultList();
+        List<Employee> existing = store.list(Employee.class, orgId);
+        int n = existing.size();
+        for (AppUser user : staff) {
+            boolean linked = existing.stream().anyMatch(e -> user.getId().equals(e.getUserId()));
+            if (linked) {
+                continue;
+            }
+            n++;
+            Employee e = new Employee();
+            e.setOrganizationId(orgId);
+            e.setUserId(user.getId());
+            e.setFullName(user.getFullName());
+            e.setEmail(user.getEmail());
+            e.setPhone(user.getPhone());
+            e.setDepartment(switch (user.getRole()) {
+                case "FACULTY" -> "Academics";
+                case "COUNSELOR" -> "Admissions";
+                case "ACCOUNTANT" -> "Accounts";
+                case "PLACEMENT_HEAD" -> "Placements";
+                default -> "Administration";
+            });
+            e.setDesignation(user.getRole().replace('_', ' '));
+            e.setJoiningDate(LocalDate.of(2026, 4, 1));
+            e.setCenterId(user.getCenterId());
+            e.setStatus("ACTIVE");
+            e.setEmploymentType("FACULTY".equals(user.getRole()) ? "FACULTY" : "ADMIN");
+            e.setEmployeeCode("EMP-" + String.format("%04d", n));
+            store.save(e);
+        }
     }
 
     private void refreshDemoCatalog(UUID oid) {

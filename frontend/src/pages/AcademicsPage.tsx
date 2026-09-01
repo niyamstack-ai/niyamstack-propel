@@ -415,6 +415,26 @@ function FieldsTab() {
           </PrimaryButton>
         </div>
       </Card>
+      <Card title="Form preview">
+        <p className="mb-3 text-sm text-slate-500">Live preview of fields for {prettyLabel(entityType)}. This is how counselors/staff will fill them.</p>
+        {(fields.data ?? []).filter((f) => f.entityType === entityType).length === 0 ? (
+          <p className="text-sm text-slate-500">No fields for this entity yet.</p>
+        ) : (
+          <FormGrid>
+            {(fields.data ?? [])
+              .filter((f) => f.entityType === entityType)
+              .map((f) => (
+                <Field
+                  key={f.id}
+                  label={`${f.label}${f.required ? " *" : ""}`}
+                  value=""
+                  onChange={() => undefined}
+                  placeholder={prettyLabel(f.fieldType)}
+                />
+              ))}
+          </FormGrid>
+        )}
+      </Card>
       <FillCustomCard />
     </>
   );

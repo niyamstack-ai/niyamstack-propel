@@ -350,6 +350,34 @@ public class DataScope {
                 return null;
             }
         }
+        if (e instanceof FeeInstallment fi && fi.getStudentId() != null) {
+            try {
+                return store.getOwned(Student.class, fi.getStudentId(), fi.getOrganizationId()).getCenterId();
+            } catch (Exception ex) {
+                return null;
+            }
+        }
+        if (e instanceof Payslip ps && ps.getEmployeeId() != null) {
+            try {
+                return store.getOwned(Employee.class, ps.getEmployeeId(), ps.getOrganizationId()).getCenterId();
+            } catch (Exception ex) {
+                return null;
+            }
+        }
+        if (e instanceof StaffAttendance sa && sa.getEmployeeId() != null) {
+            try {
+                return store.getOwned(Employee.class, sa.getEmployeeId(), sa.getOrganizationId()).getCenterId();
+            } catch (Exception ex) {
+                return null;
+            }
+        }
+        if (e instanceof LeaveRequest lr && lr.getEmployeeId() != null) {
+            try {
+                return store.getOwned(Employee.class, lr.getEmployeeId(), lr.getOrganizationId()).getCenterId();
+            } catch (Exception ex) {
+                return null;
+            }
+        }
         return null;
     }
 }

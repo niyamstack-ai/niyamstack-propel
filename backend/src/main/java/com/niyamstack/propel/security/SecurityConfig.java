@@ -50,8 +50,8 @@ public class SecurityConfig {
                     response.setContentType("application/json");
                     response.getWriter().write("{\"error\":\"Sign in required\"}");
                 }))
-                .addFilterBefore(rateLimitFilter, JwtFilter.class)
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(rateLimitFilter, JwtFilter.class)
                 .addFilterAfter(licenseFilter, JwtFilter.class);
         return http.build();
     }

@@ -74,7 +74,9 @@ export function CompliancePage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Subscription & access">
-          {hub.data ? (
+          {hub.error ? (
+            <p className="text-sm text-red-600">{hub.error}</p>
+          ) : hub.data ? (
             <ul className="space-y-2 text-sm">
               <li className="flex justify-between gap-2">
                 <span className="text-slate-500">Package tier</span>
@@ -101,8 +103,10 @@ export function CompliancePage() {
                 <span className="font-medium">{hub.data.dataMode ?? "SHARED"}</span>
               </li>
             </ul>
-          ) : (
+          ) : hub.loading ? (
             <p className="text-sm text-slate-500">Loading billing snapshot…</p>
+          ) : (
+            <p className="text-sm text-slate-500">Billing snapshot unavailable.</p>
           )}
           <Link className="mt-3 mr-3 inline-block text-sm text-brand hover:underline" to="/audit">
             View activity log

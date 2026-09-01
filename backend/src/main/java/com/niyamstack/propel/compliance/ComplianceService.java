@@ -199,7 +199,7 @@ public class ComplianceService {
         Map<String, Object> map = mapper.convertValue(entity, Map.class);
         for (String key : new ArrayList<>(map.keySet())) {
             if (maskFields.contains(key) && map.get(key) != null) {
-                map.put(key, maskValue(String.valueOf(map.get(key)));
+                map.put(key, maskValue(String.valueOf(map.get(key))));
             }
         }
         return map;

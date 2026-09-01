@@ -279,7 +279,7 @@ function OwnerHome() {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {pathAllowed("/courses", user?.modules) && <HomeLink to="/courses" title="Courses" text={courseCopy} />}
           {pathAllowed("/landing-pages", user?.modules) && (
-            <HomeLink to="/landing-pages" title="Landing pages" text={`${data.landingPages ?? 0} pages for ads and webinars`} />
+            <HomeLink to="/landing-pages" title="Landing pages" text={`${data.landingPages ?? 0} ${(data.landingPages ?? 0) === 1 ? "page" : "pages"} for ads and webinars`} />
           )}
           {pathAllowed("/content-hub", user?.modules) && <HomeLink to="/content-hub" title="Tests" text={testCopy} />}
           {pathAllowed("/campaigns", user?.modules) && <HomeLink to="/campaigns" title="Campaigns" text={`${data.campaigns ?? 0} campaigns`} />}

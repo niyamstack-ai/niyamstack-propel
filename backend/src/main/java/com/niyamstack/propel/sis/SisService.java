@@ -707,19 +707,20 @@ public class SisService {
         if (day == null) {
             day = LocalDate.now();
         }
+        LocalDate sessionDay = day;
         List<String> present = listOf(body.get("presentIds"));
         int marked = 0;
         int presentCount = 0;
         for (Student s : rosterForBatch(batchId)) {
             boolean isPresent = present.contains(s.getId().toString());
             AttendanceRecord rec = store.list(AttendanceRecord.class, orgId()).stream()
-                    .filter(a -> s.getId().equals(a.getStudentId()) && batchId.equals(a.getBatchId()) && day.equals(a.getSessionDate()))
+                    .filter(a -> s.getId().equals(a.getStudentId()) && batchId.equals(a.getBatchId()) && sessionDay.equals(a.getSessionDate()))
                     .findFirst()
                     .orElseGet(AttendanceRecord::new);
             rec.setOrganizationId(orgId());
             rec.setStudentId(s.getId());
             rec.setBatchId(batchId);
-            rec.setSessionDate(day);
+            rec.setSessionDate(sessionDay);
             rec.setStatus(isPresent ? "PRESENT" : "ABSENT");
             rec.setSource("BATCH_SHEET");
             store.save(rec);
