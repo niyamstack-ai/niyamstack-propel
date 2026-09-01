@@ -4,6 +4,7 @@ import { useAuth } from "./auth";
 import { NiyamstackLogo } from "./brand/NiyamstackLogo";
 import { isNavGroup, navForRole, portalTitle, type NavGroup } from "./portals";
 import { UserMenu } from "./UserMenu";
+import { UnifiedSearch } from "./UnifiedSearch";
 
 function linkClass(isActive: boolean, nested = false) {
   return `${nested ? "block rounded-lg px-3 py-1.5 pl-7 text-[13px]" : "block rounded-lg px-3 py-2 text-sm"} ${
@@ -206,7 +207,7 @@ export function Shell() {
         ) : (
           <header className="border-b border-line bg-white">
             <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
-              <div className="flex min-w-0 items-center gap-3">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
                 <button
                   type="button"
                   className="rounded-lg border border-line px-2.5 py-1.5 text-sm sm:hidden"
@@ -214,9 +215,10 @@ export function Shell() {
                 >
                   Menu
                 </button>
-                <div className="min-w-0">
+                <div className="min-w-0 sm:hidden">
                   <p className="text-xs text-slate-500">{portal.name}</p>
                 </div>
+                <UnifiedSearch />
               </div>
               <UserMenu />
             </div>

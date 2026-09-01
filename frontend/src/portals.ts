@@ -142,6 +142,7 @@ function roleNav(role?: string): NavEntry[] {
           items: [
             { to: "/fees", label: "Fees" },
             { to: "/analytics", label: "Analytics" },
+            { to: "/intelligence", label: "Intelligence" },
           ],
         },
         {

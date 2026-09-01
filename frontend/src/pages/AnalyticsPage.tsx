@@ -133,6 +133,11 @@ export function AnalyticsPage() {
         <div>
           <h1 className="text-2xl font-bold text-navy">Analytics</h1>
           <p className="text-sm text-slate-500">KPI scorecards, funnel analytics, placement outcomes, and exports for the selected period.</p>
+          {growth && (
+            <Link className="text-sm text-brand hover:underline" to="/intelligence">
+              Open intelligence hub →
+            </Link>
+          )}
         </div>
         <select className="rounded-lg border border-line px-3 py-2 text-sm" value={range} onChange={(e) => setRange(e.target.value)}>
           <option value="7">Last 7 Days</option>

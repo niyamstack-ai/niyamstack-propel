@@ -236,6 +236,9 @@ function OwnerHome() {
   const scorecard = useApi<{ conversionPct: number; placementPct: number; avgReadiness: number; atRisk: number }>(
     growth && pathAllowed("/analytics", user?.modules) ? "/api/actions/analytics/scorecard?days=30" : "",
   );
+  const intel = useApi<{ alerts?: { title: string; detail: string; path: string }[] }>(
+    growth && pathAllowed("/intelligence", user?.modules) ? "/api/actions/intelligence/hub?days=30" : "",
+  );
   if (dash.error) return <p className="text-red-600">{dash.error}</p>;
   if (!dash.data) return <p>Loading…</p>;
   const data = dash.data;
@@ -337,6 +340,23 @@ function OwnerHome() {
           </Link>
         ))}
       </div>
+      {growth && intel.data && pathAllowed("/intelligence", user?.modules) && (intel.data.alerts?.length ?? 0) > 0 && (
+        <Card title="Intelligence alerts">
+          <ul className="space-y-2 text-sm">
+            {(intel.data.alerts ?? []).slice(0, 4).map((a, i) => (
+              <li key={i}>
+                <Link className="text-brand hover:underline" to={a.path}>
+                  {a.title}
+                </Link>
+                <span className="text-slate-500"> — {a.detail}</span>
+              </li>
+            ))}
+          </ul>
+          <Link to="/intelligence" className="mt-3 inline-block text-sm text-brand hover:underline">
+            Open intelligence hub
+          </Link>
+        </Card>
+      )}
       {growth && scorecard.data && pathAllowed("/analytics", user?.modules) && (
         <Card title="Growth KPI scorecard (30 days)">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

@@ -3,7 +3,7 @@ package com.niyamstack.propel.web;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.niyamstack.propel.compensation.CompensationService;
+import com.niyamstack.propel.analytics.IntelligenceService;
 import com.niyamstack.propel.comms.OutreachService;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
@@ -53,12 +53,13 @@ public class ActionsController {
     private final ScaleService scale;
     private final AnalyticsService analytics;
     private final CompensationService compensation;
+    private final IntelligenceService intelligence;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public ActionsController(Store store, FeeService fees, LmsService lms, PlacementService placement,
                              IntegrationStatusService integrations, StorefrontService storefront, ObjectStorage storage,
                              OutreachService outreach, EssService ess, SisService sis, GrowService grow, ScaleService scale,
-                             AnalyticsService analytics, CompensationService compensation) {
+                             AnalyticsService analytics, CompensationService compensation, IntelligenceService intelligence) {
         this.store = store;
         this.fees = fees;
         this.lms = lms;
@@ -73,6 +74,7 @@ public class ActionsController {
         this.scale = scale;
         this.analytics = analytics;
         this.compensation = compensation;
+        this.intelligence = intelligence;
     }
 
     @GetMapping("/my-courses")
@@ -1046,6 +1048,28 @@ public class ActionsController {
     @GetMapping("/analytics/placement")
     public Map<String, Object> analyticsPlacement() {
         return analytics.placementOutcomes();
+    }
+
+    @GetMapping("/intelligence/search")
+    public List<Map<String, Object>> intelligenceSearch(
+            @RequestParam(defaultValue = "") String q,
+            @RequestParam(defaultValue = "12") int limit) {
+        return intelligence.unifiedSearch(q, limit);
+    }
+
+    @GetMapping("/intelligence/hub")
+    public Map<String, Object> intelligenceHub(@RequestParam(defaultValue = "30") int days) {
+        return intelligence.ownerHub(days);
+    }
+
+    @GetMapping("/intelligence/forecast")
+    public Map<String, Object> intelligenceForecast(@RequestParam(defaultValue = "3") int months) {
+        return intelligence.revenueForecast(months);
+    }
+
+    @GetMapping("/intelligence/pnl")
+    public Map<String, Object> intelligencePnl(@RequestParam(defaultValue = "90") int days) {
+        return intelligence.pnlSummary(days);
     }
 
     @GetMapping("/dashboard")
