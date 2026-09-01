@@ -152,7 +152,38 @@ public class ActionsController {
 
     @PostMapping("/notices/send")
     public Map<String, Object> sendNotice(@RequestBody Map<String, String> body) {
-        return outreach.sendNotice(body.get("channel"), body.get("title"), body.get("body"));
+        UUID batchId = body.get("batchId") == null || body.get("batchId").isBlank() ? null : UUID.fromString(body.get("batchId"));
+        return outreach.sendNotice(body.get("channel"), body.get("title"), body.get("body"), batchId);
+    }
+
+    @PostMapping("/grow/import/inquiries")
+    public Map<String, Object> importInquiries(@RequestBody Map<String, Object> body) {
+        return grow.importInquiries(body);
+    }
+
+    @PostMapping("/inquiries/{id}/counselor")
+    public Inquiry assignCounselor(@PathVariable UUID id, @RequestBody Map<String, String> body) {
+        UUID counselorId = body.get("counselorUserId") == null || body.get("counselorUserId").isBlank()
+                ? null : UUID.fromString(body.get("counselorUserId"));
+        return grow.assignCounselor(id, counselorId);
+    }
+
+    @GetMapping("/sis/batch-attendance")
+    public List<Map<String, Object>> batchAttendanceRoster(
+            @RequestParam UUID batchId,
+            @RequestParam(required = false) String date) {
+        LocalDate day = date == null || date.isBlank() ? null : LocalDate.parse(date.substring(0, Math.min(10, date.length())));
+        return sis.batchAttendanceRoster(batchId, day);
+    }
+
+    @PostMapping("/sis/batch-attendance")
+    public Map<String, Object> markBatchAttendance(@RequestBody Map<String, Object> body) {
+        return sis.markBatchAttendance(body);
+    }
+
+    @GetMapping("/sis/attendance-summary")
+    public Map<String, Object> attendanceSummary(@RequestParam UUID batchId) {
+        return sis.attendanceSummary(batchId);
     }
 
     @PostMapping("/pushes/send")
@@ -916,6 +947,15 @@ public class ActionsController {
         out.put("transactions", payments.size());
         out.put("revenue", paid);
         out.putAll(fees.financeDashboard(days));
+        List<AttendanceRecord> attendance = store.list(AttendanceRecord.class, org).stream()
+                .filter(a -> a.getSessionDate() != null && !a.getSessionDate().isBefore(LocalDate.now().minusDays(days)))
+                .toList();
+        long presentMarks = attendance.stream()
+                .filter(a -> "PRESENT".equalsIgnoreCase(a.getStatus()) || "LATE".equalsIgnoreCase(a.getStatus()))
+                .count();
+        int attendancePct = attendance.isEmpty() ? 0 : (int) Math.min(100, presentMarks * 100 / attendance.size());
+        out.put("attendancePct", attendancePct);
+        out.put("attendanceMarked", attendance.size());
         return out;
     }
 

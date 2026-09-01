@@ -6,7 +6,7 @@ import com.niyamstack.propel.domain.Model.*;
 import com.niyamstack.propel.fees.FeeService;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
-import com.niyamstack.propel.security.Roles;
+import com.niyamstack.propel.security.Phones;
 import com.niyamstack.propel.sis.StudentAccountService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -83,6 +83,15 @@ public class GrowService {
         row.setStage(stage);
         row.setNote(str(body, "note"));
         row.setNextAction(str(body, "nextAction"));
+        String nextAt = str(body, "nextActionAt");
+        if (!nextAt.isBlank()) {
+            try {
+                row.setNextActionAt(Instant.parse(nextAt));
+            } catch (Exception ex) {
+                row.setNextActionAt(LocalDate.parse(nextAt.length() >= 10 ? nextAt.substring(0, 10) : nextAt)
+                        .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
+            }
+        }
         row = store.save(row);
         if (!"CONVERTED".equals(inq.getStage())) {
             inq.setStage(stage);
@@ -133,9 +142,73 @@ public class GrowService {
             inquiry.setCounselorUserId(Auth.current().userId());
         }
         store.save(inquiry);
+        UUID courseId = seed.getCourseId();
+        UUID batchId = seed.getBatchId();
+        boolean autoFees = body == null || body.get("autoFees") == null || !"false".equalsIgnoreCase(body.get("autoFees"));
+        if (autoFees && courseId != null) {
+            if (body != null && body.get("feePlanId") != null && !body.get("feePlanId").isBlank()) {
+                try {
+                    List<FeeInstallment> inst = fees.scheduleInstallments(UUID.fromString(body.get("feePlanId")), studentId);
+                    enrolled.put("feeScheduled", !inst.isEmpty());
+                    enrolled.put("installments", inst.size());
+                } catch (Exception ignored) {
+                    enrolled.put("feeScheduled", false);
+                }
+            } else {
+                List<FeeInstallment> inst = fees.scheduleDefaultForStudent(studentId, courseId, batchId);
+                enrolled.put("feeScheduled", !inst.isEmpty());
+                enrolled.put("installments", inst.size());
+            }
+        }
         enrolled.put("inquiryId", inquiry.getId());
         enrolled.put("stage", "CONVERTED");
         return enrolled;
+    }
+
+    @Transactional
+    public Map<String, Object> importInquiries(Map<String, Object> body) {
+        Access.requireWrite(Auth.current(), "CRM");
+        String csv = str(body, "csv");
+        if (csv.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Paste a CSV with a header row");
+        }
+        List<String[]> rows = parseCsv(csv);
+        if (rows.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "CSV has no data rows");
+        }
+        Map<String, Integer> cols = header(rows.get(0), "fullName", "phone", "email", "source");
+        int created = 0;
+        int skipped = 0;
+        for (int i = 1; i < rows.size(); i++) {
+            String[] row = rows.get(i);
+            String name = cell(row, cols, "fullName");
+            String phone = Phones.normalize(cell(row, cols, "phone"));
+            String email = cell(row, cols, "email");
+            String source = upper(cell(row, cols, "source"), "WEB");
+            if (name.isBlank() || phone.isBlank()) {
+                skipped++;
+                continue;
+            }
+            Inquiry inq = new Inquiry();
+            inq.setOrganizationId(orgId());
+            inq.setFullName(name);
+            inq.setPhone(phone);
+            inq.setEmail(email.isBlank() ? null : email.toLowerCase());
+            inq.setSource(source);
+            inq.setStage("NEW");
+            inq.setCounselorUserId(Auth.current().userId());
+            store.save(inq);
+            created++;
+        }
+        return Map.of("created", created, "skipped", skipped);
+    }
+
+    @Transactional
+    public Inquiry assignCounselor(UUID inquiryId, UUID counselorUserId) {
+        Access.requireWrite(Auth.current(), "CRM");
+        Inquiry inq = store.getOwned(Inquiry.class, inquiryId, orgId());
+        inq.setCounselorUserId(counselorUserId);
+        return store.save(inq);
     }
 
     @Transactional
@@ -448,5 +521,47 @@ public class GrowService {
 
     private static String blank(String v, String fallback) {
         return v == null || v.isBlank() ? fallback : v;
+    }
+
+    private static String upper(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value.trim().toUpperCase();
+    }
+
+    private static List<String[]> parseCsv(String csv) {
+        List<String[]> rows = new ArrayList<>();
+        for (String line : csv.split("\\R")) {
+            if (line.isBlank()) {
+                continue;
+            }
+            rows.add(line.split(",", -1));
+        }
+        return rows;
+    }
+
+    private static Map<String, Integer> header(String[] row, String... keys) {
+        Map<String, Integer> cols = new LinkedHashMap<>();
+        for (int i = 0; i < row.length; i++) {
+            cols.put(row[i].trim().replace(" ", "").toLowerCase(), i);
+        }
+        Map<String, Integer> out = new LinkedHashMap<>();
+        for (String key : keys) {
+            Integer idx = cols.get(key.toLowerCase());
+            if (idx == null) {
+                idx = cols.get("name");
+            }
+            out.put(key, idx == null ? -1 : idx);
+        }
+        return out;
+    }
+
+    private static String cell(String[] row, Map<String, Integer> cols, String key) {
+        int i = cols.getOrDefault(key, -1);
+        if (i < 0 || i >= row.length) {
+            return "";
+        }
+        return row[i].trim();
     }
 }

@@ -13,8 +13,11 @@ type Inquiry = {
   stage: string;
   notes?: string;
   customJson?: string;
+  counselorUserId?: string;
 };
-type Student = { id: string; fullName: string };
+type CounselingNoteRow = { note: string; stage: string; nextAction?: string; nextActionAt?: string; inquiryId?: string };
+type StaffMember = { id: string; fullName: string; role: string };
+type FeePlan = { id: string; name: string; courseId?: string; batchId?: string };
 type Referral = { id: string; code?: string; referrerName: string; status: string; incentiveAmount?: number };
 type Scholarship = { id: string; name: string; amount?: number; percent?: number; approvalStatus: string };
 
@@ -28,9 +31,11 @@ export function CrmPage() {
   const inquiries = useApi<Inquiry[]>("/api/inquiries");
   const courses = useApi<{ id: string; name: string }[]>("/api/courses");
   const batches = useApi<{ id: string; name: string }[]>("/api/batches");
-  const notes = useApi<{ note: string; stage: string }[]>("/api/counseling-notes");
+  const notes = useApi<CounselingNoteRow[]>("/api/counseling-notes");
   const forms = useApi<{ applicantName: string; status: string }[]>("/api/admission-forms");
-  const students = useApi<Student[]>("/api/students");
+  const students = useApi<{ id: string; fullName: string }[]>("/api/students");
+  const staff = useApi<StaffMember[]>("/api/staff");
+  const feePlans = useApi<FeePlan[]>("/api/fee-plans");
   const referrals = useApi<Referral[]>("/api/referrals");
   const scholarships = useApi<Scholarship[]>("/api/scholarships");
   const [name, setName] = useState("");
@@ -40,9 +45,13 @@ export function CrmPage() {
   const [noteInq, setNoteInq] = useState("");
   const [note, setNote] = useState("");
   const [noteStage, setNoteStage] = useState("COUNSELING");
+  const [nextAction, setNextAction] = useState("");
+  const [nextActionAt, setNextActionAt] = useState("");
   const [convertId, setConvertId] = useState("");
   const [convertCourse, setConvertCourse] = useState("");
   const [convertBatch, setConvertBatch] = useState("");
+  const [convertFeePlan, setConvertFeePlan] = useState("");
+  const [importCsv, setImportCsv] = useState("");
   const [refName, setRefName] = useState("");
   const [refStudent, setRefStudent] = useState("");
   const [schName, setSchName] = useState("");
@@ -80,15 +89,47 @@ export function CrmPage() {
 
   async function convert() {
     if (!convertId) return;
-    if (!window.confirm("Enrol this lead as a student?")) return;
+    if (!window.confirm("Enrol this lead as a student? Fee plan will be scheduled if one matches the course.")) return;
     await run(async () => {
-      await api(`/api/actions/inquiries/${convertId}/convert`, {
+      const out = await api<{ feeScheduled?: boolean; installments?: number }>(`/api/actions/inquiries/${convertId}/convert`, {
         method: "POST",
-        body: JSON.stringify({ courseId: convertCourse || undefined, batchId: convertBatch || undefined }),
+        body: JSON.stringify({
+          courseId: convertCourse || undefined,
+          batchId: convertBatch || undefined,
+          feePlanId: convertFeePlan || undefined,
+          autoFees: "true",
+        }),
       });
       setConvertId("");
       inquiries.reload();
       students.reload();
+      setNotice(
+        out.feeScheduled
+          ? `Enrolled. Fee installments scheduled (${out.installments ?? 0}).`
+          : "Enrolled. No matching fee plan — schedule fees manually under Fees.",
+      );
+    });
+  }
+
+  async function importLeads() {
+    await run(async () => {
+      const out = await api<{ created: number; skipped: number }>("/api/actions/grow/import/inquiries", {
+        method: "POST",
+        body: JSON.stringify({ csv: importCsv }),
+      });
+      setImportCsv("");
+      inquiries.reload();
+      setNotice(`Imported ${out.created} lead(s). Skipped ${out.skipped}.`);
+    });
+  }
+
+  async function assignCounselor(inquiryId: string, counselorUserId: string) {
+    await run(async () => {
+      await api(`/api/actions/inquiries/${inquiryId}/counselor`, {
+        method: "POST",
+        body: JSON.stringify({ counselorUserId }),
+      });
+      inquiries.reload();
     });
   }
 
@@ -96,9 +137,11 @@ export function CrmPage() {
     await run(async () => {
       await api("/api/actions/grow/notes", {
         method: "POST",
-        body: JSON.stringify({ inquiryId: noteInq, note, stage: noteStage }),
+        body: JSON.stringify({ inquiryId: noteInq, note, stage: noteStage, nextAction, nextActionAt: nextActionAt || undefined }),
       });
       setNote("");
+      setNextAction("");
+      setNextActionAt("");
       notes.reload();
       inquiries.reload();
     });
@@ -135,6 +178,20 @@ export function CrmPage() {
           </PrimaryButton>
         </div>
       </Card>
+      <Card title="Import leads (CSV)">
+        <p className="mb-2 text-sm text-slate-500">Header row: fullName, phone, email, source</p>
+        <textarea
+          className="min-h-24 w-full rounded-lg border border-line px-3 py-2 text-sm font-mono"
+          placeholder="fullName,phone,email,source&#10;Riya,9876543210,riya@example.com,WEB"
+          value={importCsv}
+          onChange={(e) => setImportCsv(e.target.value)}
+        />
+        <div className="mt-3">
+          <PrimaryButton disabled={!importCsv.trim()} onClick={() => void importLeads()}>
+            Import leads
+          </PrimaryButton>
+        </div>
+      </Card>
       <div className="grid gap-4 lg:grid-cols-4">
         {["NEW", "COUNSELING", "DEMO", "CONVERTED"].map((stage) => (
           <Card key={stage} title={prettyLabel(stage)}>
@@ -145,6 +202,20 @@ export function CrmPage() {
                   <li key={i.id} className="rounded-lg border border-line p-2">
                     <p className="font-medium text-navy">{i.fullName}</p>
                     <p className="text-xs text-slate-500">{i.phone} · {prettyLabel(i.source)}</p>
+                    {stage !== "CONVERTED" && (
+                      <Select
+                        label=""
+                        value={i.counselorUserId || ""}
+                        onChange={(v) => void assignCounselor(i.id, v)}
+                        options={[
+                          { value: "", label: "Assign counselor" },
+                          ...(staff.data ?? []).filter((s) => s.role === "COUNSELOR" || s.role === "OWNER").map((s) => ({
+                            value: s.id,
+                            label: s.fullName,
+                          })),
+                        ]}
+                      />
+                    )}
                     {i.notes && <p className="mt-1 whitespace-pre-wrap text-xs text-slate-600">{i.notes}</p>}
                     {stage !== "CONVERTED" && (
                       <span className="mt-2 flex flex-wrap gap-2">
@@ -170,6 +241,15 @@ export function CrmPage() {
           <FormGrid>
             <Select label="Course" value={convertCourse} onChange={setConvertCourse} options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
             <Select label="Batch" value={convertBatch} onChange={setConvertBatch} options={(batches.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
+            <Select
+              label="Fee plan (optional)"
+              value={convertFeePlan}
+              onChange={setConvertFeePlan}
+              options={[
+                { value: "", label: "Auto-match by course/batch" },
+                ...(feePlans.data ?? []).map((p) => ({ value: p.id, label: p.name })),
+              ]}
+            />
             <div className="flex items-end gap-2">
               <PrimaryButton onClick={() => void convert()}>Enrol</PrimaryButton>
               <button type="button" className="text-sm text-slate-500" onClick={() => setConvertId("")}>
@@ -184,6 +264,8 @@ export function CrmPage() {
           <Select label="Inquiry" value={noteInq} onChange={setNoteInq} options={(inquiries.data ?? []).map((i) => ({ value: i.id, label: i.fullName }))} />
           <Select label="Move to" value={noteStage} onChange={setNoteStage} allowEmpty={false} options={STAGES} />
           <Field label="Note" value={note} onChange={setNote} />
+          <Field label="Next action" value={nextAction} onChange={setNextAction} placeholder="Call back, send brochure…" />
+          <Field label="Follow-up date" value={nextActionAt} onChange={setNextActionAt} placeholder="2026-09-15" />
           <div className="flex items-end">
             <PrimaryButton disabled={!noteInq || !note} onClick={() => void addNote()}>
               Save note
@@ -198,6 +280,8 @@ export function CrmPage() {
               <li key={i}>
                 <span className="font-medium">{prettyLabel(n.stage)}: </span>
                 {n.note}
+                {n.nextAction && <span className="text-xs text-slate-500"> · Next: {n.nextAction}</span>}
+                {n.nextActionAt && <span className="text-xs text-slate-400"> ({n.nextActionAt.slice(0, 10)})</span>}
               </li>
             ))}
           </ul>

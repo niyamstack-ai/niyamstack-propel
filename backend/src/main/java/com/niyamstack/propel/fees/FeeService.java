@@ -93,6 +93,36 @@ public class FeeService {
     }
 
     @Transactional
+    public List<FeeInstallment> scheduleDefaultForStudent(UUID studentId, UUID courseId, UUID batchId) {
+        PropelUser user = Auth.current();
+        UUID org = user.organizationId();
+        FeePlan plan = findFeePlan(org, courseId, batchId);
+        if (plan == null) {
+            return List.of();
+        }
+        boolean exists = store.list(FeeInstallment.class, org).stream()
+                .anyMatch(i -> studentId.equals(i.getStudentId()) && plan.getId().equals(i.getFeePlanId()));
+        if (exists) {
+            return List.of();
+        }
+        return scheduleInstallments(plan.getId(), studentId);
+    }
+
+    private FeePlan findFeePlan(UUID org, UUID courseId, UUID batchId) {
+        List<FeePlan> plans = store.list(FeePlan.class, org);
+        if (batchId != null) {
+            FeePlan byBatch = plans.stream().filter(p -> batchId.equals(p.getBatchId())).findFirst().orElse(null);
+            if (byBatch != null) {
+                return byBatch;
+            }
+        }
+        if (courseId != null) {
+            return plans.stream().filter(p -> courseId.equals(p.getCourseId())).findFirst().orElse(null);
+        }
+        return null;
+    }
+
+    @Transactional
     public Map<String, Object> collect(UUID invoiceId, BigDecimal amount, String method) {
         return collect(invoiceId, amount, method, null);
     }
@@ -646,8 +676,17 @@ public class FeeService {
         Student student = store.getOwned(Student.class, invoice.getStudentId(), org.getId());
         BigDecimal due = invoice.getAmount().subtract(nvl(invoice.getPaidAmount()));
         String title = "Fee due " + invoice.getInvoiceNo();
-        String body = "₹" + due + " is due for invoice " + invoice.getInvoiceNo()
-                + (invoice.getDueDate() == null ? "." : " (due " + invoice.getDueDate() + ").");
+        Map<String, String> vars = new LinkedHashMap<>();
+        vars.put("name", student.getFullName());
+        vars.put("amount", "₹" + due);
+        vars.put("invoice", invoice.getInvoiceNo());
+        vars.put("dueDate", invoice.getDueDate() == null ? "" : invoice.getDueDate().toString());
+        vars.put("institute", org.getName() == null ? "" : org.getName());
+        String body = renderTemplate(findTemplate(org.getId(), "FEE_REMINDER", "WHATSAPP"),
+                "₹" + due + " is due for invoice " + invoice.getInvoiceNo()
+                        + (invoice.getDueDate() == null ? "." : " (due " + invoice.getDueDate() + ")."),
+                vars);
+        String emailBody = renderTemplate(findTemplate(org.getId(), "FEE_REMINDER", "EMAIL"), body, vars);
         Notification n = new Notification();
         n.setOrganizationId(org.getId());
         n.setStudentId(student.getId());
@@ -662,7 +701,7 @@ public class FeeService {
         String email = student.getEmail();
         var mail = (email == null || email.isBlank() || email.endsWith("@student.local"))
                 ? null
-                : messaging.send(org.getId(), "EMAIL", email, title, body);
+                : messaging.send(org.getId(), "EMAIL", email, title, emailBody);
         invoice.setLastRemindedAt(Instant.now());
         store.save(invoice);
         Map<String, Object> out = new LinkedHashMap<>();
@@ -1046,5 +1085,27 @@ public class FeeService {
             out.add(row);
         }
         return out;
+    }
+
+    private MessageTemplate findTemplate(UUID orgId, String eventType, String channel) {
+        return store.list(MessageTemplate.class, orgId).stream()
+                .filter(t -> eventType.equalsIgnoreCase(blank(t.getEventType(), ""))
+                        && channel.equalsIgnoreCase(blank(t.getChannel(), "")))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static String renderTemplate(MessageTemplate tpl, String fallback, Map<String, String> vars) {
+        String body = tpl == null || tpl.getBody() == null || tpl.getBody().isBlank() ? fallback : tpl.getBody();
+        if (vars != null) {
+            for (Map.Entry<String, String> e : vars.entrySet()) {
+                body = body.replace("{{" + e.getKey() + "}}", e.getValue() == null ? "" : e.getValue());
+            }
+        }
+        return body;
+    }
+
+    private static String blank(String v, String fallback) {
+        return v == null || v.isBlank() ? fallback : v;
     }
 }

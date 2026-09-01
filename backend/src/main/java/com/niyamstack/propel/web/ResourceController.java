@@ -304,6 +304,7 @@ public class ResourceController {
         return list(MessageTemplate.class);
     }
     @PostMapping("/message-templates") public MessageTemplate createMessageTemplate(@RequestBody MessageTemplate body) { return create(body, "COMMS"); }
+    @PutMapping("/message-templates/{id}") public MessageTemplate updateMessageTemplate(@PathVariable UUID id, @RequestBody MessageTemplate body) { return update(MessageTemplate.class, id, body, "COMMS"); }
 
     @GetMapping("/inbox") public List<InboxMessage> inbox() { return list(InboxMessage.class); }
     @PostMapping("/inbox") public InboxMessage createInbox(@RequestBody InboxMessage body) { return create(body, "COMMS"); }

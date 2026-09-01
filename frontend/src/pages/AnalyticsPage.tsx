@@ -30,6 +30,8 @@ type Dash = {
   billed?: number;
   byCourse?: { name: string; collected: number; outstanding: number }[];
   byCounselor?: { name: string; collected: number; outstanding: number }[];
+  attendancePct?: number;
+  attendanceMarked?: number;
 };
 
 export function AnalyticsPage() {
@@ -48,6 +50,33 @@ export function AnalyticsPage() {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
+
+  async function downloadExport(resource: string) {
+    setError(null);
+    setExportStatus(null);
+    try {
+      const rows = await api<Record<string, unknown>[]>(`/api/actions/export/${resource}`);
+      if (!rows.length) {
+        setExportStatus(`No ${resource} to export.`);
+        return;
+      }
+      const keys = Object.keys(rows[0]).filter((k) => !k.includes("password") && k !== "customJson");
+      const csv = [keys.join(",")]
+        .concat(rows.map((row) => keys.map((k) => JSON.stringify(row[k] ?? "")).join(",")))
+        .join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${resource}-export.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setExportStatus(`Downloaded ${rows.length} ${resource} row(s).`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   const d = dash.data;
 
@@ -78,6 +107,25 @@ export function AnalyticsPage() {
         <Metric label="Payments" value={d?.transactions ?? 0} />
         <Metric label="Billed" value={formatInr(d?.billed ?? 0)} />
       </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Attendance %" value={`${d?.attendancePct ?? 0}%`} />
+        <Metric label="Attendance marks" value={d?.attendanceMarked ?? 0} />
+        <Metric label="Inquiries" value={d?.inquiries ?? 0} />
+        <Metric label="Converted" value={d?.converted ?? 0} />
+      </div>
+
+      <Card title="Data export center">
+        <p className="mb-3 text-sm text-slate-500">Download CSV snapshots for students, invoices, applications, and leads.</p>
+        <div className="flex flex-wrap gap-2">
+          {(["students", "invoices", "applications", "inquiries"] as const).map((resource) => (
+            <PrimaryButton key={resource} onClick={() => void downloadExport(resource)}>
+              Export {resource}
+            </PrimaryButton>
+          ))}
+        </div>
+        {exportStatus && <p className="mt-2 text-sm text-emerald-700">{exportStatus}</p>}
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Course-wise">

@@ -4,6 +4,7 @@ import { createRecord, uploadSubmissionFile } from "../ops";
 import { useAuth } from "../auth";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, formatWhen, studentChoice, useApi } from "../ui";
+import { BatchAttendanceSheet } from "./BatchAttendanceSheet";
 
 type Content = { id: string; title: string; contentType: string; scormStandard?: string; published?: boolean; courseId?: string };
 type Assignment = { id: string; title: string; instructions: string; courseId?: string; batchId?: string; dueAt?: string; maxScore?: number };
@@ -634,6 +635,8 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
           </Card>
           )}
           {show("attendance") && (
+          <>
+          <BatchAttendanceSheet />
           <Card title="Mark attendance">
             <FormGrid>
               <Select
@@ -673,6 +676,7 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
               </div>
             </FormGrid>
           </Card>
+          </>
           )}
         </>
       )}

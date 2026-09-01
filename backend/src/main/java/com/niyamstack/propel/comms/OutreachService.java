@@ -1,6 +1,7 @@
 package com.niyamstack.propel.comms;
 
 import com.niyamstack.propel.data.Store;
+import com.niyamstack.propel.domain.Model.Announcement;
 import com.niyamstack.propel.domain.Model.AppPush;
 import com.niyamstack.propel.domain.Model.AppUser;
 import com.niyamstack.propel.domain.Model.Campaign;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -34,17 +36,31 @@ public class OutreachService {
 
     @Transactional
     public Map<String, Object> sendNotice(String channel, String title, String body) {
+        return sendNotice(channel, title, body, null);
+    }
+
+    @Transactional
+    public Map<String, Object> sendNotice(String channel, String title, String body, UUID batchId) {
         PropelUser user = Auth.current();
         Access.requireAny(user, Roles.OWNER, Roles.FACULTY, Roles.COUNSELOR, Roles.PLACEMENT_HEAD);
         String ch = channel == null || channel.isBlank() ? "IN_APP" : channel.toUpperCase();
+        List<Student> targets = studentsForNotice(user.organizationId(), batchId);
         Delivery d;
         if ("IN_APP".equals(ch)) {
-            int n = (int) store.list(Student.class, user.organizationId()).stream()
-                    .filter(s -> s.getStatus() == null || (!"DROPPED".equals(s.getStatus()) && !"INACTIVE".equals(s.getStatus())))
-                    .count();
-            d = new Delivery(n, 0, 0, "Shown to " + n + " student(s) on the website.");
+            int n = targets.size();
+            d = new Delivery(n, 0, 0, batchId == null
+                    ? "Shown to " + n + " student(s) on the website."
+                    : "Shown to " + n + " student(s) in the selected batch.");
         } else {
-            d = deliver(user.organizationId(), ch, title, body);
+            d = deliver(user.organizationId(), ch, title, body, targets);
+        }
+        if (batchId != null) {
+            Announcement ann = new Announcement();
+            ann.setOrganizationId(user.organizationId());
+            ann.setBatchId(batchId);
+            ann.setTitle(title);
+            ann.setBody(body);
+            store.save(ann);
         }
         Notification n = new Notification();
         n.setOrganizationId(user.organizationId());
@@ -74,7 +90,7 @@ public class OutreachService {
         if ("PUSH".equals(ch)) {
             ch = "WHATSAPP";
         }
-        Delivery d = deliver(user.organizationId(), ch, campaign.getTitle(), campaign.getBody());
+        Delivery d = deliver(user.organizationId(), ch, campaign.getTitle(), campaign.getBody(), studentsForNotice(user.organizationId(), null));
         campaign.setStatus("LIVE");
         campaign.setSentCount((campaign.getSentCount() == null ? 0 : campaign.getSentCount()) + d.sent);
         campaign.setLastSendStatus(d.status());
@@ -105,7 +121,7 @@ public class OutreachService {
             store.save(n);
             inApp++;
         }
-        Delivery d = deliver(user.organizationId(), "WHATSAPP", title, body);
+        Delivery d = deliver(user.organizationId(), "WHATSAPP", title, body, studentsForNotice(user.organizationId(), null));
         AppPush push = new AppPush();
         push.setOrganizationId(user.organizationId());
         push.setTitle(title);
@@ -129,15 +145,19 @@ public class OutreachService {
         }
     }
 
-    private Delivery deliver(UUID orgId, String channel, String title, String body) {
+    private List<Student> studentsForNotice(UUID orgId, UUID batchId) {
+        return store.list(Student.class, orgId).stream()
+                .filter(s -> s.getStatus() == null || (!"DROPPED".equals(s.getStatus()) && !"INACTIVE".equals(s.getStatus())))
+                .filter(s -> batchId == null || batchId.equals(s.getBatchId()))
+                .toList();
+    }
+
+    private Delivery deliver(UUID orgId, String channel, String title, String body, List<Student> students) {
         int sent = 0;
         int queued = 0;
         int failed = 0;
         String lastMessage = "";
-        for (Student student : store.list(Student.class, orgId)) {
-            if (student.getStatus() != null && ("DROPPED".equals(student.getStatus()) || "INACTIVE".equals(student.getStatus()))) {
-                continue;
-            }
+        for (Student student : students) {
             String to;
             String ch = channel;
             if ("EMAIL".equals(ch)) {

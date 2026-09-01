@@ -1,5 +1,6 @@
 package com.niyamstack.propel.sis;
 
+import com.niyamstack.propel.catalog.Packs;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.*;
@@ -663,6 +664,103 @@ public class SisService {
         return row;
     }
 
+    public List<Map<String, Object>> batchAttendanceRoster(UUID batchId, LocalDate date) {
+        Access.requireTenant(Auth.current());
+        Access.requireAnyModule(Auth.current(), Packs.MOD_LMS);
+        if (batchId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Pick a batch");
+        }
+        LocalDate day = date == null ? LocalDate.now() : date;
+        store.getOwned(Batch.class, batchId, orgId());
+        List<Student> roster = rosterForBatch(batchId);
+        List<AttendanceRecord> marks = store.list(AttendanceRecord.class, orgId()).stream()
+                .filter(a -> day.equals(a.getSessionDate()) && batchId.equals(a.getBatchId()))
+                .toList();
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Student s : roster) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("studentId", s.getId());
+            row.put("fullName", s.getFullName());
+            row.put("studentCode", s.getStudentCode());
+            row.put("status", marks.stream()
+                    .filter(a -> s.getId().equals(a.getStudentId()))
+                    .map(AttendanceRecord::getStatus)
+                    .findFirst()
+                    .orElse(""));
+            out.add(row);
+        }
+        return out;
+    }
+
+    @Transactional
+    public Map<String, Object> markBatchAttendance(Map<String, Object> body) {
+        Access.requireWrite(Auth.current(), "LMS");
+        UUID batchId = uuid(body, "batchId");
+        if (batchId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Pick a batch");
+        }
+        LocalDate day = date(body, "sessionDate");
+        if (day == null) {
+            day = LocalDate.now();
+        }
+        List<String> present = listOf(body.get("presentIds"));
+        int marked = 0;
+        int presentCount = 0;
+        for (Student s : rosterForBatch(batchId)) {
+            boolean isPresent = present.contains(s.getId().toString());
+            AttendanceRecord rec = store.list(AttendanceRecord.class, orgId()).stream()
+                    .filter(a -> s.getId().equals(a.getStudentId()) && batchId.equals(a.getBatchId()) && day.equals(a.getSessionDate()))
+                    .findFirst()
+                    .orElseGet(AttendanceRecord::new);
+            rec.setOrganizationId(orgId());
+            rec.setStudentId(s.getId());
+            rec.setBatchId(batchId);
+            rec.setSessionDate(day);
+            rec.setStatus(isPresent ? "PRESENT" : "ABSENT");
+            rec.setSource("BATCH_SHEET");
+            store.save(rec);
+            marked++;
+            if (isPresent) {
+                presentCount++;
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("batchId", batchId);
+        out.put("sessionDate", day.toString());
+        out.put("marked", marked);
+        out.put("present", presentCount);
+        out.put("absent", marked - presentCount);
+        return out;
+    }
+
+    public Map<String, Object> attendanceSummary(UUID batchId) {
+        Access.requireTenant(Auth.current());
+        Access.requireAnyModule(Auth.current(), Packs.MOD_LMS);
+        if (batchId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Pick a batch");
+        }
+        store.getOwned(Batch.class, batchId, orgId());
+        List<Student> roster = rosterForBatch(batchId);
+        LocalDate from = LocalDate.now().minusDays(30);
+        List<AttendanceRecord> marks = store.list(AttendanceRecord.class, orgId()).stream()
+                .filter(a -> batchId.equals(a.getBatchId()) && a.getSessionDate() != null && !a.getSessionDate().isBefore(from))
+                .toList();
+        long sessionDays = marks.stream().map(AttendanceRecord::getSessionDate).distinct().count();
+        long presentMarks = marks.stream().filter(a -> "PRESENT".equalsIgnoreCase(a.getStatus()) || "LATE".equalsIgnoreCase(a.getStatus())).count();
+        long totalMarks = marks.size();
+        int presentToday = (int) marks.stream()
+                .filter(a -> LocalDate.now().equals(a.getSessionDate()) && ("PRESENT".equalsIgnoreCase(a.getStatus()) || "LATE".equalsIgnoreCase(a.getStatus())))
+                .count();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("batchId", batchId);
+        out.put("students", roster.size());
+        out.put("sessionDays", sessionDays);
+        out.put("presentToday", presentToday);
+        out.put("absentToday", Math.max(0, roster.size() - presentToday));
+        out.put("averagePresentPct", totalMarks == 0 ? 0 : (int) Math.min(100, presentMarks * 100 / totalMarks));
+        return out;
+    }
+
     private List<Student> rosterForBatch(UUID batchId) {
         if (batchId == null) {
             return store.list(Student.class, orgId());
@@ -706,6 +804,14 @@ public class SisService {
             return null;
         }
         return UUID.fromString(s);
+    }
+
+    private static LocalDate date(Map<String, ?> body, String key) {
+        String s = str(body, key);
+        if (s.isBlank() || s.length() < 10) {
+            return null;
+        }
+        return LocalDate.parse(s.substring(0, 10));
     }
 
     private static String blank(String v, String fallback) {
