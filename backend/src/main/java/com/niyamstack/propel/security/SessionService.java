@@ -4,6 +4,7 @@ import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.AppUser;
 import com.niyamstack.propel.domain.Model.Organization;
 import com.niyamstack.propel.catalog.Packs;
+import com.niyamstack.propel.platform.OrgSettings;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -53,6 +54,10 @@ public class SessionService {
         profile.put("productPack", bits.pack);
         profile.put("modules", Packs.parse(bits.modules).stream().toList());
         profile.put("capabilities", Packs.capsFor(user.getRole(), user.getCapabilitiesCsv()).stream().toList());
+        if (user.getOrganizationId() != null) {
+            Organization org = store.get(Organization.class, user.getOrganizationId());
+            profile.put("onboardingComplete", OrgSettings.onboarding(org).get("completed"));
+        }
         return profile;
     }
 

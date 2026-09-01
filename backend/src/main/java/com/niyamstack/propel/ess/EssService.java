@@ -897,7 +897,10 @@ public class EssService {
 
     private boolean hrAdmin() {
         String role = Auth.current().role();
-        return Roles.OWNER.equals(role) || Roles.ACCOUNTANT.equals(role);
+        if (Roles.OWNER.equals(role) || Roles.ACCOUNTANT.equals(role)) {
+            return true;
+        }
+        return Access.hasCap(Auth.current(), Packs.CAP_ESS_MANAGE);
     }
 
     private void ensureUniqueCode(UUID org, String code, UUID ignoreId) {

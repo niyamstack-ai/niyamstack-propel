@@ -1075,6 +1075,14 @@ public final class Model {
         private UUID hiredEmployeeId;
     }
 
+    @Entity(name = "InstituteRole") @Table(name = "institute_roles") @Getter @Setter
+    public static class InstituteRole extends TenantEntity {
+        private String name;
+        private String baseRole = "FACULTY";
+        @Column(length = 1000)
+        private String capabilitiesCsv;
+    }
+
     @Entity(name = "PlatformUserRole") @Table(name = "platform_user_roles") @Getter @Setter
     public static class PlatformUserRole extends BaseEntity {
         private UUID userId;

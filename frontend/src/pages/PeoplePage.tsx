@@ -1,7 +1,7 @@
 import { NavLink, Navigate, useParams } from "react-router-dom";
 import { useState } from "react";
-import { createRecord } from "../ops";
 import { api } from "../api";
+import { createRecord } from "../ops";
 import { AlumniPage } from "./AlumniPage";
 import { StaffStudents } from "./StudentsPage";
 import { useAuth } from "../auth";
@@ -9,7 +9,18 @@ import { STAFF_RIGHTS } from "../packs";
 import { prettyLabel } from "../labels";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
 
-type Staff = { id: string; fullName: string; email: string; role: string; active: boolean; capabilities?: string[] };
+type Staff = {
+  id: string;
+  fullName: string;
+  email: string;
+  role: string;
+  active: boolean;
+  capabilities?: string[];
+  hasEmployee?: boolean;
+  employeeCode?: string;
+  employeeId?: string;
+};
+type InstituteRole = { id: string; name: string; baseRole: string; capabilities?: string[] };
 
 const tabs = [
   { id: "students", label: "Students", to: "/people/students" },
@@ -53,6 +64,7 @@ export function PeoplePage() {
 
 function InstituteStaff() {
   const staff = useApi<Staff[]>("/api/staff");
+  const roles = useApi<InstituteRole[]>("/api/foundation/institute-roles");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [memberName, setMemberName] = useState("");
@@ -62,9 +74,27 @@ function InstituteStaff() {
   const [rights, setRights] = useState<string[]>(presetRights("FACULTY"));
 
   function presetRights(role: string) {
-    if (role === "COUNSELOR" || role === "PLACEMENT_HEAD") return ["STUDENTS"];
-    if (role === "ACCOUNTANT") return ["VIEW_FEES", "REFUND"];
-    return ["EXAMS"];
+    if (role === "COUNSELOR" || role === "PLACEMENT_HEAD") return ["STUDENTS", "CRM"];
+    if (role === "ACCOUNTANT") return ["VIEW_FEES", "REFUND", "ESS_VIEW", "ESS_MANAGE"];
+    return ["EXAMS", "ESS_VIEW", "LMS"];
+  }
+
+  function applyRoleTemplate(roleId: string) {
+    const picked = (roles.data ?? []).find((r) => r.id === roleId);
+    if (!picked) return;
+    setMemberRole(picked.baseRole);
+    setRights(picked.capabilities ?? presetRights(picked.baseRole));
+  }
+
+  async function linkEmployee(s: Staff) {
+    setError(null);
+    try {
+      await api(`/api/foundation/staff/${s.id}/link-employee`, { method: "POST" });
+      staff.reload();
+      setNotice(`${s.fullName} is now linked to an ESS employee record.`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
 
   async function inviteMember() {
@@ -129,11 +159,20 @@ function InstituteStaff() {
         <p className="mb-3 text-sm text-slate-500">Teachers, counselors, accountants, and placement staff. They log in to this portal, not the student website. Tick what they may see. HR records (code, department, leave, salary) live under ESS.</p>
         <Table
           empty="No staff besides you yet. Add a teacher below."
-          columns={["Member", "Email", "Role", "Rights", "Active"]}
+          columns={["Member", "Email", "Role", "ESS", "Rights", "Active"]}
           rows={(staff.data ?? []).filter((s) => s.role !== "OWNER").map((s) => [
             s.fullName,
             s.email,
             prettyLabel(s.role),
+            s.hasEmployee ? (
+              <span key={`${s.id}-ess`} className="text-xs text-emerald-700">
+                {s.employeeCode || "Linked"}
+              </span>
+            ) : (
+              <button key={`${s.id}-link`} type="button" className="text-xs font-semibold text-brand hover:underline" onClick={() => void linkEmployee(s)}>
+                Link ESS
+              </button>
+            ),
             <RightsChips key={s.id} value={s.capabilities ?? []} onChange={(next) => void saveRights(s, next)} />,
             s.active ? "Yes" : "No",
           ])}
@@ -161,6 +200,14 @@ function InstituteStaff() {
               { value: "PLACEMENT_HEAD", label: "Placement head" },
             ]}
           />
+          {(roles.data ?? []).length > 0 && (
+            <Select
+              label="Apply saved role template"
+              value=""
+              onChange={(v) => applyRoleTemplate(v)}
+              options={(roles.data ?? []).map((r) => ({ value: r.id, label: r.name }))}
+            />
+          )}
         </FormGrid>
         <div className="mt-3">
           <p className="mb-2 text-sm text-slate-600">Rights</p>

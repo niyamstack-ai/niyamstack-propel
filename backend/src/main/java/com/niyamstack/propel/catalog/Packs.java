@@ -32,6 +32,19 @@ public final class Packs {
     public static final String CAP_REFUND = "REFUND";
     public static final String CAP_STUDENTS = "STUDENTS";
     public static final String CAP_EXAMS = "EXAMS";
+    public static final String CAP_ESS_VIEW = "ESS_VIEW";
+    public static final String CAP_ESS_MANAGE = "ESS_MANAGE";
+    public static final String CAP_LEAVE_APPROVE = "LEAVE_APPROVE";
+    public static final String CAP_STAFF_MANAGE = "STAFF_MANAGE";
+    public static final String CAP_ANALYTICS = "ANALYTICS";
+    public static final String CAP_CRM = "CRM";
+    public static final String CAP_PLACEMENT = "PLACEMENT";
+    public static final String CAP_LMS = "LMS";
+
+    public static final Set<String> ALL_CAPS = Set.of(
+            CAP_STUDENTS, CAP_VIEW_FEES, CAP_REFUND, CAP_EXAMS,
+            CAP_ESS_VIEW, CAP_ESS_MANAGE, CAP_LEAVE_APPROVE, CAP_STAFF_MANAGE,
+            CAP_ANALYTICS, CAP_CRM, CAP_PLACEMENT, CAP_LMS);
 
     private Packs() {}
 
@@ -74,8 +87,39 @@ public final class Packs {
                 Map.of("id", CAP_STUDENTS, "label", "See students"),
                 Map.of("id", CAP_VIEW_FEES, "label", "See fees"),
                 Map.of("id", CAP_REFUND, "label", "Refund"),
-                Map.of("id", CAP_EXAMS, "label", "Exams")
+                Map.of("id", CAP_EXAMS, "label", "Exams"),
+                Map.of("id", CAP_ESS_VIEW, "label", "ESS self-service"),
+                Map.of("id", CAP_ESS_MANAGE, "label", "Manage HR records"),
+                Map.of("id", CAP_LEAVE_APPROVE, "label", "Approve leave"),
+                Map.of("id", CAP_STAFF_MANAGE, "label", "Manage staff logins"),
+                Map.of("id", CAP_ANALYTICS, "label", "View analytics"),
+                Map.of("id", CAP_CRM, "label", "Admissions / CRM"),
+                Map.of("id", CAP_PLACEMENT, "label", "Placement"),
+                Map.of("id", CAP_LMS, "label", "LMS / academics")
         );
+    }
+
+    public static List<String> parseCaps(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(csv.split(","))
+                .map(String::trim)
+                .map(String::toUpperCase)
+                .filter(s -> !s.isEmpty() && ALL_CAPS.contains(s))
+                .distinct()
+                .toList();
+    }
+
+    public static String sanitizeCapsCsv(String csv, List<String> caps) {
+        if (caps != null && !caps.isEmpty()) {
+            return String.join(",", caps.stream()
+                    .map(c -> c.trim().toUpperCase())
+                    .filter(ALL_CAPS::contains)
+                    .distinct()
+                    .toList());
+        }
+        return String.join(",", parseCaps(csv));
     }
 
     public static String normalizePack(String pack) {
@@ -158,6 +202,7 @@ public final class Packs {
             case "Course", "Batch" -> new String[]{MOD_LMS, MOD_STUDENTS, MOD_CRM};
             case "Employee", "StaffAttendance", "BiometricPunch", "LeaveBalance", "LeaveRequest",
                  "SalaryStructure", "Payslip", "StaffVacancy", "StaffCandidate" -> new String[]{MOD_ESS};
+            case "InstituteRole" -> new String[]{MOD_STAFF};
             case "ApprovalRequest", "CustomField", "Workflow", "DocumentTemplate", "AcademicYear", "Term",
                  "Classroom" -> new String[]{MOD_STUDENTS, MOD_LMS};
             case "ReportDefinition", "ScheduledReport" -> new String[]{MOD_ANALYTICS};
@@ -199,18 +244,19 @@ public final class Packs {
             return Set.of();
         }
         return switch (role) {
-            case "FACULTY" -> Set.of(CAP_EXAMS);
-            case "COUNSELOR" -> Set.of(CAP_STUDENTS);
-            case "ACCOUNTANT" -> Set.of(CAP_VIEW_FEES, CAP_REFUND);
-            case "PLACEMENT_HEAD", "RECRUITER" -> Set.of(CAP_STUDENTS);
+            case "FACULTY" -> Set.of(CAP_EXAMS, CAP_ESS_VIEW, CAP_LMS);
+            case "COUNSELOR" -> Set.of(CAP_STUDENTS, CAP_CRM);
+            case "ACCOUNTANT" -> Set.of(CAP_VIEW_FEES, CAP_REFUND, CAP_ESS_VIEW, CAP_ESS_MANAGE);
+            case "PLACEMENT_HEAD" -> Set.of(CAP_STUDENTS, CAP_PLACEMENT);
+            case "RECRUITER" -> Set.of(CAP_PLACEMENT);
             default -> Set.of();
         };
     }
 
     public static Set<String> capsFor(String role, String csv) {
-        Set<String> parsed = parse(csv);
+        List<String> parsed = parseCaps(csv);
         if (!parsed.isEmpty()) {
-            return parsed;
+            return new LinkedHashSet<>(parsed);
         }
         return defaultCaps(role);
     }

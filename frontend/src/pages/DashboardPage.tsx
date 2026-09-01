@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
 import { pathAllowed } from "../packs";
 import { Card, PrimaryButton, formatInr, formatWhen, useApi } from "../ui";
+import { OnboardingWizard } from "./OnboardingWizard";
 
 type Dash = {
   inquiries: number;
@@ -253,6 +254,7 @@ function OwnerHome() {
   ).filter(([, , to]) => pathAllowed(to, user?.modules));
   return (
     <div className="space-y-6">
+      <OnboardingWizard />
       <div>
         <h1 className="text-2xl font-bold text-navy">Dashboard</h1>
         <p className="text-sm text-slate-500">Your institute website, courses, admissions, and fees — in one place.</p>

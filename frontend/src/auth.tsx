@@ -16,6 +16,7 @@ export type SessionUser = {
   productPack?: string;
   modules?: string[];
   capabilities?: string[];
+  onboardingComplete?: boolean;
 };
 
 type SessionResponse = { token: string; user: SessionUser };

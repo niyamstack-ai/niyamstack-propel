@@ -62,16 +62,17 @@ public final class Access {
         }
         Set<String> caps = Packs.capsFor(role, user.capabilitiesCsv());
         return switch (area) {
-            case "SETUP" -> false;
-            case "CRM" -> Roles.COUNSELOR.equals(role);
+            case "SETUP" -> caps.contains(Packs.CAP_STAFF_MANAGE);
+            case "CRM" -> Roles.COUNSELOR.equals(role) || caps.contains(Packs.CAP_CRM);
             case "SIS" -> Roles.COUNSELOR.equals(role) || caps.contains(Packs.CAP_STUDENTS);
-            case "LMS" -> Roles.FACULTY.equals(role) || caps.contains(Packs.CAP_EXAMS);
+            case "LMS" -> Roles.FACULTY.equals(role) || caps.contains(Packs.CAP_EXAMS) || caps.contains(Packs.CAP_LMS);
             case "FEES" -> Roles.ACCOUNTANT.equals(role) || caps.contains(Packs.CAP_VIEW_FEES) || caps.contains(Packs.CAP_REFUND);
-            case "PLACEMENT" -> Set.of(Roles.PLACEMENT_HEAD, Roles.RECRUITER).contains(role);
+            case "PLACEMENT" -> Set.of(Roles.PLACEMENT_HEAD, Roles.RECRUITER).contains(role) || caps.contains(Packs.CAP_PLACEMENT);
             case "COMMS" -> Set.of(Roles.COUNSELOR, Roles.FACULTY, Roles.PLACEMENT_HEAD).contains(role);
             case "GROWTH" -> Roles.COUNSELOR.equals(role);
-            case "ESS" -> Roles.ACCOUNTANT.equals(role) || Roles.FACULTY.equals(role);
-            case "ADMIN" -> false;
+            case "ESS" -> Roles.ACCOUNTANT.equals(role) || Roles.FACULTY.equals(role)
+                    || caps.contains(Packs.CAP_ESS_VIEW) || caps.contains(Packs.CAP_ESS_MANAGE);
+            case "ADMIN" -> caps.contains(Packs.CAP_ANALYTICS);
             default -> false;
         };
     }

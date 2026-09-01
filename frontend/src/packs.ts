@@ -27,6 +27,14 @@ export const STAFF_RIGHTS = [
   { id: "VIEW_FEES", label: "See fees" },
   { id: "REFUND", label: "Refund" },
   { id: "EXAMS", label: "Exams" },
+  { id: "ESS_VIEW", label: "ESS self-service" },
+  { id: "ESS_MANAGE", label: "Manage HR records" },
+  { id: "LEAVE_APPROVE", label: "Approve leave" },
+  { id: "STAFF_MANAGE", label: "Manage staff logins" },
+  { id: "ANALYTICS", label: "View analytics" },
+  { id: "CRM", label: "Admissions / CRM" },
+  { id: "PLACEMENT", label: "Placement" },
+  { id: "LMS", label: "LMS / academics" },
 ];
 
 export function modulesForPack(id?: string | null) {

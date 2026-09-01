@@ -36,6 +36,7 @@ import { PeoplePage } from "./pages/PeoplePage";
 import { SelfServicePage } from "./pages/SelfServicePage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { FeaturesPage } from "./pages/FeaturesPage";
+import { AuditPage } from "./pages/AuditPage";
 import { LmsPage } from "./pages/LmsPage";
 import { EssPage } from "./pages/EssPage";
 import { AcademicsPage } from "./pages/AcademicsPage";
@@ -214,6 +215,7 @@ export default function App() {
           <Route path="alumni" element={<AlumniPage />} />
           <Route path="comms" element={<CommsPage />} />
           <Route path="institute" element={<InstitutePage />} />
+          <Route path="audit" element={<AuditPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
         </Route>
       </Route>

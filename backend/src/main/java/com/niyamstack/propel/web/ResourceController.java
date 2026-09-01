@@ -20,7 +20,7 @@ import com.niyamstack.propel.security.Phones;
 import com.niyamstack.propel.security.Roles;
 import com.niyamstack.propel.security.SessionService;
 import com.niyamstack.propel.security.LicenseService;
-import com.niyamstack.propel.grow.GrowService;
+import com.niyamstack.propel.foundation.FoundationService;
 import com.niyamstack.propel.sis.SisService;
 import com.niyamstack.propel.sis.StudentAccountService;
 import org.springframework.http.HttpStatus;
@@ -49,10 +49,11 @@ public class ResourceController {
     private final EssService ess;
     private final SisService sis;
     private final GrowService grow;
+    private final FoundationService foundation;
 
     public ResourceController(Store store, DataScope scope, LmsService lms, PasswordEncoder encoder, FeeService fees,
                               StudentAccountService studentAccounts, SessionService sessions, LicenseService licenses,
-                              EssService ess, SisService sis, GrowService grow) {
+                              EssService ess, SisService sis, GrowService grow, FoundationService foundation) {
         this.store = store;
         this.scope = scope;
         this.lms = lms;
@@ -64,6 +65,7 @@ public class ResourceController {
         this.ess = ess;
         this.sis = sis;
         this.grow = grow;
+        this.foundation = foundation;
     }
 
     @GetMapping("/features")
@@ -493,10 +495,11 @@ public class ResourceController {
         user.setPhone(phone);
         user.setRole(role);
         user.setActive(true);
-        user.setCapabilitiesCsv(capsCsv(body.capabilitiesCsv(), body.capabilities(), role));
+        user.setCapabilitiesCsv(Packs.sanitizeCapsCsv(body.capabilitiesCsv(), body.capabilities()));
         user.setPasswordHash(encoder.encode(temp));
         user.setPasswordChangedAt(Instant.now());
         user = store.save(user);
+        foundation.ensureEmployeeForStaff(user);
         Map<String, Object> out = new LinkedHashMap<>(staffView(user));
         out.put("tempPassword", temp);
         return out;
@@ -521,7 +524,7 @@ public class ResourceController {
             }
             user.setRole(role);
         }
-        user.setCapabilitiesCsv(capsCsv(body.capabilitiesCsv(), body.capabilities(), user.getRole()));
+        user.setCapabilitiesCsv(Packs.sanitizeCapsCsv(body.capabilitiesCsv(), body.capabilities()));
         return staffView(store.save(user));
     }
 
@@ -535,17 +538,8 @@ public class ResourceController {
         row.put("active", u.isActive());
         row.put("capabilitiesCsv", u.getCapabilitiesCsv() == null ? "" : u.getCapabilitiesCsv());
         row.put("capabilities", Packs.capsFor(u.getRole(), u.getCapabilitiesCsv()));
+        row.putAll(foundation.staffLinkInfo(u));
         return row;
-    }
-
-    private static String capsCsv(String csv, List<String> caps, String role) {
-        if (caps != null && !caps.isEmpty()) {
-            return String.join(",", caps.stream().map(c -> c.trim().toUpperCase()).filter(c -> !c.isEmpty()).toList());
-        }
-        if (csv != null && !csv.isBlank()) {
-            return csv.trim().toUpperCase();
-        }
-        return String.join(",", Packs.defaultCaps(role));
     }
 
     private void validateCoupon(Coupon body, UUID ignoreId) {

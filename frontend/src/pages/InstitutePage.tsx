@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { createRecord, updateRecord } from "../ops";
+import { api } from "../api";
+import { STAFF_RIGHTS } from "../packs";
 import { prettyLabel } from "../labels";
 import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, formatInr, useApi } from "../ui";
 
@@ -229,11 +231,98 @@ export function InstitutePage() {
           ))}
         </ul>
       </Card>
+      <InstituteRoles />
       <Card title="How payments and WhatsApp run">
         <p className="text-sm text-slate-500">
           Live Razorpay, WhatsApp, and email are switched on by Niyamstack with keys — see Settings → Integrations. This page is for institute profile, centres, and rooms.
         </p>
       </Card>
     </div>
+  );
+}
+
+type InstituteRole = { id: string; name: string; baseRole: string; capabilities?: string[] };
+
+function InstituteRoles() {
+  const roles = useApi<InstituteRole[]>("/api/foundation/institute-roles");
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [baseRole, setBaseRole] = useState("FACULTY");
+  const [caps, setCaps] = useState<string[]>(["EXAMS", "ESS_VIEW", "LMS"]);
+
+  async function saveRole() {
+    setError(null);
+    try {
+      await api("/api/foundation/institute-roles", {
+        method: "POST",
+        body: JSON.stringify({ name, baseRole, capabilities: caps }),
+      });
+      setName("");
+      roles.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function removeRole(id: string) {
+    setError(null);
+    try {
+      await api(`/api/foundation/institute-roles/${id}`, { method: "DELETE" });
+      roles.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <Card title="Staff role templates">
+      <p className="mb-3 text-sm text-slate-500">
+        Save reusable rights bundles (e.g. Senior counselor, HR executive). Apply them when inviting staff under People → Staff.
+      </p>
+      <ErrorText error={error} />
+      <Table
+        empty="No saved roles yet."
+        columns={["Name", "Base role", "Rights", ""]}
+        rows={(roles.data ?? []).map((r) => [
+          r.name,
+          prettyLabel(r.baseRole),
+          (r.capabilities ?? []).join(", ") || "—",
+          <button key={r.id} type="button" className="text-xs text-red-600 hover:underline" onClick={() => void removeRole(r.id)}>
+            Delete
+          </button>,
+        ])}
+      />
+      <FormGrid>
+        <Field label="Template name" value={name} onChange={setName} placeholder="Senior counselor" />
+        <Select
+          label="Base login role"
+          value={baseRole}
+          onChange={setBaseRole}
+          allowEmpty={false}
+          options={[
+            { value: "FACULTY", label: "Faculty" },
+            { value: "COUNSELOR", label: "Counselor" },
+            { value: "ACCOUNTANT", label: "Accountant" },
+            { value: "PLACEMENT_HEAD", label: "Placement head" },
+          ]}
+        />
+      </FormGrid>
+      <div className="mt-3 flex flex-wrap gap-3">
+        {STAFF_RIGHTS.map((r) => {
+          const on = caps.includes(r.id);
+          return (
+            <label key={r.id} className="flex cursor-pointer items-center gap-1.5 text-xs">
+              <input type="checkbox" checked={on} onChange={() => setCaps(on ? caps.filter((x) => x !== r.id) : [...caps, r.id])} />
+              {r.label}
+            </label>
+          );
+        })}
+      </div>
+      <div className="mt-3">
+        <PrimaryButton disabled={!name} onClick={() => void saveRole()}>
+          Save role template
+        </PrimaryButton>
+      </div>
+    </Card>
   );
 }
