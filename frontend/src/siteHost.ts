@@ -17,8 +17,12 @@ export function cleanHost(value?: string | null) {
 
 export function isProductHost(hostname = window.location.hostname) {
   const host = hostname.toLowerCase();
-  // Only Propel admin hosts — not institute sites like nexusitacad.niyamstack.com
-  return host === "localhost" || host === "127.0.0.1" || host.includes("propel");
+  return (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host.endsWith("niyamstack.com") ||
+    host.includes("propel")
+  );
 }
 
 export function studentPreviewPath(slug?: string, path = "") {
