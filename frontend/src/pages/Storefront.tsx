@@ -550,12 +550,19 @@ function CatalogPage() {
     <div className="space-y-6">
       {banners.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2">
-          {banners.map((b) => (
-            <a key={b.id} href={b.linkUrl || "#"} className="overflow-hidden rounded-2xl border border-line bg-white">
-              {b.imageUrl && <img src={b.imageUrl} alt="" className="h-28 w-full object-cover" />}
-              <p className="p-3 text-sm font-medium text-navy">{b.title}</p>
-            </a>
-          ))}
+          {banners.map((b) =>
+            b.linkUrl ? (
+              <a key={b.id} href={b.linkUrl} className="overflow-hidden rounded-2xl border border-line bg-white">
+                {b.imageUrl && <img src={b.imageUrl} alt="" className="h-28 w-full object-cover" />}
+                <p className="p-3 text-sm font-medium text-navy">{b.title}</p>
+              </a>
+            ) : (
+              <div key={b.id} className="overflow-hidden rounded-2xl border border-line bg-white">
+                {b.imageUrl && <img src={b.imageUrl} alt="" className="h-28 w-full object-cover" />}
+                <p className="p-3 text-sm font-medium text-navy">{b.title}</p>
+              </div>
+            ),
+          )}
         </div>
       )}
       {home?.body ? <PageSections body={home.body} catalog={grid} slug={slug} /> : (

@@ -362,13 +362,7 @@ export function CreateCourseWizard() {
                   </label>
                 </div>
               ))}
-              <button
-                type="button"
-                className="text-sm font-medium text-brand"
-                onClick={() => setCategoryRows((rows) => [...rows, { category: "", subCategory: "" }])}
-              >
-                + Add Another Category
-              </button>
+              <p className="text-xs text-slate-500">Category is saved with the course. Pick the best primary category for the catalog.</p>
             </div>
             <aside className="min-w-0 border-t border-line bg-[#f4f8fc] p-5 xl:border-l xl:border-t-0">
               <h3 className="font-semibold text-navy">Course options</h3>
@@ -650,6 +644,16 @@ export function CreateCourseWizard() {
             map[key]?.(value);
           }}
           onClose={() => setAdvancedOpen(false)}
+          saving={busy}
+          onSave={() =>
+            void run(async () => {
+              if (!name.trim()) {
+                throw new Error("Enter a course name before saving advanced settings.");
+              }
+              await persist(live);
+              setAdvancedOpen(false);
+            })
+          }
         />
       )}
     </div>
@@ -755,10 +759,14 @@ function AdvancedSettings({
   values,
   onChange,
   onClose,
+  onSave,
+  saving,
 }: {
   values: Record<string, boolean | string>;
   onChange: (key: string, value: boolean | string) => void;
   onClose: () => void;
+  onSave: () => void;
+  saving?: boolean;
 }) {
   const b = (k: string) => Boolean(values[k]);
   return (
@@ -792,8 +800,13 @@ function AdvancedSettings({
           <SettingCard title="Allow course preview" hint="Let visitors preview selected lessons" on={b("allowPreview")} onChange={(v) => onChange("allowPreview", v)} />
         </div>
         <div className="border-t border-line px-5 py-4 text-right">
-          <button type="button" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white" onClick={onClose}>
-            Save Advanced Settings
+          <button
+            type="button"
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            disabled={saving}
+            onClick={onSave}
+          >
+            {saving ? "Saving…" : "Save Advanced Settings"}
           </button>
         </div>
       </div>

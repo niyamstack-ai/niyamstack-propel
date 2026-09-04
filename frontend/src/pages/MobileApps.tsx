@@ -267,7 +267,9 @@ function FacultyAttend({
         {students.map((s) => (
           <li key={s.id} className="flex items-center justify-between gap-2">
             <span>{s.fullName}</span>
-            <PrimaryButton onClick={() => mark(s.id)}>Present</PrimaryButton>
+            <PrimaryButton disabled={!batchId} onClick={() => mark(s.id)}>
+              Present
+            </PrimaryButton>
           </li>
         ))}
         {students.length === 0 && <li className="text-slate-500">Pick a batch.</li>}

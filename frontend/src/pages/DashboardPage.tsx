@@ -232,7 +232,7 @@ function OwnerHome() {
     buyNowClicks?: number;
     transactions?: number;
     revenue?: number;
-  }>("/api/actions/dashboard");
+  }>("/api/actions/dashboard?days=30");
   const scorecard = useApi<{ conversionPct: number; placementPct: number; avgReadiness: number; atRisk: number }>(
     growth && pathAllowed("/analytics", user?.modules) ? "/api/actions/analytics/scorecard?days=30" : "",
   );
@@ -271,7 +271,7 @@ function OwnerHome() {
           <HomeLink to="/website" title="Student website" text="Build pages, then connect your domain. Students log in there." />
         )}
         {pathAllowed("/your-app", user?.modules) && (
-          <HomeLink to="/m" title="Mobile apps" text="Student and faculty phones: attendance, fees, notices, mark class." />
+          <HomeLink to="/your-app" title="Mobile apps" text="Student and faculty phones: attendance, fees, notices, mark class." />
         )}
       </div>
       <div>
@@ -319,17 +319,17 @@ function OwnerHome() {
         </div>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Link to="/people/students">
-          <PrimaryButton>Enroll student</PrimaryButton>
+        <Link to="/people/students" className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">
+          Enroll student
         </Link>
-        <Link to="/crm">
-          <PrimaryButton>New lead</PrimaryButton>
+        <Link to="/crm" className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">
+          New lead
         </Link>
-        <Link to="/fees">
-          <PrimaryButton>Collect fees</PrimaryButton>
+        <Link to="/fees" className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">
+          Collect fees
         </Link>
-        <Link to="/courses">
-          <PrimaryButton>Open courses</PrimaryButton>
+        <Link to="/courses" className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">
+          Open courses
         </Link>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

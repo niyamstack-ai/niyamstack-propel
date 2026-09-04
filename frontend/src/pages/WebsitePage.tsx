@@ -201,22 +201,27 @@ export function WebsitePage() {
 
   async function saveDomain() {
     if (!org.data) return;
-    const domain = cleanHost(customDomain);
-    const previous = (() => {
-      try {
-        return JSON.parse(org.data.settingsJson || "{}") as Record<string, unknown>;
-      } catch {
-        return {};
-      }
-    })();
-    await updateRecord("/api/organization", {
-      ...org.data,
-      customDomain: domain,
-      websiteUrl: domain ? `https://${domain}` : previewPath,
-      websitePublished: true,
-      settingsJson: JSON.stringify({ ...previous, domain: { hostTarget: HOST_TARGET, status: domain ? "PENDING" : "" } }),
-    });
-    org.reload();
+    setError(null);
+    try {
+      const domain = cleanHost(customDomain);
+      const previous = (() => {
+        try {
+          return JSON.parse(org.data.settingsJson || "{}") as Record<string, unknown>;
+        } catch {
+          return {};
+        }
+      })();
+      await updateRecord("/api/organization", {
+        ...org.data,
+        customDomain: domain,
+        websiteUrl: domain ? `https://${domain}` : previewPath,
+        websitePublished: true,
+        settingsJson: JSON.stringify({ ...previous, domain: { hostTarget: HOST_TARGET, status: domain ? "PENDING" : "" } }),
+      });
+      org.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
 
   function addBlock(type: SectionType) {
@@ -259,9 +264,13 @@ export function WebsitePage() {
   }
 
   async function copyLiveUrl() {
-    await navigator.clipboard.writeText(liveUrl).catch(() => undefined);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1600);
+    try {
+      await navigator.clipboard.writeText(liveUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError("Could not copy the link. Select and copy it manually.");
+    }
   }
 
   const catalog = (
@@ -365,7 +374,7 @@ export function WebsitePage() {
                     {p.title}
                   </span>
                 ))}
-                <span className="rounded-full bg-brand px-3 py-1 text-xs font-semibold text-white">Login</span>
+                <span className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-400">Login (preview)</span>
               </div>
             </header>
             <div className="space-y-6 p-6">

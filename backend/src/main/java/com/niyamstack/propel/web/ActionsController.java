@@ -1318,7 +1318,8 @@ public class ActionsController {
         out.put("revenue", paid);
         out.putAll(fees.financeDashboard(days));
         List<AttendanceRecord> attendance = store.list(AttendanceRecord.class, org).stream()
-                .filter(a -> a.getSessionDate() != null && !a.getSessionDate().isBefore(LocalDate.now().minusDays(days)))
+                .filter(a -> a.getSessionDate() != null && !a.getSessionDate().isBefore(
+                        LocalDate.now().minusDays(days > 0 ? days : 30)))
                 .toList();
         long presentMarks = attendance.stream()
                 .filter(a -> "PRESENT".equalsIgnoreCase(a.getStatus()) || "LATE".equalsIgnoreCase(a.getStatus()))

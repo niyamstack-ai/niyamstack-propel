@@ -132,6 +132,7 @@ function roleNav(role?: string): NavEntry[] {
           items: [
             { to: "/people/students", label: "Students" },
             { to: "/people/staff", label: "Staff" },
+            { to: "/people/employees", label: "Employees" },
             { to: "/people/alumni", label: "Alumni" },
             { to: "/ess", label: "ESS" },
           ],

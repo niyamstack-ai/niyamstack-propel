@@ -305,7 +305,7 @@ export function AnalyticsPage() {
               </Link>
             </li>
             <li>
-              <Link className="text-brand hover:underline" to="/courses">
+              <Link className="text-brand hover:underline" to="/courses?view=backend">
                 Add student to a course
               </Link>
             </li>

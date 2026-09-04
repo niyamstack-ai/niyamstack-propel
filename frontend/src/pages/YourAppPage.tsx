@@ -111,9 +111,16 @@ export function YourAppPage() {
               <a className="rounded-full border border-line px-4 py-2 text-sm" href="/m">
                 Open student / faculty app
               </a>
-              <a className="rounded-full border border-line px-4 py-2 text-sm" href={org.data?.appShareUrl || `/s/${org.data?.slug || "aarohan"}/app`}>
-                Install prompt
-              </a>
+              {(appUrl || org.data?.appShareUrl || org.data?.slug) && (
+                <a
+                  className="rounded-full border border-line px-4 py-2 text-sm"
+                  href={appUrl || org.data?.appShareUrl || `/s/${org.data?.slug}/app`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Install prompt
+                </a>
+              )}
             </div>
           </Card>
           <Card title="Preview">

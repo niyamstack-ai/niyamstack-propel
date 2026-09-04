@@ -84,8 +84,8 @@ function MyFees() {
             `₹${inv.amount}`,
             formatDay(inv.dueDate) || "—",
             inv.status,
-            inv.status === "PAID" ? (
-              "Paid"
+            inv.status === "PAID" || inv.status === "CANCELLED" || inv.status === "VOID" ? (
+              inv.status === "PAID" ? "Paid" : prettyLabel(inv.status)
             ) : (
               <PrimaryButton
                 onClick={async () => {

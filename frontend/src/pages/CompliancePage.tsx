@@ -67,7 +67,7 @@ export function CompliancePage() {
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Stat label="Exports (30d)" value={hub.data.exportsLast30Days ?? 0} />
           <Stat label="Pending deletes" value={hub.data.pendingDeleteRequests ?? 0} />
-          <Stat label="Open tickets" value={hub.data.openSupportTickets ?? 0} to="/analytics" />
+          <Stat label="Open tickets" value={hub.data.openSupportTickets ?? 0} to="/support" />
           <Stat label="Billing" value={hub.data.paymentStatus ?? "—"} />
         </div>
       )}

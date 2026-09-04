@@ -240,7 +240,7 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
                       locations: loc,
                       status: "OPEN",
                       minAttendancePct: Number(minAtt),
-                      deadline: new Date().toISOString().slice(0, 10),
+                      deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
                     });
                     setTitle("");
                     drives.reload();

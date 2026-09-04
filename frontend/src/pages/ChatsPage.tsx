@@ -80,7 +80,9 @@ export function ChatsPage() {
             <Field label="Subject" value={subject} onChange={setSubject} />
           </FormGrid>
           <div className="mt-3">
-            <PrimaryButton onClick={startThread}>New chat</PrimaryButton>
+            <PrimaryButton disabled={!studentId || !subject.trim()} onClick={startThread}>
+              New chat
+            </PrimaryButton>
           </div>
           <ul className="mt-4 space-y-2 text-sm">
             {(threads.data ?? []).map((t) => (

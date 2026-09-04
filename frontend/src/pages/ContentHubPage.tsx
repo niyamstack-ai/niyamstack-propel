@@ -139,18 +139,37 @@ export function ContentHubPage() {
             <Select
               label="Type"
               value={mType}
-              onChange={setMType}
+              onChange={(v) => {
+                setMType(v);
+                if (v !== "TEST") setUrl("");
+              }}
               options={[
                 { value: "DOCUMENT", label: "Document" },
                 { value: "VIDEO", label: "Video (YouTube)" },
                 { value: "TEST", label: "Test" },
               ]}
             />
-            <FileUpload label="Upload file" value={url} onChange={(v) => { setUrl(v); setFileName(v.split("/").pop() || fileName); }} accept="image/*,.pdf,.doc,.docx,.mp4,video/*,.zip" />
-            <Field label="Or YouTube / file URL" value={url} onChange={setUrl} />
+            {mType === "TEST" ? (
+              <Select
+                label="LMS assessment"
+                value={url}
+                onChange={(v) => {
+                  setUrl(v);
+                  const picked = (tests.data ?? []).find((t) => t.id === v);
+                  if (picked && !title.trim()) setTitle(picked.title);
+                  setFileName(picked?.title || "");
+                }}
+                options={(tests.data ?? []).map((t) => ({ value: t.id, label: t.title }))}
+              />
+            ) : (
+              <>
+                <FileUpload label="Upload file" value={url} onChange={(v) => { setUrl(v); setFileName(v.split("/").pop() || fileName); }} accept="image/*,.pdf,.doc,.docx,.mp4,video/*,.zip" />
+                <Field label="Or YouTube / file URL" value={url} onChange={setUrl} />
+              </>
+            )}
           </FormGrid>
           <div className="mt-3">
-            <PrimaryButton disabled={!title} onClick={addMaterial}>
+            <PrimaryButton disabled={!title || (mType === "TEST" && !url)} onClick={addMaterial}>
               Add free material
             </PrimaryButton>
           </div>

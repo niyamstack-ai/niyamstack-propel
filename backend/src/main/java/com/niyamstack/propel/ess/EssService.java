@@ -1798,7 +1798,7 @@ public class EssService {
 
     private void requireEss() {
         Access.requireTenant(Auth.current());
-        Access.requireModule(Auth.current(), Packs.MOD_ESS);
+        Access.requireAnyModule(Auth.current(), Packs.MOD_ESS, Packs.MOD_STAFF);
         if (Roles.STUDENT.equals(Auth.current().role()) || Roles.PARENT.equals(Auth.current().role())
                 || Roles.RECRUITER.equals(Auth.current().role())) {
             throw new ApiException(HttpStatus.FORBIDDEN, "ESS is for institute staff");

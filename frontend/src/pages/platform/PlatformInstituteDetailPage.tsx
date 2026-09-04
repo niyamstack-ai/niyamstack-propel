@@ -135,7 +135,7 @@ export function PlatformInstituteDetailPage() {
           )}
           {canApprove && (
             <PrimaryButton
-              disabled={saving || !!acting}
+              disabled={saving || !!acting || !paid}
               onClick={() => action("approve", "approve", active ? "Already active." : "Institute activated.")}
             >
               {acting === "approve" ? "Approving…" : "Approve / activate"}

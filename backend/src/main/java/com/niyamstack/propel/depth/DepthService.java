@@ -506,6 +506,7 @@ public class DepthService {
         en.put("people", "People");
         en.put("students", "Students");
         en.put("staff", "Staff");
+        en.put("employees", "Employees");
         en.put("alumni", "Alumni");
         en.put("ess", "ESS");
         en.put("admissions", "Admissions");
@@ -559,6 +560,7 @@ public class DepthService {
         hi.put("people", "लोग");
         hi.put("students", "छात्र");
         hi.put("staff", "स्टाफ");
+        hi.put("employees", "कर्मचारी");
         hi.put("alumni", "पूर्व छात्र");
         hi.put("ess", "ईएसएस");
         hi.put("admissions", "प्रवेश");

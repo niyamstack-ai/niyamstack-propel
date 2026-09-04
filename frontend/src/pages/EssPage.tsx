@@ -741,7 +741,11 @@ function AttendanceTab({ hr }: { hr: boolean }) {
 
   async function mark() {
     setError(null);
-    const id = hr ? employeeId || selfId : selfId;
+    if (hr && !employeeId) {
+      setError("Select an employee before saving attendance.");
+      return;
+    }
+    const id = hr ? employeeId : selfId;
     if (!id) {
       setError("Employee profile is still loading. Try again in a moment.");
       return;
@@ -848,7 +852,9 @@ function AttendanceTab({ hr }: { hr: boolean }) {
           <Field label="Out time" type="time" value={outTime} onChange={setOutTime} />
         </FormGrid>
         <div className="mt-3">
-          <PrimaryButton onClick={() => void mark()}>Save attendance</PrimaryButton>
+          <PrimaryButton disabled={hr && !employeeId} onClick={() => void mark()}>
+            Save attendance
+          </PrimaryButton>
         </div>
       </Card>
       <Card title="Request attendance correction">

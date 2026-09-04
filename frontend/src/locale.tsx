@@ -88,6 +88,7 @@ export function labelKey(label: string) {
     People: "people",
     Students: "students",
     Staff: "staff",
+    Employees: "employees",
     Alumni: "alumni",
     ESS: "ess",
     Admissions: "admissions",
