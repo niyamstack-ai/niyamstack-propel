@@ -47,7 +47,9 @@ function MyFees() {
   const receipts = useApi<{ id: string; receiptNo: string; amount: number; issuedAt?: string }[]>("/api/receipts");
   const plans = useApi<Plan[]>("/api/fee-plans");
   const [error, setError] = useState<string | null>(null);
-  const unpaid = (invoices.data ?? []).filter((inv) => inv.status !== "PAID" && inv.status !== "CANCELLED");
+  const unpaid = (invoices.data ?? []).filter(
+    (inv) => inv.status !== "PAID" && inv.status !== "CANCELLED" && inv.status !== "VOID",
+  );
   const dueTotal = unpaid.reduce((sum, inv) => sum + Number(inv.amount || 0) - Number(inv.paidAmount || 0), 0);
 
   async function openReceipt(id: string) {
@@ -98,7 +100,7 @@ function MyFees() {
           rows={(invoices.data ?? []).map((inv) => [
             inv.invoiceNo,
             (plans.data ?? []).find((p) => p.id === inv.feePlanId)?.name || "Course fees",
-            `₹${inv.amount}`,
+            `₹${Math.max(0, Number(inv.amount || 0) - Number(inv.paidAmount || 0))}`,
             formatDay(inv.dueDate) || "—",
             inv.status,
             inv.status === "PAID" || inv.status === "CANCELLED" || inv.status === "VOID" ? (

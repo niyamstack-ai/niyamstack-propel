@@ -53,7 +53,9 @@ function StudentJobs() {
         {(drives.data ?? []).length === 0 && <p className="mb-3 text-sm text-slate-500">No open drives right now.</p>}
         <Table
           columns={["Drive", "Package", "Locations", ""]}
-          rows={(drives.data ?? []).map((d) => {
+          rows={(drives.data ?? [])
+            .filter((d) => !d.status || d.status === "OPEN" || d.status === "ACTIVE")
+            .map((d) => {
             const applied = (apps.data ?? []).some((a) => a.driveId === d.id);
             return [
             d.title,

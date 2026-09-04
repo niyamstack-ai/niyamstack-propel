@@ -449,15 +449,6 @@ public class EssService {
         p.setSlAnnual(money(body, "slAnnual").max(BigDecimal.ZERO));
         p.setElAnnual(money(body, "elAnnual").max(BigDecimal.ZERO));
         p.setExcludeHolidays(bool(body, "excludeHolidays"));
-        if (p.getClAnnual().signum() == 0) {
-            p.setClAnnual(CL_DEFAULT);
-        }
-        if (p.getSlAnnual().signum() == 0) {
-            p.setSlAnnual(SL_DEFAULT);
-        }
-        if (p.getElAnnual().signum() == 0) {
-            p.setElAnnual(EL_DEFAULT);
-        }
         p = store.save(p);
         return leavePolicy();
     }
@@ -1227,11 +1218,13 @@ public class EssService {
         punch.setPunchAt(at);
         punch.setPunchType(type);
         punch.setRawRef(blank(rawRef, code));
+        if (employee != null && student != null) {
+            throw new ApiException(HttpStatus.CONFLICT, "This code matches both an employee and a student — use a unique code");
+        }
         if (employee != null) {
             punch.setEmployeeId(employee.getId());
             upsertStaffDay(org, employee, LocalDate.now(), type, at);
-        }
-        if (student != null) {
+        } else if (student != null) {
             punch.setStudentId(student.getId());
             upsertStudentDay(org, student, LocalDate.now());
         }
@@ -1280,7 +1273,7 @@ public class EssService {
         if ("OUT".equals(type)) {
             rec.setOutTime(clock);
             if (rec.getInTime() == null) {
-                rec.setInTime(clock);
+                rec.setStatus("INCOMPLETE");
             }
         } else {
             rec.setInTime(clock);

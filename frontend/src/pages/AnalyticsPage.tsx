@@ -353,11 +353,11 @@ export function AnalyticsPage() {
         </Card>
       </div>
 
+      {growth && (
       <Card title="Report builder v2">
         <p className="mb-3 text-sm text-slate-500">
           Pick a dataset, optional filters, save it, run it, and email it on a weekly schedule. Requires Growth tier.
         </p>
-        {!growth && <p className="mb-3 text-sm text-amber-700">Upgrade to Growth to save and run custom reports.</p>}
         <FormGrid>
           <Field label="Report name" value={reportName} onChange={setReportName} />
           <Select
@@ -469,6 +469,7 @@ export function AnalyticsPage() {
           />
         )}
       </Card>
+      )}
 
       <Card title="Faculty performance">
         {faculty.error ? <ErrorText error={faculty.error} /> : null}

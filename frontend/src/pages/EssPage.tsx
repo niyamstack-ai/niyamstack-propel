@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { createRecord } from "../ops";
+import { createRecord, deleteRecord } from "../ops";
 import { useAuth } from "../auth";
 import { prettyLabel } from "../labels";
 import { useLocale } from "../locale";
@@ -317,8 +317,7 @@ function ProfileTab({ hr }: { hr: boolean }) {
               <PrimaryButton disabled={!storageUrl} onClick={() => void addDoc()}>Add document</PrimaryButton>
             </div>
           </Card>
-          {!hr && (
-            <Card title="Resignation">
+          <Card title="Resignation">
               <p className="mb-3 text-sm text-slate-500">Submit your notice period request to HR.</p>
               <FormGrid>
                 <Field label="Last working date" type="date" value={resignDate} onChange={setResignDate} />
@@ -330,7 +329,6 @@ function ProfileTab({ hr }: { hr: boolean }) {
                 <PrimaryButton disabled={!resignDate} onClick={() => void submitResignation()}>Submit resignation</PrimaryButton>
               </div>
             </Card>
-          )}
         </>
       )}
       {hr && (
@@ -763,6 +761,7 @@ function AttendanceTab({ hr }: { hr: boolean }) {
   const [inTime, setInTime] = useState("");
   const [outTime, setOutTime] = useState("");
   const [regDate, setRegDate] = useState(today());
+  const [regShift, setRegShift] = useState("FULL");
   const [regStatus, setRegStatus] = useState("PRESENT");
   const [regReason, setRegReason] = useState("");
 
@@ -795,10 +794,14 @@ function AttendanceTab({ hr }: { hr: boolean }) {
 
   async function requestReg() {
     setError(null);
+    if (!regReason.trim()) {
+      setError("Reason is required for a correction.");
+      return;
+    }
     try {
       await api("/api/actions/ess/regularization", {
         method: "POST",
-        body: JSON.stringify({ workDate: regDate, shift, requestedStatus: regStatus, reason: regReason }),
+        body: JSON.stringify({ workDate: regDate, shift: regShift, requestedStatus: regStatus, reason: regReason }),
       });
       regs.reload();
       setRegReason("");
@@ -901,6 +904,17 @@ function AttendanceTab({ hr }: { hr: boolean }) {
         <FormGrid>
           <Field label="Date to correct" type="date" value={regDate} onChange={setRegDate} />
           <Select
+            label="Shift"
+            value={regShift}
+            onChange={setRegShift}
+            allowEmpty={false}
+            options={[
+              { value: "FULL", label: "Full day" },
+              { value: "MORNING", label: "Morning" },
+              { value: "EVENING", label: "Evening" },
+            ]}
+          />
+          <Select
             label="Correct status"
             value={regStatus}
             onChange={setRegStatus}
@@ -916,7 +930,7 @@ function AttendanceTab({ hr }: { hr: boolean }) {
           <TextArea label="Reason" value={regReason} onChange={setRegReason} rows={2} />
         </div>
         <div className="mt-3">
-          <PrimaryButton onClick={() => void requestReg()}>Submit correction</PrimaryButton>
+          <PrimaryButton disabled={!regReason.trim()} onClick={() => void requestReg()}>Submit correction</PrimaryButton>
         </div>
       </Card>
     </>
@@ -998,6 +1012,17 @@ function LeaveTab({ hr, manager }: { hr: boolean; manager: boolean }) {
     }
   }
 
+  async function removeHoliday(id: string) {
+    setError(null);
+    try {
+      await deleteRecord(`/api/holidays/${id}`);
+      holidays.reload();
+      setNotice("Holiday removed.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   return (
     <>
       <ErrorText error={error || leaves.error} />
@@ -1005,8 +1030,18 @@ function LeaveTab({ hr, manager }: { hr: boolean; manager: boolean }) {
       <Card title="Institute holidays">
         <Table
           empty="No holidays listed yet."
-          columns={["Date", "Name"]}
-          rows={(holidays.data ?? []).map((h) => [formatDay(h.holidayDate) || "—", h.name])}
+          columns={hr ? ["Date", "Name", ""] : ["Date", "Name"]}
+          rows={(holidays.data ?? []).map((h) =>
+            hr
+              ? [
+                  formatDay(h.holidayDate) || "—",
+                  h.name,
+                  <LinkButton key={h.id} onClick={() => void removeHoliday(h.id)}>
+                    Delete
+                  </LinkButton>,
+                ]
+              : [formatDay(h.holidayDate) || "—", h.name],
+          )}
         />
         {hr && (
           <>
@@ -1366,8 +1401,23 @@ function PayrollTab({ hr }: { hr: boolean }) {
         {hr && (
           <>
             <FormGrid>
-              <Field label="Year" value={year} onChange={setYear} />
-              <Field label="Month" value={month} onChange={setMonth} placeholder="1-12" />
+              <Select
+                label="Year"
+                value={year}
+                onChange={setYear}
+                allowEmpty={false}
+                options={[0, 1, 2].map((i) => {
+                  const y = String(new Date().getFullYear() - 1 + i);
+                  return { value: y, label: y };
+                })}
+              />
+              <Select
+                label="Month"
+                value={month}
+                onChange={setMonth}
+                allowEmpty={false}
+                options={Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))}
+              />
             </FormGrid>
             <div className="mb-3 mt-3 flex flex-wrap gap-2">
               <PrimaryButton onClick={() => void runPreview()}>Preview payroll</PrimaryButton>
@@ -1514,8 +1564,8 @@ function HiringTab() {
             c.fullName,
             c.jobTitle || "—",
             prettyLabel(c.status),
-            c.status === "HIRED" ? (
-              "Hired"
+            c.status === "HIRED" || c.status === "REJECTED" ? (
+              prettyLabel(c.status)
             ) : (
               <span key={c.id} className="flex flex-wrap gap-2">
                 {c.status === "APPLIED" && <LinkButton onClick={() => void advance(c.id, "INTERVIEW")}>Interview</LinkButton>}
@@ -1735,6 +1785,7 @@ function CompensationTab() {
             label="Plan type"
             value={planType}
             onChange={setPlanType}
+            allowEmpty={false}
             options={[
               { value: "HOURLY", label: "Hourly (from attendance punches)" },
               { value: "PER_BATCH", label: "Per batch" },

@@ -49,7 +49,7 @@ export function SupportPage() {
         <TextArea label="Details" value={body} onChange={setBody} rows={3} />
         <div className="mt-3">
           <PrimaryButton
-            disabled={!subject}
+            disabled={!subject.trim() || !body.trim()}
             onClick={async () => {
               setError(null);
               try {

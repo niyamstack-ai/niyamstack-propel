@@ -310,17 +310,29 @@ function StorefrontShell() {
         ? "Fees"
         : path.includes("/jobs")
           ? "Jobs"
-            : path.includes("/notices")
-              ? "Notices"
-              : path.includes("/chats")
-                ? "Chat"
-                : path.includes("/forgot")
-                  ? "Forgot password"
-                  : path.includes("/learn")
-              ? "My learning"
-              : path.includes("/login")
-                ? "Login"
-                : "Courses";
+          : path.includes("/notices")
+            ? "Notices"
+            : path.includes("/chats")
+              ? "Chat"
+              : path.includes("/forgot")
+                ? "Forgot password"
+                : path.includes("/learn")
+                  ? "My learning"
+                  : path.includes("/login")
+                    ? "Login"
+                    : path.includes("/register")
+                      ? "Register"
+                      : path.includes("/app")
+                        ? "Install app"
+                        : path.includes("/one-to-one") || path.includes("/1-1")
+                          ? "1:1 booking"
+                          : path.includes("/l/")
+                            ? "Landing"
+                            : path.includes("/p/")
+                              ? "Page"
+                              : path.match(/\/courses\/[^/]+/)
+                                ? "Course"
+                                : "Courses";
     document.title = `${site.name} · ${page}`;
     const link = document.querySelector('link[rel="manifest"]') as HTMLLinkElement | null;
     if (link && slug) link.href = `/api/public/sites/${slug}/manifest`;
@@ -929,8 +941,8 @@ function StudentLoginPage() {
   const slug = useSlug();
   const { token, user, loginWithOtp, login } = useAuth();
   const navigate = useNavigate();
-  const [params] = useMemo(() => [new URLSearchParams(window.location.search)], []);
-  const next = params.get("next") || `${sitePath(slug)}/learn`;
+  const [searchParams] = useSearchParams();
+  const next = searchParams.get("next") || `${sitePath(slug)}/learn`;
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [email, setEmail] = useState("");
@@ -1012,6 +1024,7 @@ function StudentLoginPage() {
       )}
       {mode === "otp" && sent && (
         <form className="mt-4 space-y-3" onSubmit={verify}>
+          {sent.devOtp && <p className="text-xs text-slate-400">Local OTP: {sent.devOtp}</p>}
           <input className="w-full rounded-lg border border-line px-3 py-2 tracking-[0.3em]" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="OTP" />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
@@ -1058,7 +1071,8 @@ function StudentRegisterPage() {
   const { site } = useSite(slug);
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const courseId = params.get("course") || undefined;
+  const courseParam = params.get("course") || undefined;
+  const [resolvedCourseId, setResolvedCourseId] = useState<string | undefined>();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -1066,6 +1080,23 @@ function StudentRegisterPage() {
   const [sent, setSent] = useState<{ phone?: string; devOtp?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!courseParam || !slug) {
+      setResolvedCourseId(undefined);
+      return;
+    }
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(courseParam)) {
+      setResolvedCourseId(courseParam);
+      return;
+    }
+    void api<{ id: string; shareSlug?: string }[]>(`/api/public/sites/${slug}/courses`)
+      .then((list) => {
+        const hit = (list ?? []).find((c) => c.id === courseParam || c.shareSlug === courseParam);
+        setResolvedCourseId(hit?.id);
+      })
+      .catch(() => setResolvedCourseId(undefined));
+  }, [courseParam, slug]);
 
   if (token && user?.role === "STUDENT") {
     return <Navigate to={`${sitePath(slug)}/learn`} replace />;
@@ -1087,7 +1118,7 @@ function StudentRegisterPage() {
     try {
       const res = await api<{ phone?: string; devOtp?: string }>(`/api/public/sites/${slug}/register/otp`, {
         method: "POST",
-        body: JSON.stringify({ fullName: name, phone, email, courseId }),
+        body: JSON.stringify({ fullName: name, phone, email, courseId: resolvedCourseId }),
       });
       setSent(res);
     } catch (err) {
@@ -1137,6 +1168,14 @@ function StudentRegisterPage() {
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
             {busy ? "Creating…" : "Create account"}
           </button>
+          <div className="flex justify-between text-xs">
+            <button type="button" className="text-brand" onClick={() => { setSent(null); setOtp(""); }}>
+              Change number
+            </button>
+            <button type="button" className="text-brand" disabled={busy} onClick={() => void sendOtp({ preventDefault() {} } as FormEvent)}>
+              Resend OTP
+            </button>
+          </div>
         </form>
       )}
       <p className="mt-4 text-center text-sm text-slate-500">

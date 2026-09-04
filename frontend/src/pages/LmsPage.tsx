@@ -391,6 +391,10 @@ function AssignmentSubmitModal({
 
   async function submit() {
     setError(null);
+    if (!text.trim() && !fileUrl) {
+      setError("Add text or upload a file before submitting.");
+      return;
+    }
     setBusy(true);
     try {
       await api(`/api/actions/assignments/${assignment.id}/submit`, {
@@ -431,7 +435,7 @@ function AssignmentSubmitModal({
           <button type="button" className="rounded-lg px-3 py-2 text-sm" onClick={onClose}>
             Cancel
           </button>
-          <PrimaryButton disabled={busy} onClick={() => void submit()}>
+          <PrimaryButton disabled={busy || (!text.trim() && !fileUrl)} onClick={() => void submit()}>
             {busy ? "Submitting…" : "Submit work"}
           </PrimaryButton>
         </div>

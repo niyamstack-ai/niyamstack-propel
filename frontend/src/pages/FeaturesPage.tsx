@@ -12,7 +12,7 @@ type Feature = {
 
 const CATEGORY_LINKS: Record<string, { to: string; label: string }> = {
   CRM: { to: "/crm", label: "Open CRM" },
-  SIS: { to: "/students", label: "Open students" },
+  SIS: { to: "/people/students", label: "Open students" },
   LMS: { to: "/courses", label: "Open courses" },
   Fees: { to: "/fees", label: "Open fees" },
   Placement: { to: "/placement", label: "Open placement" },

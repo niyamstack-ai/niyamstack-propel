@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
 import { hasGrowthTier } from "../packs";
-import { Card, Table, formatInr, useApi } from "../ui";
+import { Card, ErrorText, Table, formatInr, useApi } from "../ui";
 
 type Hub = {
   days: number;
@@ -69,6 +69,7 @@ export function IntelligencePage() {
           <option value="90">Last 90 days</option>
         </select>
       </div>
+      <ErrorText error={hub.error || forecast.error || pnl.error} />
 
       {(hub.data?.alerts ?? []).length > 0 && (
         <Card title="Alerts">

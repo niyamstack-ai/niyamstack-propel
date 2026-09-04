@@ -204,7 +204,7 @@ export function TextArea({
 }
 
 export function FormGrid({ children }: { children: React.ReactNode }) {
-  return <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">{children}</div>;
+  return <div className="grid gap-3 md:grid-cols-2">{children}</div>;
 }
 
 export function ErrorText({ error }: { error?: string | null }) {

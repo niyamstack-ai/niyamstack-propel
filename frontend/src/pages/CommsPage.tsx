@@ -48,6 +48,10 @@ export function CommsPage() {
 
   async function saveTemplate() {
     if (!editTpl) return;
+    if (!editBody.trim()) {
+      setError("Template body is required.");
+      return;
+    }
     setError(null);
     try {
       const existing = (tpls.data ?? []).find((t) => t.id === editTpl);
@@ -117,6 +121,7 @@ export function CommsPage() {
         </ul>
       </Card>
       <div className="grid gap-4 lg:grid-cols-2">
+        {canSend && (
         <Card title="Message templates">
           <p className="mb-2 text-sm text-slate-500">Used for fee reminders and alerts. Placeholders: {"{{name}}"}, {"{{amount}}"}, {"{{invoice}}"}.</p>
           <ul className="mb-3 space-y-2 text-sm">
@@ -132,11 +137,13 @@ export function CommsPage() {
             <>
               <textarea className="min-h-20 w-full rounded-lg border border-line px-3 py-2 text-sm" value={editBody} onChange={(e) => setEditBody(e.target.value)} />
               <div className="mt-2">
-                <PrimaryButton onClick={() => void saveTemplate()}>Save template</PrimaryButton>
+                <PrimaryButton disabled={!editBody.trim()} onClick={() => void saveTemplate()}>Save template</PrimaryButton>
               </div>
             </>
           )}
         </Card>
+        )}
+        {canSend && (
         <Card title="Inbox">
           <ul className="space-y-2 text-sm">
             {(inbox.data ?? []).length === 0 && <li className="text-slate-500">No inbox messages.</li>}
@@ -198,6 +205,7 @@ export function CommsPage() {
             </div>
           )}
         </Card>
+        )}
       </div>
     </div>
   );

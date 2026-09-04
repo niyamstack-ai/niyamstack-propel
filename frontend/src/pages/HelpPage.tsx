@@ -59,10 +59,10 @@ export function HelpPage() {
             <p className="mt-2 text-sm text-slate-600">{steps[Math.min(step, steps.length - 1)].body}</p>
             <div className="mt-4 flex gap-2">
               <PrimaryButton disabled={step <= 0} onClick={() => setStep((s) => Math.max(0, s - 1))}>
-                Back
+                {locale === "hi" ? "पीछे" : "Back"}
               </PrimaryButton>
               <PrimaryButton disabled={step >= steps.length - 1} onClick={() => setStep((s) => Math.min(steps.length - 1, s + 1))}>
-                Next
+                {locale === "hi" ? "आगे" : "Next"}
               </PrimaryButton>
             </div>
             <p className="mt-2 text-xs text-slate-400">

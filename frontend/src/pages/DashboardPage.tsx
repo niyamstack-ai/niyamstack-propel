@@ -19,7 +19,6 @@ type Dash = {
 };
 type Student = { id: string; fullName: string; studentCode: string; status: string };
 type Invoice = { id: string; invoiceNo: string; amount: number; status: string };
-type Assignment = { id: string; title: string };
 type Drive = { id: string; title: string; packageLpa: number; status: string };
 
 export function DashboardPage() {
@@ -37,13 +36,14 @@ export function DashboardPage() {
 function StudentHome() {
   const me = useApi<Student[]>("/api/students");
   const invoices = useApi<Invoice[]>("/api/invoices");
-  const asg = useApi<Assignment[]>("/api/assignments");
+  const myCourses = useApi<{ id: string }[]>("/api/actions/my-courses");
   const drives = useApi<Drive[]>("/api/drives");
   const student = me.data?.[0];
   const progress = useApi<{ syllabusPct?: number; homeworkDone?: number; homeworkTotal?: number; testsDone?: number; testsTotal?: number }>(
     student?.id ? `/api/actions/progress/${student.id}` : "",
   );
   const due = (invoices.data ?? []).filter((i) => i.status !== "PAID" && i.status !== "CANCELLED" && i.status !== "VOID");
+  const openDrives = (drives.data ?? []).filter((d) => d.status === "OPEN" || !d.status || d.status === "ACTIVE");
   return (
     <div className="space-y-6">
       <div>
@@ -51,9 +51,9 @@ function StudentHome() {
         <p className="text-sm text-slate-500">Your classes, fees, and job drives — nothing else.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
-        <HomeLink to="/courses" title="My courses" text={`${asg.data?.length ?? 0} assignments`} />
+        <HomeLink to="/courses" title="My courses" text={`${myCourses.data?.length ?? 0} courses`} />
         <HomeLink to="/fees" title="Pay fees" text={`${due.length} due invoices`} />
-        <HomeLink to="/placement" title="Apply to jobs" text={`${drives.data?.length ?? 0} open drives`} />
+        <HomeLink to="/placement" title="Apply to jobs" text={`${openDrives.length} open drives`} />
         <HomeLink to="/m" title="Student app" text="Attendance, fees, and notices on a phone" />
       </div>
       {progress.data && (

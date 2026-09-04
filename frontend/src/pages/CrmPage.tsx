@@ -436,7 +436,7 @@ export function CrmPage() {
         </FormGrid>
         <div className="mt-3">
           <PrimaryButton
-            disabled={!schName || !schStudent}
+            disabled={!schName || !schStudent || !(Number(schAmt) > 0)}
             onClick={() =>
               void run(async () => {
                 await api("/api/actions/grow/scholarships", {
