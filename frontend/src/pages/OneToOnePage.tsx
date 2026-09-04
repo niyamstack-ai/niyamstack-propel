@@ -59,7 +59,7 @@ export function OneToOnePage() {
           <Field label="Meeting URL (optional)" value={url} onChange={setUrl} placeholder="Leave blank for a Jitsi room, or paste Zoom / Meet" />
         </FormGrid>
         <div className="mt-3">
-          <PrimaryButton disabled={!title} onClick={create}>
+          <PrimaryButton disabled={!title.trim() || !mentor.trim() || Number(mins) <= 0} onClick={create}>
             Save session
           </PrimaryButton>
         </div>

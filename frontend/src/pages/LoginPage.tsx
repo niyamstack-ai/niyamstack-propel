@@ -18,9 +18,9 @@ export function SignupPage() {
 
 export function ForgotPage() {
   return (
-    <AuthShell>
+    <AuthGate>
       <ForgotView />
-    </AuthShell>
+    </AuthGate>
   );
 }
 
@@ -82,14 +82,20 @@ function OtpLoginView() {
 
   async function sendOtp(e: FormEvent) {
     e.preventDefault();
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length !== 10) {
+      setError("Enter a valid 10-digit mobile number");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const res = await api<OtpSent>("/api/auth/otp/request", {
         method: "POST",
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone: digits }),
       });
       setSent(res);
+      setPhone(digits);
     } catch (err) {
       setError((err as Error).message);
     } finally {

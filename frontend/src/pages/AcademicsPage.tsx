@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { createRecord } from "../ops";
 import { prettyLabel } from "../labels";
@@ -24,7 +25,12 @@ const TABS = ["timetable", "import", "ids", "terms", "fields", "approvals", "tem
 type Tab = (typeof TABS)[number];
 
 export function AcademicsPage() {
-  const [tab, setTab] = useState<Tab>("timetable");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const tab: Tab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : "timetable";
+  function setTab(next: Tab) {
+    setSearchParams(next === "timetable" ? {} : { tab: next }, { replace: true });
+  }
   return (
     <div className="space-y-6">
       <div>
@@ -168,7 +174,12 @@ function ImportTab() {
       <Card title="Import students">
         <TextArea label="CSV" value={studentCsv} onChange={setStudentCsv} rows={6} />
         <div className="mt-3">
-          <PrimaryButton onClick={() => void run("/api/actions/sis/import/students", studentCsv)}>Import students</PrimaryButton>
+          <PrimaryButton
+            disabled={studentCsv.trim().split(/\n/).filter((line) => line.trim()).length < 2}
+            onClick={() => void run("/api/actions/sis/import/students", studentCsv)}
+          >
+            Import students
+          </PrimaryButton>
         </div>
       </Card>
       <p className="text-sm text-slate-500">Employee CSV import moved to People → Employees.</p>

@@ -265,9 +265,7 @@ public class SisService {
         }
         Student s = store.getOwned(Student.class, id, orgId());
         if (Roles.PARENT.equals(Auth.current().role())) {
-            boolean linked = store.list(Guardian.class, orgId()).stream()
-                    .anyMatch(g -> s.getId().equals(g.getStudentId()) && Auth.current().userId().equals(g.getUserId()));
-            if (!linked) {
+            if (!scope.parentStudentIds(Auth.current()).contains(s.getId())) {
                 throw new ApiException(HttpStatus.FORBIDDEN, "That student is not linked to this parent");
             }
         }

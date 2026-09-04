@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, fileSrc } from "../api";
 import { createRecord, uploadSubmissionFile } from "../ops";
 import { useAuth } from "../auth";
@@ -15,7 +15,7 @@ type Pkg = { id: string; standard: string; status: string; versionLabel?: string
 type Named = { id: string; name: string };
 type Student = { id: string; fullName: string; courseId?: string; studentCode?: string };
 type Doubt = { id?: string; subject: string; body?: string; status: string; facultyReply?: string; courseId?: string; overdue?: boolean };
-type Batch = { id: string; courseId?: string };
+type Batch = { id: string; courseId?: string; name?: string };
 type LiveRow = { id?: string; title: string; provider?: string; meetingUrl?: string; batchId?: string; startsAt?: string };
 type RecRow = { title: string; videoUrl?: string; batchId?: string };
 type SlotRow = { subject: string; dayOfWeek: number; startTime: string; endTime?: string; batchId?: string; classroomId?: string };
@@ -95,22 +95,40 @@ export function StudentLms({
     }
   }
 
+  const [filterCourseId, setFilterCourseId] = useState(courseId || "");
+  const activeCourseId = courseId || filterCourseId || undefined;
+
   function matchesCourse(batchId?: string) {
-    if (!embedded || !courseId) return true;
-    if (!batchId) return false;
-    return (batches.data ?? []).some((b) => b.id === batchId && b.courseId === courseId);
+    if (!activeCourseId) return true;
+    if (!batchId) return true;
+    return (batches.data ?? []).some((b) => b.id === batchId && b.courseId === activeCourseId);
   }
 
   const homeCourse = me.data?.[0]?.courseId;
-  const materials = inCourse(content.data, courseId);
+  const courseChoices = useMemo(() => {
+    const map = new Map<string, string>();
+    (batches.data ?? []).forEach((b) => {
+      if (b.courseId) map.set(b.courseId, b.name || b.courseId);
+    });
+    (content.data ?? []).forEach((c) => {
+      if (c.courseId && !map.has(c.courseId)) map.set(c.courseId, c.title || c.courseId);
+    });
+    (asg.data ?? []).forEach((a) => {
+      if (a.courseId && !map.has(a.courseId)) map.set(a.courseId, a.title || a.courseId);
+    });
+    if (homeCourse && !map.has(homeCourse)) map.set(homeCourse, "My course");
+    return [...map.entries()].map(([value, label]) => ({ value, label }));
+  }, [batches.data, content.data, asg.data, homeCourse]);
+
+  const materials = inCourse(content.data, activeCourseId);
   const homework = (asg.data ?? []).filter((row) => {
-    if (!courseId) return true;
-    if (row.courseId) return row.courseId === courseId;
+    if (!activeCourseId) return true;
+    if (row.courseId) return row.courseId === activeCourseId;
     const batchCourse = (batches.data ?? []).find((b) => b.id === row.batchId)?.courseId;
-    if (batchCourse) return batchCourse === courseId;
-    return !embedded || homeCourse === courseId;
+    if (batchCourse) return batchCourse === activeCourseId;
+    return !embedded || homeCourse === activeCourseId;
   });
-  const courseDoubts = (doubts.data ?? []).filter((d) => !courseId || d.courseId === courseId);
+  const courseDoubts = (doubts.data ?? []).filter((d) => !activeCourseId || d.courseId === activeCourseId);
   const liveRows = (live.data ?? []).filter((row) => matchesCourse(row.batchId));
   const recRows = (recs.data ?? []).filter((row) => matchesCourse(row.batchId));
   const slotRows = (slots.data ?? []).filter((row) => matchesCourse(row.batchId));
@@ -138,6 +156,16 @@ export function StudentLms({
       )}
       <ErrorText error={error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      {!courseId && courseChoices.length > 0 && (
+        <div className="max-w-sm">
+          <Select
+            label="Course"
+            value={filterCourseId}
+            onChange={setFilterCourseId}
+            options={[{ value: "", label: "All courses" }, ...courseChoices]}
+          />
+        </div>
+      )}
       {show("timetable") && (
         <Card title="Timetable">
           {waiting ? (

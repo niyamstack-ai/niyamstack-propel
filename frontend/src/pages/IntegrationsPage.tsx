@@ -71,23 +71,35 @@ export function IntegrationsPage() {
     setError(null);
     setNotice(null);
     try {
+      const raw = (values[provider] || "").trim();
+      if (raw) {
+        if (provider === "WEBHOOKS" && !/^https:\/\//i.test(raw)) {
+          throw new Error("Webhook URL must start with https://");
+        }
+        if (provider === "GOOGLE_ANALYTICS" && !/^G-[A-Z0-9]+$/i.test(raw)) {
+          throw new Error("Google Analytics ID should look like G-XXXXXXXX");
+        }
+        if (provider === "FACEBOOK_PIXEL" && !/^\d{5,}$/.test(raw)) {
+          throw new Error("Facebook Pixel ID should be a numeric ID");
+        }
+      }
       const existing = byProvider.get(provider);
-      const configJson = JSON.stringify({ value: values[provider] || "" });
+      const configJson = JSON.stringify({ value: raw });
       if (existing) {
         await updateRecord(`/api/integration-connections/${existing.id}`, {
           ...existing,
-          status: values[provider] ? "CONNECTED" : "NOT_CONNECTED",
+          status: raw ? "CONNECTED" : "NOT_CONNECTED",
           configJson,
         });
       } else {
         await createRecord("/api/integration-connections", {
           provider,
-          status: values[provider] ? "CONNECTED" : "NOT_CONNECTED",
+          status: raw ? "CONNECTED" : "NOT_CONNECTED",
           configJson,
         });
       }
       connections.reload();
-      setNotice("Integration saved.");
+      setNotice(raw ? "Integration saved." : "Integration cleared (not connected).");
     } catch (e) {
       setError((e as Error).message);
     }

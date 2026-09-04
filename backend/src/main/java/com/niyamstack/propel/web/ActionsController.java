@@ -525,6 +525,11 @@ public class ActionsController {
         return ess.importPunches(body);
     }
 
+    @GetMapping("/ess/punch-secret")
+    public Map<String, Object> punchSecret() {
+        return ess.ensurePunchSecret();
+    }
+
     @PostMapping("/ess/employees/{id}/login")
     public Map<String, Object> employeeLogin(@PathVariable UUID id, @RequestBody(required = false) Map<String, Object> body) {
         return ess.issueLogin(id, body == null ? Map.of() : body);

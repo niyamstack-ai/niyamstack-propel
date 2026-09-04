@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import { createRecord } from "../ops";
+import { useAuth } from "../auth";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, useApi } from "../ui";
 
 type Student = { id: string; fullName: string };
 
 export function ReadinessPage() {
+  const { user } = useAuth();
+  const isStudent = user?.role === "STUDENT";
   const students = useApi<Student[]>("/api/students");
   const skills = useApi<{ name: string; proficiency: string }[]>("/api/skills");
   const resumes = useApi<{ versionLabel: string; completeness: number; content: string }[]>("/api/resumes");
@@ -18,12 +21,20 @@ export function ReadinessPage() {
   const [level, setLevel] = useState("INTERMEDIATE");
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!isStudent) return;
+    const mine = students.data?.[0]?.id;
+    if (mine) setStudentId(mine);
+  }, [isStudent, students.data]);
+
   async function loadScore() {
-    const id = studentId || students.data?.[0]?.id;
-    if (!id) return;
+    if (!studentId) {
+      setError("Select a student first.");
+      return;
+    }
     setError(null);
     try {
-      setScore(await api(`/api/actions/readiness/${id}`));
+      setScore(await api(`/api/actions/readiness/${studentId}`));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -48,12 +59,14 @@ export function ReadinessPage() {
       <ErrorText error={error} />
       <Card title="Add skill">
         <FormGrid>
-          <Select
-            label="Student"
-            value={studentId}
-            onChange={setStudentId}
-            options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))}
-          />
+          {!isStudent && (
+            <Select
+              label="Student"
+              value={studentId}
+              onChange={setStudentId}
+              options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))}
+            />
+          )}
           <Field label="Skill" value={skill} onChange={setSkill} />
           <Field label="Proficiency" value={level} onChange={setLevel} />
           <div className="flex items-end">
@@ -77,13 +90,17 @@ export function ReadinessPage() {
       </Card>
       <Card title="Composite readiness score">
         <div className="flex flex-wrap items-end gap-3">
-          <Select
-            label="Student"
-            value={studentId}
-            onChange={setStudentId}
-            options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))}
-          />
-          <PrimaryButton onClick={loadScore}>Compute</PrimaryButton>
+          {!isStudent && (
+            <Select
+              label="Student"
+              value={studentId}
+              onChange={setStudentId}
+              options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))}
+            />
+          )}
+          <PrimaryButton disabled={!studentId} onClick={loadScore}>
+            Compute
+          </PrimaryButton>
         </div>
         {score && (
           <p className="mt-3 text-sm">

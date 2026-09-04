@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { createRecord, deleteRecord } from "../ops";
+import { createRecord, deleteRecord, updateRecord } from "../ops";
 import { useAuth } from "../auth";
 import { prettyLabel } from "../labels";
 import { useLocale } from "../locale";
 import { hasGrowthTier } from "../packs";
-import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, TextArea, formatDay, formatInr, formatWhen, useApi } from "../ui";
+import { Card, ErrorText, Field, FileUpload, FormGrid, LinkButton, PrimaryButton, Select, Table, TextArea, formatDay, formatInr, formatWhen, useApi } from "../ui";
 
 type Employee = {
   id: string;
@@ -311,7 +311,15 @@ function ProfileTab({ hr }: { hr: boolean }) {
             <FormGrid>
               <Field label="Document type" value={docType} onChange={setDocType} placeholder="ID_PROOF / OFFER" />
               <Field label="File name" value={fileName} onChange={setFileName} />
-              <Field label="URL or path" value={storageUrl} onChange={setStorageUrl} />
+              <FileUpload
+                label="Upload file"
+                value={storageUrl}
+                accept="image/*,.pdf"
+                onChange={(v) => {
+                  setStorageUrl(v);
+                  if (v && !fileName) setFileName(v.split("/").pop() || "");
+                }}
+              />
             </FormGrid>
             <div className="mt-3">
               <PrimaryButton disabled={!storageUrl} onClick={() => void addDoc()}>Add document</PrimaryButton>
@@ -353,8 +361,10 @@ function ProfileTab({ hr }: { hr: boolean }) {
 function TeamTab({ hr }: { hr: boolean }) {
   const inbox = useApi<ManagerInbox>("/api/actions/ess/manager/inbox");
   const now = new Date();
-  const teamAtt = useApi<Attendance[]>(`/api/actions/ess/team/attendance?year=${now.getFullYear()}&month=${now.getMonth() + 1}`);
-  const teamLeave = useApi<Leave[]>(`/api/actions/ess/team/leave-calendar?year=${now.getFullYear()}&month=${now.getMonth() + 1}`);
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const teamAtt = useApi<Attendance[]>(`/api/actions/ess/team/attendance?year=${year}&month=${month}`);
+  const teamLeave = useApi<Leave[]>(`/api/actions/ess/team/leave-calendar?year=${year}&month=${month}`);
   const policy = useApi<{ clAnnual?: number; slAnnual?: number; elAnnual?: number; excludeHolidays?: boolean }>(hr ? "/api/leave-policy" : "");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -363,6 +373,14 @@ function TeamTab({ hr }: { hr: boolean }) {
   const [slAnnual, setSlAnnual] = useState("6");
   const [elAnnual, setElAnnual] = useState("15");
   const [excludeHolidays, setExcludeHolidays] = useState(false);
+
+  function shiftMonth(delta: number) {
+    const d = new Date(year, month - 1 + delta, 1);
+    setYear(d.getFullYear());
+    setMonth(d.getMonth() + 1);
+  }
+
+  const monthLabel = new Date(year, month - 1, 1).toLocaleString(undefined, { month: "long", year: "numeric" });
 
   useEffect(() => {
     if (!policy.data) return;
@@ -416,7 +434,7 @@ function TeamTab({ hr }: { hr: boolean }) {
     try {
       await api(`/api/actions/ess/resignation/${id}/decide`, { method: "POST", body: JSON.stringify({ approve }) });
       inbox.reload();
-      setNotice(approve ? "Resignation accepted. Employee is on notice." : "Resignation rejected.");
+      setNotice(approve ? "Resignation accepted. Employee is on notice until their last working day. Deactivate login under Employees when they exit." : "Resignation rejected.");
     } catch (e) {
       setError((e as Error).message);
     }
@@ -526,7 +544,11 @@ function TeamTab({ hr }: { hr: boolean }) {
           />
         </Card>
       )}
-      <Card title="Team attendance this month">
+      <Card title={`Team attendance — ${monthLabel}`}>
+        <div className="mb-3 flex flex-wrap gap-2">
+          <LinkButton onClick={() => shiftMonth(-1)}>Previous</LinkButton>
+          <LinkButton onClick={() => shiftMonth(1)}>Next</LinkButton>
+        </div>
         <Table
           empty="No team attendance marks this month."
           columns={["Date", "Employee", "Status", "Shift", "Source"]}
@@ -539,11 +561,11 @@ function TeamTab({ hr }: { hr: boolean }) {
           ])}
         />
       </Card>
-      <Card title="Team leave this month">
+      <Card title={`Team leave — ${monthLabel}`}>
         <Table
           empty="Nobody on approved leave this month."
           columns={["Employee", "Type", "From", "To"]}
-          rows={(teamLeave.data ?? []).map((r) => [r.employeeName || "—", r.leaveType || "—", formatDay(r.fromDate) || "—", formatDay(r.toDate) || "—"])}
+          rows={(teamLeave.data ?? []).map((r) => [r.employeeName || "—", prettyLabel(r.leaveType) || "—", formatDay(r.fromDate) || "—", formatDay(r.toDate) || "—"])}
         />
       </Card>
       {hr && (
@@ -572,6 +594,8 @@ function EmployeesTab() {
   const staff = useApi<{ id: string; fullName: string; email: string }[]>("/api/staff");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [tempCreds, setTempCreds] = useState<{ email?: string; password: string } | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
   const [fullName, setFullName] = useState("");
   const [employeeCode, setEmployeeCode] = useState("");
   const [email, setEmail] = useState("");
@@ -586,10 +610,62 @@ function EmployeesTab() {
   const [createLogin, setCreateLogin] = useState(false);
   const [loginRole, setLoginRole] = useState("FACULTY");
 
+  function clearForm() {
+    setEditId(null);
+    setFullName("");
+    setEmployeeCode("");
+    setEmail("");
+    setPhone("");
+    setDepartment("");
+    setDesignation("");
+    setJoiningDate("");
+    setCenterId("");
+    setManagerId("");
+    setUserId("");
+    setEmploymentType("SUPPORT");
+    setCreateLogin(false);
+  }
+
+  function startEdit(e: Employee) {
+    setEditId(e.id);
+    setFullName(e.fullName || "");
+    setEmployeeCode(e.employeeCode || "");
+    setEmail(e.email || "");
+    setPhone(e.phone || "");
+    setDepartment(e.department || "");
+    setDesignation(e.designation || "");
+    setJoiningDate(e.joiningDate ? String(e.joiningDate).slice(0, 10) : "");
+    setCenterId(e.centerId || "");
+    setManagerId(e.managerId || "");
+    setUserId("");
+    setEmploymentType(e.employmentType || "SUPPORT");
+    setCreateLogin(false);
+    setNotice(null);
+  }
+
   async function add() {
     setError(null);
     setNotice(null);
+    setTempCreds(null);
     try {
+      if (editId) {
+        await updateRecord(`/api/employees/${editId}`, {
+          fullName,
+          employeeCode,
+          email,
+          phone,
+          department,
+          designation,
+          joiningDate,
+          centerId: centerId || null,
+          managerId: managerId || null,
+          employmentType,
+        });
+        setNotice(`${fullName} updated.`);
+        clearForm();
+        people.reload();
+        return;
+      }
       const created = await createRecord<Employee>("/api/employees", {
         fullName,
         employeeCode,
@@ -605,19 +681,14 @@ function EmployeesTab() {
         createLogin,
         loginRole,
       });
-      setFullName("");
-      setEmployeeCode("");
-      setEmail("");
-      setPhone("");
-      setDepartment("");
-      setDesignation("");
-      setJoiningDate("");
+      clearForm();
       people.reload();
-      setNotice(
-        created.tempPassword
-          ? `${created.fullName} saved. Login ${created.loginEmail} with temporary password ${created.tempPassword}.`
-          : `${created.fullName} saved as ${created.employeeCode}.`,
-      );
+      if (created.tempPassword) {
+        setTempCreds({ email: created.loginEmail, password: created.tempPassword });
+        setNotice(`${created.fullName} saved. Copy the temporary password now — it won’t be shown again.`);
+      } else {
+        setNotice(`${created.fullName} saved as ${created.employeeCode}.`);
+      }
     } catch (e) {
       setError((e as Error).message);
     }
@@ -626,6 +697,7 @@ function EmployeesTab() {
   async function issueLogin(id: string) {
     setError(null);
     setNotice(null);
+    setTempCreds(null);
     try {
       const emp = (people.data ?? []).find((e) => e.id === id);
       const roleFromType =
@@ -635,9 +707,25 @@ function EmployeesTab() {
         body: JSON.stringify({ loginRole: roleFromType }),
       });
       people.reload();
-      setNotice(out.tempPassword ? `Login ${out.loginEmail}. Temporary password: ${out.tempPassword}` : `Already has login ${out.loginEmail}`);
+      if (out.tempPassword) {
+        setTempCreds({ email: out.loginEmail, password: out.tempPassword });
+        setNotice("Temporary password created. Copy it now — it won’t be shown again.");
+      } else {
+        setNotice(`Already has login ${out.loginEmail}`);
+      }
     } catch (e) {
       setError((e as Error).message);
+    }
+  }
+
+  async function setStatus(e: Employee, status: string) {
+    setError(null);
+    try {
+      await updateRecord(`/api/employees/${e.id}`, { ...e, status });
+      people.reload();
+      setNotice(`${e.fullName} marked ${prettyLabel(status)}.`);
+    } catch (err) {
+      setError((err as Error).message);
     }
   }
 
@@ -645,6 +733,24 @@ function EmployeesTab() {
     <>
       <ErrorText error={error || people.error || centers.error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      {tempCreds && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-medium">One-time login credentials</p>
+          <p className="mt-1">Email: {tempCreds.email || "—"}</p>
+          <p className="mt-1 font-mono">Password: {tempCreds.password}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <PrimaryButton
+              onClick={() => {
+                void navigator.clipboard.writeText(`${tempCreds.email || ""}\n${tempCreds.password}`);
+                setNotice("Copied to clipboard. Dismiss this panel when done.");
+              }}
+            >
+              Copy
+            </PrimaryButton>
+            <LinkButton onClick={() => setTempCreds(null)}>Dismiss</LinkButton>
+          </div>
+        </div>
+      )}
       <Card title="Employee master">
         <p className="mb-3 text-sm text-slate-500">
           Support staff who never log in, and faculty who do. Portal logins are still created under{" "}
@@ -656,26 +762,33 @@ function EmployeesTab() {
         <Table
           empty="No employees yet. Add the first one below."
           loading={people.loading}
-          columns={["Code", "Name", "Dept", "Designation", "Joining", "Type", "Login", "Leave CL/SL/EL"]}
+          columns={["Code", "Name", "Dept", "Status", "Type", "Login", "Leave CL/SL/EL", ""]}
           rows={(people.data ?? []).map((e) => [
             e.employeeCode || "—",
             e.fullName,
             e.department || "—",
-            e.designation || "—",
-            formatDay(e.joiningDate) || "—",
+            prettyLabel(e.status || "ACTIVE"),
             prettyLabel(e.employmentType),
             e.hasLogin ? (
               prettyLabel("ACTIVE")
             ) : (
-              <LinkButton key={e.id} onClick={() => void issueLogin(e.id)}>
+              <LinkButton key={`${e.id}-login`} onClick={() => void issueLogin(e.id)}>
                 Create login
               </LinkButton>
             ),
             `${e.cl ?? "—"} / ${e.sl ?? "—"} / ${e.el ?? "—"}`,
+            <span key={`${e.id}-act`} className="flex flex-wrap gap-2">
+              <LinkButton onClick={() => startEdit(e)}>Edit</LinkButton>
+              {(e.status || "ACTIVE") !== "INACTIVE" ? (
+                <LinkButton onClick={() => void setStatus(e, "INACTIVE")}>Deactivate</LinkButton>
+              ) : (
+                <LinkButton onClick={() => void setStatus(e, "ACTIVE")}>Reactivate</LinkButton>
+              )}
+            </span>,
           ])}
         />
       </Card>
-      <Card title="Add employee">
+      <Card title={editId ? "Edit employee" : "Add employee"}>
         <FormGrid>
           <Field label="Name" value={fullName} onChange={setFullName} placeholder="Full name" />
           <Field label="Employee code" value={employeeCode} onChange={setEmployeeCode} placeholder="Blank = auto EMP-0001" />
@@ -734,14 +847,17 @@ function EmployeesTab() {
             ]}
           />
         </FormGrid>
-        <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
-          <input type="checkbox" checked={createLogin} onChange={(e) => setCreateLogin(e.target.checked)} />
-          Create a portal login now
-        </label>
-        <div className="mt-3">
+        {!editId && (
+          <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+            <input type="checkbox" checked={createLogin} onChange={(e) => setCreateLogin(e.target.checked)} />
+            Create a portal login now
+          </label>
+        )}
+        <div className="mt-3 flex flex-wrap gap-2">
           <PrimaryButton disabled={!fullName} onClick={() => void add()}>
-            Save employee
+            {editId ? "Update employee" : "Save employee"}
           </PrimaryButton>
+          {editId && <LinkButton onClick={clearForm}>Cancel edit</LinkButton>}
         </div>
       </Card>
     </>
@@ -750,6 +866,7 @@ function EmployeesTab() {
 
 function AttendanceTab({ hr }: { hr: boolean }) {
   const people = useApi<Employee[]>("/api/employees");
+  const me = useApi<Employee>("/api/actions/ess/profile");
   const rows = useApi<Attendance[]>("/api/staff-attendance");
   const regs = useApi<Reg[]>("/api/attendance-regularizations");
   const [error, setError] = useState<string | null>(null);
@@ -764,8 +881,28 @@ function AttendanceTab({ hr }: { hr: boolean }) {
   const [regShift, setRegShift] = useState("FULL");
   const [regStatus, setRegStatus] = useState("PRESENT");
   const [regReason, setRegReason] = useState("");
+  const [selfPunchType, setSelfPunchType] = useState("IN");
 
   const options = people.data ?? [];
+
+  async function selfPunch() {
+    const code = me.data?.employeeCode;
+    if (!code) {
+      setError("No employee code on your profile yet.");
+      return;
+    }
+    setError(null);
+    try {
+      await api("/api/actions/attendance/biometric", {
+        method: "POST",
+        body: JSON.stringify({ code, deviceId: "SELF", punchType: selfPunchType }),
+      });
+      setNotice(`Self-punch ${prettyLabel(selfPunchType)} recorded.`);
+      rows.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   async function mark() {
     setError(null);
@@ -823,8 +960,30 @@ function AttendanceTab({ hr }: { hr: boolean }) {
 
   return (
     <>
-      <ErrorText error={error || rows.error || people.error} />
+      <ErrorText error={error || rows.error || people.error || me.error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <Card title="Self punch">
+        <p className="mb-3 text-sm text-slate-500">
+          Clock in or out with your employee code{me.data?.employeeCode ? ` (${me.data.employeeCode})` : ""}. HR devices remain under Devices.
+        </p>
+        <FormGrid>
+          <Select
+            label="Punch"
+            value={selfPunchType}
+            onChange={setSelfPunchType}
+            allowEmpty={false}
+            options={[
+              { value: "IN", label: "In" },
+              { value: "OUT", label: "Out" },
+            ]}
+          />
+        </FormGrid>
+        <div className="mt-3">
+          <PrimaryButton disabled={!me.data?.employeeCode} onClick={() => void selfPunch()}>
+            Record my punch
+          </PrimaryButton>
+        </div>
+      </Card>
       <Card title="Staff attendance">
         <p className="mb-3 text-sm text-slate-500">Separate from student LMS attendance. Mark a day or a shift.</p>
         <Table
@@ -1600,6 +1759,7 @@ function HiringTab() {
 function DevicesTab() {
   const { user } = useAuth();
   const punches = useApi<Punch[]>("/api/biometric-punches");
+  const punchSecret = useApi<{ deviceSecret?: string }>("/api/actions/ess/punch-secret");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [code, setCode] = useState("");
@@ -1644,13 +1804,13 @@ function DevicesTab() {
 
   return (
     <>
-      <ErrorText error={error || punches.error} />
+      <ErrorText error={error || punches.error || punchSecret.error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       <Card title="Device punch">
         <p className="mb-3 text-sm text-slate-500">
-          Match staff by employee code or mobile. Students match by student code, roll number, or mobile. Devices can POST JSON
+          Match staff by employee code or mobile. Students match by student code, roll number, or mobile. Devices must POST JSON
           {" "}
-          <code className="text-xs">{`{ "code", "deviceId", "punchType" }`}</code>
+          <code className="text-xs">{`{ "code", "deviceId", "punchType", "deviceSecret" }`}</code>
           {punchUrl ? (
             <>
               {" "}
@@ -1660,6 +1820,19 @@ function DevicesTab() {
             <> once your institute website slug is set (Institute settings).</>
           )}
         </p>
+        {punchSecret.data?.deviceSecret && (
+          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            Public deviceSecret: <code className="font-mono text-xs">{punchSecret.data.deviceSecret}</code>{" "}
+            <LinkButton
+              onClick={() => {
+                void navigator.clipboard.writeText(punchSecret.data?.deviceSecret || "");
+                setNotice("Device secret copied.");
+              }}
+            >
+              Copy
+            </LinkButton>
+          </p>
+        )}
         <FormGrid>
           <Field label="Code or mobile" value={code} onChange={setCode} placeholder="EMP-0001 or 10-digit mobile" />
           <Field label="Device" value={deviceId} onChange={setDeviceId} />

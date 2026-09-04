@@ -57,11 +57,13 @@ export function AlumniPage({ embedded }: { embedded?: boolean } = {}) {
           <Field label="Role" value={role} onChange={setRole} />
           <div className="flex items-end">
             <PrimaryButton
-              disabled={!name}
+              disabled={!name.trim() || !company.trim()}
               onClick={() =>
                 run(async () => {
                   await createRecord("/api/alumni", { fullName: name, company, role, engagement: "ACTIVE" });
                   setName("");
+                  setCompany("");
+                  setRole("");
                   alumni.reload();
                 })
               }
@@ -77,11 +79,12 @@ export function AlumniPage({ embedded }: { embedded?: boolean } = {}) {
           <Field label="Company" value={jobCo} onChange={setJobCo} />
           <div className="flex items-end">
             <PrimaryButton
-              disabled={!jobTitle}
+              disabled={!jobTitle.trim() || !jobCo.trim()}
               onClick={() =>
                 run(async () => {
                   await createRecord("/api/alumni-jobs", { title: jobTitle, company: jobCo, status: "OPEN" });
                   setJobTitle("");
+                  setJobCo("");
                   jobs.reload();
                 })
               }

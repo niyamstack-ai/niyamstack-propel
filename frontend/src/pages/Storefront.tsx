@@ -808,8 +808,8 @@ function CoursePage() {
               <span>Have a coupon code</span>
               <div className="flex gap-2">
                 <input className="w-36 rounded-lg border border-line px-2 py-1.5" placeholder="Code" value={coupon} onChange={(e) => setCoupon(e.target.value)} />
-                <button type="button" className="font-semibold text-brand" onClick={applyCoupon}>
-                  Apply here
+                <button type="button" className="font-semibold text-brand disabled:opacity-50" disabled={busy || !coupon.trim()} onClick={applyCoupon}>
+                  {busy ? "Applying…" : "Apply here"}
                 </button>
               </div>
             </section>
@@ -1542,7 +1542,27 @@ function PracticeLab({ courseId }: { courseId: string }) {
 
 function StudentNotices() {
   const anns = useApi<{ title: string; body: string; createdAt?: string }[]>("/api/announcements");
-  const notes = useApi<{ title: string; body: string; status?: string; createdAt?: string }[]>("/api/notifications");
+  const notes = useApi<{ id: string; title: string; body: string; status?: string; createdAt?: string }[]>("/api/notifications");
+  useEffect(() => {
+    const unreadRows = (notes.data ?? []).filter((n) => n.id && n.status && n.status !== "READ");
+    if (!unreadRows.length) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await Promise.all(
+          unreadRows.map((n) =>
+            api(`/api/notifications/${n.id}`, { method: "PUT", body: JSON.stringify({ ...n, status: "READ" }) }),
+          ),
+        );
+        if (!cancelled) notes.reload();
+      } catch {
+        /* keep badge if mark-read fails */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [notes.data]);
   const unread = (notes.data ?? []).filter((n) => n.status && n.status !== "READ").length;
   return (
     <div className="space-y-6">
@@ -1853,7 +1873,11 @@ function OneToOneBookPage() {
                 onClick={async () => {
                   setError(null);
                   setNotice(null);
-                  if (!token || user?.role !== "STUDENT") {
+                  if (token && user?.role !== "STUDENT") {
+                    setError("Book 1:1 as a student. Sign out of this staff account, or open the site in a private window and log in as a student.");
+                    return;
+                  }
+                  if (!token) {
                     window.location.href = `${sitePath(slug)}/login?next=${encodeURIComponent(sitePath(slug, "/one-to-one"))}`;
                     return;
                   }

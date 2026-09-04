@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { createRecord, deleteRecord, updateRecord } from "../ops";
 import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
@@ -129,9 +130,9 @@ export function YourAppPage() {
             </FormGrid>
             <div className="mt-3 flex flex-wrap gap-2">
               <PrimaryButton onClick={saveApp}>Save</PrimaryButton>
-              <a className="rounded-full border border-line px-4 py-2 text-sm" href="/m">
+              <Link className="rounded-full border border-line px-4 py-2 text-sm" to="/m">
                 Open student / faculty app
-              </a>
+              </Link>
               {(appUrl || org.data?.appShareUrl || org.data?.slug) && (
                 <a
                   className="rounded-full border border-line px-4 py-2 text-sm"
@@ -148,8 +149,11 @@ export function YourAppPage() {
             <div className="mx-auto flex h-64 w-40 flex-col rounded-3xl border-4 border-navy bg-mist p-3">
               <div className="rounded-xl bg-white p-2 text-center text-xs font-bold text-navy">{org.data?.name || "App"}</div>
               <div className="mt-3 flex-1 rounded-xl bg-white/70" />
-          <p className="mt-2 text-center text-[10px] text-slate-500">Attendance, fees, notices, mark class</p>
+              <p className="mt-2 text-center text-[10px] text-slate-500">Attendance, fees, notices, mark class</p>
             </div>
+            <p className="mt-3 text-center text-xs text-slate-500">
+              Decorative preview only. Use Open student / faculty app for the live /m experience (owner sees staff home, not a simulated student UI).
+            </p>
           </Card>
         </div>
       )}
@@ -162,7 +166,7 @@ export function YourAppPage() {
             <Field label="Link URL" value={bLink} onChange={setBLink} />
           </FormGrid>
           <div className="mt-3">
-            <PrimaryButton disabled={!bTitle} onClick={addBanner}>
+            <PrimaryButton disabled={!bTitle.trim() || !bImage.trim()} onClick={addBanner}>
               Add banner
             </PrimaryButton>
           </div>

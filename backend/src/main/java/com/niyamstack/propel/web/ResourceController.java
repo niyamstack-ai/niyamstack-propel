@@ -333,6 +333,21 @@ public class ResourceController {
 
     @GetMapping("/notifications") public List<Notification> notifications() { return list(Notification.class); }
     @PostMapping("/notifications") public Notification createNotification(@RequestBody Notification body) { return create(body, "COMMS"); }
+    @PutMapping("/notifications/{id}")
+    public Notification updateNotification(@PathVariable UUID id, @RequestBody Notification body) {
+        PropelUser user = Auth.current();
+        Access.requireTenant(user);
+        Notification existing = store.getOwned(Notification.class, id, user.organizationId());
+        if (Roles.STUDENT.equals(user.role())) {
+            Student me = scope.studentFor(user);
+            if (existing.getStudentId() != null && (me == null || !existing.getStudentId().equals(me.getId()))) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Not your notification");
+            }
+            existing.setStatus("READ");
+            return store.save(existing);
+        }
+        return update(Notification.class, id, body, "COMMS");
+    }
 
     @GetMapping("/announcements") public List<Announcement> announcements() { return list(Announcement.class); }
     @PostMapping("/announcements") public Announcement createAnnouncement(@RequestBody Announcement body) { return create(body, "COMMS"); }

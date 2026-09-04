@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { labelKey, useLocale } from "../locale";
-import { Card, PrimaryButton, useApi } from "../ui";
+import { Card, ErrorText, PrimaryButton, useApi } from "../ui";
 
 type Onboarding = {
   completed: boolean;
@@ -22,6 +23,7 @@ const STEP_META: { id: string; label: string; to: string; blurb: string }[] = [
 export function OnboardingWizard() {
   const { t } = useLocale();
   const status = useApi<Onboarding>("/api/foundation/onboarding");
+  const [error, setError] = useState<string | null>(null);
   if (status.loading || !status.data || status.data.completed) return null;
 
   const steps = status.data.steps ?? {};
@@ -29,15 +31,21 @@ export function OnboardingWizard() {
   const total = STEP_META.length;
 
   async function dismiss() {
-    await api("/api/foundation/onboarding", {
-      method: "PUT",
-      body: JSON.stringify({ completed: true }),
-    });
-    status.reload();
+    setError(null);
+    try {
+      await api("/api/foundation/onboarding", {
+        method: "PUT",
+        body: JSON.stringify({ completed: true }),
+      });
+      status.reload();
+    } catch (e) {
+      setError((e as Error).message || "Could not mark setup complete");
+    }
   }
 
   return (
     <Card title={`${t("get_started", "Get started")} (${done}/${total})`}>
+      <ErrorText error={error} />
       <p className="mb-4 text-sm text-slate-500">
         Finish these steps to run your institute on Propel. You can return to any step later.
       </p>

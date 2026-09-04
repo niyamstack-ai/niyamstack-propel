@@ -488,6 +488,10 @@ public class FeeService {
             if (studentId == null || !studentId.equals(invoice.getStudentId())) {
                 throw new ApiException(HttpStatus.FORBIDDEN, "Not your credit note");
             }
+        } else if (Roles.PARENT.equals(user.role())) {
+            if (invoice.getStudentId() == null || !scope.parentStudentIds(user).contains(invoice.getStudentId())) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Not your child's credit note");
+            }
         } else {
             Access.requireAny(user, Roles.OWNER, Roles.ACCOUNTANT);
         }

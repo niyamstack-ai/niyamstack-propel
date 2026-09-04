@@ -13,6 +13,7 @@ import com.niyamstack.propel.security.PasswordPolicy;
 import com.niyamstack.propel.security.Phones;
 import com.niyamstack.propel.security.PropelUser;
 import com.niyamstack.propel.security.Roles;
+import com.niyamstack.propel.integration.OrgSecrets;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -651,8 +652,35 @@ public class EssService {
         if (!Packs.hasModule(org.getModulesCsv(), Packs.MOD_ESS)) {
             throw new ApiException(HttpStatus.FORBIDDEN, "This institute pack does not include ESS");
         }
+        String expected = OrgSecrets.live(org, "punchSecret");
+        if (expected.isBlank()) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED,
+                    "Punch secret not configured. Open ESS → Devices as owner to generate deviceSecret.");
+        }
+        String provided = str(body, "deviceSecret");
+        if (provided.isBlank() || !expected.equals(provided)) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid or missing deviceSecret");
+        }
         return punch(org.getId(), str(body, "code"), str(body, "deviceId"), str(body, "punchType"),
                 str(body, "rawRef"), null, false);
+    }
+
+    @Transactional
+    public Map<String, Object> ensurePunchSecret() {
+        requireEss();
+        if (!hrAdmin()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Only HR can view the device punch secret");
+        }
+        Organization org = store.get(Organization.class, orgId());
+        String secret = OrgSecrets.live(org, "punchSecret");
+        if (secret.isBlank()) {
+            secret = UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+            OrgSecrets.putLive(org, "punchSecret", secret);
+            store.save(org);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("deviceSecret", secret);
+        return out;
     }
 
     public List<Map<String, Object>> leaves() {

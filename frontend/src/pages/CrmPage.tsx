@@ -356,6 +356,7 @@ export function CrmPage() {
                           email: f.email || undefined,
                           source: "ADMISSION_FORM",
                           stage: "NEW",
+                          courseId: f.courseId || undefined,
                           notes: `From online form ${f.id}${f.courseId ? ` · course ${f.courseId}` : ""}`,
                         });
                         await updateRecord(`/api/admission-forms/${f.id}`, { ...f, status: "CONVERTED" });

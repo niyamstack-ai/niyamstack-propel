@@ -207,7 +207,7 @@ export function CompliancePage() {
           </FormGrid>
           <div className="mt-3">
             <PrimaryButton
-              disabled={!studentId}
+              disabled={!studentId || !reason.trim()}
               onClick={async () => {
               setError(null);
               try {
