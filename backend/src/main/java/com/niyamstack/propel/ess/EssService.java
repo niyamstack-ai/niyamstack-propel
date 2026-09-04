@@ -26,6 +26,7 @@ import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -1697,8 +1698,9 @@ public class EssService {
     private AttendanceSummary attendanceSummaryFor(UUID employeeId, YearMonth ym) {
         LocalDate start = ym.atDay(1);
         LocalDate end = ym.atEndOfMonth();
-        BigDecimal lop = BigDecimal.ZERO;
-        int present = 0;
+        LocalDate today = LocalDate.now();
+        LocalDate last = end.isAfter(today) ? today : end;
+        Map<LocalDate, String> byDay = new HashMap<>();
         for (StaffAttendance a : store.listBy(StaffAttendance.class, orgId(), "employeeId", employeeId)) {
             if (a.getWorkDate() == null || a.getWorkDate().isBefore(start) || a.getWorkDate().isAfter(end)) {
                 continue;
@@ -1706,14 +1708,26 @@ public class EssService {
             if (!isWeekday(a.getWorkDate())) {
                 continue;
             }
-            String status = upper(blank(a.getStatus(), ""), "");
-            if ("ABSENT".equals(status)) {
+            byDay.put(a.getWorkDate(), upper(blank(a.getStatus(), ""), ""));
+        }
+        BigDecimal lop = BigDecimal.ZERO;
+        int present = 0;
+        for (LocalDate d = start; !d.isAfter(last); d = d.plusDays(1)) {
+            if (!isWeekday(d)) {
+                continue;
+            }
+            String status = byDay.get(d);
+            if (status == null || status.isBlank() || "ABSENT".equals(status)) {
                 lop = lop.add(BigDecimal.ONE);
             } else if ("HALF".equals(status)) {
                 lop = lop.add(new BigDecimal("0.5"));
                 present++;
             } else if ("PRESENT".equals(status) || "LATE".equals(status)) {
                 present++;
+            } else if ("WEEKLY_OFF".equals(status) || "HOLIDAY".equals(status) || "LEAVE".equals(status)) {
+                /* not LOP */
+            } else {
+                lop = lop.add(BigDecimal.ONE);
             }
         }
         return new AttendanceSummary(present, lop);

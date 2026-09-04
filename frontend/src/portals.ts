@@ -105,6 +105,11 @@ function roleNav(role?: string): NavEntry[] {
         { to: "/fees", label: "Fees" },
         { to: "/students", label: "Students" },
         { to: "/ess", label: "ESS" },
+        { to: "/analytics", label: "Analytics" },
+        { to: "/compliance", label: "Compliance" },
+        { to: "/scale", label: "Scale depth" },
+        { to: "/support", label: "Support" },
+        { to: "/help", label: "Help" },
       ];
     default:
       return [
@@ -195,6 +200,7 @@ function filterNav(entries: NavEntry[], modules?: string[]): NavEntry[] {
 
 export function canOpen(role: string | undefined, path: string, modules?: string[], capabilities?: string[]) {
   if (path === "/" || path === "/m" || path.startsWith("/m/")) return true;
+  if (path === "/help" || path === "/support" || path.startsWith("/help/") || path.startsWith("/support/")) return true;
   if (!pathAllowed(path, modules)) return false;
   const nav = flattenNav(navForRole(role, modules, capabilities));
   if (nav.some((item) => path === item.to || (item.to !== "/" && path.startsWith(item.to + "/")))) return true;

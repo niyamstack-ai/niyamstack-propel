@@ -210,7 +210,24 @@ public class FeeService {
     public Map<String, Object> confirmCheckout(UUID invoiceId, String orderId, String razorpayPaymentId, String signature) {
         PropelUser user = Auth.current();
         Invoice invoice = store.getOwned(Invoice.class, invoiceId, user.organizationId());
+        assertCanPayInvoice(user, invoice);
         return captureVerified(user.organizationId(), invoice, orderId, razorpayPaymentId, signature);
+    }
+
+    private void assertCanPayInvoice(PropelUser user, Invoice invoice) {
+        if (Roles.STUDENT.equals(user.role())) {
+            Student me = store.listBy(Student.class, user.organizationId(), "userId", user.userId())
+                    .stream().findFirst().orElseThrow(() -> new ApiException(HttpStatus.FORBIDDEN, "No student profile"));
+            if (!me.getId().equals(invoice.getStudentId())) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "You can only pay your own fees");
+            }
+        } else if (Roles.PARENT.equals(user.role())) {
+            if (invoice.getStudentId() == null || !scope.parentStudentIds(user).contains(invoice.getStudentId())) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "You can only pay fees for your linked child");
+            }
+        } else {
+            Access.requireAny(user, Roles.OWNER, Roles.ACCOUNTANT);
+        }
     }
 
     @Transactional
@@ -332,9 +349,26 @@ public class FeeService {
     }
 
     public List<Invoice> dues() {
-        return store.list(Invoice.class, Auth.current().organizationId()).stream()
-                .filter(i -> !"PAID".equals(i.getStatus()) && !"CANCELLED".equals(i.getStatus()))
+        PropelUser user = Auth.current();
+        Access.requireTenant(user);
+        List<Invoice> unpaid = store.list(Invoice.class, user.organizationId()).stream()
+                .filter(i -> !"PAID".equals(i.getStatus()) && !"CANCELLED".equals(i.getStatus()) && !"VOID".equals(i.getStatus()))
                 .toList();
+        if (Roles.OWNER.equals(user.role()) || Roles.ACCOUNTANT.equals(user.role()) || Access.hasCap(user, Packs.CAP_VIEW_FEES)) {
+            return unpaid;
+        }
+        if (Roles.STUDENT.equals(user.role())) {
+            Student me = scope.studentFor(user);
+            if (me == null) {
+                return List.of();
+            }
+            return unpaid.stream().filter(i -> me.getId().equals(i.getStudentId())).toList();
+        }
+        if (Roles.PARENT.equals(user.role())) {
+            var kids = scope.parentStudentIds(user);
+            return unpaid.stream().filter(i -> i.getStudentId() != null && kids.contains(i.getStudentId())).toList();
+        }
+        throw new ApiException(HttpStatus.FORBIDDEN, "Not allowed to list dues");
     }
 
     public List<Map<String, Object>> ledger() {
@@ -746,6 +780,13 @@ public class FeeService {
             if (studentId == null || !studentId.equals(invoice.getStudentId())) {
                 throw new ApiException(HttpStatus.FORBIDDEN, "Not your receipt");
             }
+        } else if (Roles.PARENT.equals(user.role())) {
+            if (invoice.getStudentId() == null || !scope.parentStudentIds(user).contains(invoice.getStudentId())) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Not your child's receipt");
+            }
+        } else if (!Roles.OWNER.equals(user.role()) && !Roles.ACCOUNTANT.equals(user.role())
+                && !Access.hasCap(user, Packs.CAP_VIEW_FEES)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Not allowed to view this receipt");
         }
         Organization org = store.get(Organization.class, user.organizationId());
         Map<String, Object> out = new LinkedHashMap<>();

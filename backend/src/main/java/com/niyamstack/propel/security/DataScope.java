@@ -237,12 +237,34 @@ public class DataScope {
         return true;
     }
 
-    private static boolean visibleToParent(Class<?> type, TenantEntity e, Set<UUID> kids) {
+    private boolean visibleToParent(Class<?> type, TenantEntity e, Set<UUID> kids) {
         if (type == Student.class) {
             return kids.contains(e.getId());
         }
         UUID sid = studentIdOf(e);
-        return sid == null || kids.contains(sid);
+        if (sid != null) {
+            return kids.contains(sid);
+        }
+        if (e instanceof Payment p && p.getInvoiceId() != null) {
+            return invoiceStudentInKids(p.getInvoiceId(), kids);
+        }
+        if (e instanceof Receipt r && r.getInvoiceId() != null) {
+            return invoiceStudentInKids(r.getInvoiceId(), kids);
+        }
+        // Unscoped entities: only allow known org-wide catalogs (deny fee/ops leakage)
+        return e instanceof Drive || e instanceof Announcement || e instanceof Course
+                || e instanceof ContentItem || e instanceof Batch || e instanceof Center
+                || e instanceof Classroom || e instanceof AcademicYear || e instanceof Term
+                || e instanceof MessageTemplate || e instanceof LiveSession || e instanceof Recording;
+    }
+
+    private boolean invoiceStudentInKids(UUID invoiceId, Set<UUID> kids) {
+        try {
+            Invoice inv = store.get(Invoice.class, invoiceId);
+            return inv.getStudentId() != null && kids.contains(inv.getStudentId());
+        } catch (Exception ex) {
+            return false;
+        }
     }
 
     private static UUID studentIdOf(TenantEntity e) {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { localToday } from "../localDate";
 import { Card, ErrorText, FormGrid, PrimaryButton, Select, useApi } from "../ui";
 
 type RosterRow = { studentId: string; fullName: string; studentCode?: string; status?: string };
@@ -8,7 +9,7 @@ type Summary = { students?: number; presentToday?: number; absentToday?: number;
 export function BatchAttendanceSheet() {
   const batches = useApi<{ id: string; name: string }[]>("/api/batches");
   const [batchId, setBatchId] = useState("");
-  const [sessionDate, setSessionDate] = useState(new Date().toISOString().slice(0, 10));
+  const [sessionDate, setSessionDate] = useState(localToday());
   const [present, setPresent] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);

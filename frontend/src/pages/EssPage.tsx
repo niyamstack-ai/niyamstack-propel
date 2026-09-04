@@ -812,6 +812,11 @@ function AttendanceTab({ hr }: { hr: boolean }) {
         />
       </Card>
       <Card title="Mark attendance">
+        {hr && options.length === 0 && !people.loading && (
+          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            No employees yet. Add people under ESS → Employees before marking attendance.
+          </p>
+        )}
         <FormGrid>
           {hr && (
             <Select
@@ -1740,7 +1745,11 @@ function CompensationTab() {
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function escHtml(value: string | number | undefined) {

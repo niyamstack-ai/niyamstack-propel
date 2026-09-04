@@ -154,7 +154,7 @@ function StaffFees() {
   const { user } = useAuth();
   const canApproveRefunds = user?.role === "OWNER";
   const canCollect = user?.role === "OWNER" || user?.role === "ACCOUNTANT";
-  const canManagePlans = canCollect || user?.role === "COUNSELOR";
+  const canManagePlans = canCollect;
   const studentName = (id?: string, buyer?: string) =>
     buyer || (students.data ?? []).find((s) => s.id === id)?.fullName || "—";
   const courses = useApi<{ id: string; name: string }[]>("/api/courses");

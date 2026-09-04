@@ -124,6 +124,11 @@ export function labelKey(label: string) {
     "Institute profile": "institute_profile",
     "Add a center": "add_center",
     Open: "open",
+    "My home": "my_home",
+    Leads: "leads",
+    "Drives & ATS": "drives",
+    "My child": "my_child",
+    Home: "home",
   };
   return map[label] || label.toLowerCase().replace(/\s+/g, "_");
 }

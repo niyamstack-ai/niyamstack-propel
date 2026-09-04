@@ -598,41 +598,52 @@ function CoursePage() {
 
   useEffect(() => {
     if (!slug || !courseId) return;
+    let cancelled = false;
     api<PublicCourse>(`/api/public/sites/${slug}/courses/${courseId}`)
-      .then((row) => {
+      .then(async (row) => {
+        if (cancelled) return;
         setCourse(row);
         setPrice(Number(row.price));
         if (row.validityOptions?.[0]?.id) setValidityOption(row.validityOptions[0].id);
-      })
-      .catch((err: Error) => setError(err.message));
-    api<OutlineItem[]>(`/api/public/sites/${slug}/courses/${courseId}/outline`)
-      .then(setOutline)
-      .catch(() => setOutline([]));
-    if (token && user?.role === "STUDENT") {
-      setOwnedError(null);
-      api<MyCourse[]>("/api/actions/my-courses")
-        .then((rows) => {
-          setOwned(rows.some((r) => r.course.id === courseId));
+        if (token && user?.role === "STUDENT") {
           setOwnedError(null);
-        })
-        .catch((err: Error) => {
+          try {
+            const rows = await api<MyCourse[]>("/api/actions/my-courses");
+            if (cancelled) return;
+            setOwned(rows.some((r) => r.course.id === row.id || r.course.id === courseId));
+          } catch (err) {
+            if (cancelled) return;
+            setOwned(false);
+            setOwnedError((err as Error).message || "Could not check enrolment");
+          }
+        } else {
           setOwned(false);
-          setOwnedError(err.message || "Could not check enrolment");
-        });
-    } else {
-      setOwned(false);
-      setOwnedError(null);
-    }
+          setOwnedError(null);
+        }
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError(err.message);
+      });
+    api<OutlineItem[]>(`/api/public/sites/${slug}/courses/${courseId}/outline`)
+      .then((rows) => {
+        if (!cancelled) setOutline(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setOutline([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [slug, courseId, token, user?.role]);
 
   async function applyCoupon() {
-    if (!slug || !courseId || !coupon.trim()) return;
+    if (!slug || !course?.id || !coupon.trim()) return;
     setBusy(true);
     setError(null);
     try {
       const res = await api<{ price: number; code: string }>(`/api/public/sites/${slug}/coupons/apply`, {
         method: "POST",
-        body: JSON.stringify({ courseId, code: coupon.trim() }),
+        body: JSON.stringify({ courseId: course.id, code: coupon.trim() }),
       });
       setPrice(Number(res.price));
       setCouponOk(res.code);
@@ -646,20 +657,20 @@ function CoursePage() {
 
   async function buy(e?: FormEvent) {
     e?.preventDefault();
-    if (!slug || !courseId) return;
+    if (!slug || !course?.id) return;
     setBusy(true);
     setError(null);
     try {
       fetch(`/api/public/sites/${slug}/hit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "BUY_CLICK", path: `/courses/${courseId}` }),
+        body: JSON.stringify({ kind: "BUY_CLICK", path: `/courses/${course.id}` }),
       }).catch(() => undefined);
       const res = await api<CheckoutOrder & { token?: string; user?: { id: string; name: string; email: string; role: string; organizationId: string; packageTier: string }; receiptNo?: string; loginHint?: string; phone?: string; invoiceId?: string }>(
         `/api/public/sites/${slug}/purchase`,
         {
           method: "POST",
-          body: JSON.stringify({ fullName: name, email, phone, courseId, couponCode: couponOk || undefined, validityOption }),
+          body: JSON.stringify({ fullName: name, email, phone, courseId: course.id, couponCode: couponOk || undefined, validityOption }),
         }
       );
       let receiptNo = res.receiptNo;
@@ -686,7 +697,7 @@ function CoursePage() {
       } catch {
         /* tracking is best-effort */
       }
-      navigate(`${sitePath(slug)}/learn/${courseId}`, {
+      navigate(`${sitePath(slug)}/learn/${course.id}`, {
         state: {
           purchaseNotice: [receiptNo ? `Receipt ${receiptNo}.` : null, loginHint || `Log in later with ${phone} on this website (OTP).`].filter(Boolean).join(" "),
         },
@@ -1269,12 +1280,14 @@ function StudyPage() {
     setLoadError(null);
     api<MyCourse[]>("/api/actions/my-courses")
       .then((rows) => {
-        const match = rows.find((r) => r.course.id === courseId);
+        const match = rows.find(
+          (r) => r.course.id === courseId || (r.course as { shareSlug?: string }).shareSlug === courseId,
+        );
         setCourse(match?.course || null);
         setEnrolled(!!match);
       })
       .catch((e) => {
-        setEnrolled(null);
+        setEnrolled(false);
         setLoadError((e as Error).message || "Could not load your courses");
       });
   }, [courseId]);
@@ -1307,6 +1320,10 @@ function StudyPage() {
         <p className="text-sm text-slate-500">Try again, or go back to My learning.</p>
       </div>
     );
+  }
+
+  if (enrolled === null) {
+    return <p className="text-sm text-slate-500">Checking enrolment…</p>;
   }
 
   if (enrolled === false) {

@@ -58,6 +58,7 @@ function LiveText({
         document.execCommand("insertText", false, text);
       }}
       onBlur={(e) => onChange(e.currentTarget.innerText)}
+      onInput={(e) => onChange(e.currentTarget.innerText)}
       onKeyDown={(e) => {
         if (e.key === "Enter" && Tag !== "p" && Tag !== "blockquote" && Tag !== "figcaption") {
           e.preventDefault();

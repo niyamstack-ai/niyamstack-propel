@@ -9,6 +9,7 @@ import com.niyamstack.propel.integration.MessagingGateway;
 import com.niyamstack.propel.integration.OrgSecrets;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
+import com.niyamstack.propel.security.DataScope;
 import com.niyamstack.propel.security.PropelUser;
 import com.niyamstack.propel.security.Roles;
 import org.springframework.http.HttpStatus;
@@ -34,12 +35,14 @@ import java.util.stream.Collectors;
 public class ScaleService {
     private final Store store;
     private final MessagingGateway messaging;
+    private final DataScope scope;
     private final ObjectMapper mapper = new ObjectMapper();
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
 
-    public ScaleService(Store store, MessagingGateway messaging) {
+    public ScaleService(Store store, MessagingGateway messaging, DataScope scope) {
         this.store = store;
         this.messaging = messaging;
+        this.scope = scope;
     }
 
     public Map<String, Object> mobileHome() {
@@ -50,9 +53,13 @@ public class ScaleService {
         out.put("role", user.role());
         out.put("name", user.name());
         if (Roles.STUDENT.equals(user.role()) || Roles.PARENT.equals(user.role())) {
-            List<Student> mine = Roles.STUDENT.equals(user.role())
-                    ? store.listBy(Student.class, org, "userId", user.userId())
-                    : store.list(Student.class, org);
+            List<Student> mine;
+            if (Roles.STUDENT.equals(user.role())) {
+                mine = store.listBy(Student.class, org, "userId", user.userId());
+            } else {
+                Set<UUID> kids = scope.parentStudentIds(user);
+                mine = store.list(Student.class, org).stream().filter(s -> kids.contains(s.getId())).toList();
+            }
             Student me = mine.isEmpty() ? null : mine.getFirst();
             out.put("student", me);
             if (me != null) {
@@ -433,8 +440,11 @@ public class ScaleService {
             return Map.of("applied", 0);
         }
         int applied = 0;
+        List<Integer> failed = new ArrayList<>();
+        int index = 0;
         for (Object item : events) {
             if (!(item instanceof Map<?, ?> ev)) {
+                failed.add(index++);
                 continue;
             }
             String type = mapStr(ev, "type", "").toUpperCase();
@@ -463,14 +473,18 @@ public class ScaleService {
                     n.setBody(mapStr(ev, "body", ""));
                     store.save(n);
                     applied++;
+                } else {
+                    failed.add(index);
                 }
-            } catch (Exception ignored) {
-                /* skip bad queued rows */
+            } catch (Exception ex) {
+                failed.add(index);
             }
+            index++;
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("applied", applied);
         out.put("queued", events.size());
+        out.put("failed", failed);
         return out;
     }
 

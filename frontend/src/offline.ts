@@ -28,10 +28,16 @@ export function pendingOffline(): OfflineEvent[] {
 export async function flushOffline(api: <T>(path: string, init?: RequestInit) => Promise<T>) {
   const events = pendingOffline();
   if (events.length === 0) return 0;
-  const res = await api<{ applied: number }>("/api/actions/offline/sync", {
+  const res = await api<{ applied: number; failed?: number[] }>("/api/actions/offline/sync", {
     method: "POST",
     body: JSON.stringify({ events }),
   });
-  localStorage.removeItem(KEY);
-  return res.applied ?? events.length;
+  const failed = new Set(res.failed ?? []);
+  const remaining = events.filter((_, i) => failed.has(i));
+  if (remaining.length > 0) {
+    localStorage.setItem(KEY, JSON.stringify(remaining));
+  } else {
+    localStorage.removeItem(KEY);
+  }
+  return res.applied ?? events.length - remaining.length;
 }

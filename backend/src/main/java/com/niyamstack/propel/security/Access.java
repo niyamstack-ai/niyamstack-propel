@@ -66,7 +66,7 @@ public final class Access {
             case "CRM" -> Roles.COUNSELOR.equals(role) || caps.contains(Packs.CAP_CRM);
             case "SIS" -> Roles.COUNSELOR.equals(role) || caps.contains(Packs.CAP_STUDENTS);
             case "LMS" -> Roles.FACULTY.equals(role) || caps.contains(Packs.CAP_EXAMS) || caps.contains(Packs.CAP_LMS);
-            case "FEES" -> Roles.ACCOUNTANT.equals(role) || caps.contains(Packs.CAP_VIEW_FEES) || caps.contains(Packs.CAP_REFUND);
+            case "FEES" -> Roles.ACCOUNTANT.equals(role) || caps.contains(Packs.CAP_REFUND);
             case "PLACEMENT" -> Set.of(Roles.PLACEMENT_HEAD, Roles.RECRUITER).contains(role) || caps.contains(Packs.CAP_PLACEMENT);
             case "COMMS" -> Set.of(Roles.COUNSELOR, Roles.FACULTY, Roles.PLACEMENT_HEAD).contains(role);
             case "GROWTH" -> Roles.COUNSELOR.equals(role);

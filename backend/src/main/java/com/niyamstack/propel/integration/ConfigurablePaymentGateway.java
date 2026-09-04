@@ -103,7 +103,7 @@ public class ConfigurablePaymentGateway implements PaymentGateway {
     public boolean verifyCheckout(UUID orgId, String orderId, String paymentId, String signature) {
         String[] keys = keys(orgId);
         if (keys == null) {
-            return true;
+            return false;
         }
         if (orderId == null || paymentId == null || signature == null || signature.isBlank()) {
             return false;

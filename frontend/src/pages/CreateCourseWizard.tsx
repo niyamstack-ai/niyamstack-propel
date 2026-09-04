@@ -219,7 +219,7 @@ export function CreateCourseWizard() {
       return;
     }
     await run(async () => {
-      if (step === 0) await persist(false);
+      if (step === 0) await persist(Boolean(draft?.published));
       if (step === 1) {
         if (paid && !(Number(fees) > 0)) {
           throw new Error("Enter a price greater than 0, or mark the course as free.");

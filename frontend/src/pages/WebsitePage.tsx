@@ -158,8 +158,8 @@ export function WebsitePage() {
     }
   }
 
-  async function savePage() {
-    if (!current) return;
+  async function savePage(): Promise<boolean> {
+    if (!current) return true;
     setStatus("saving");
     try {
       await updateRecord(`/api/website-pages/${current.id}`, {
@@ -169,9 +169,11 @@ export function WebsitePage() {
       });
       setDirty(false);
       setStatus("saved");
+      return true;
     } catch (e) {
       setError((e as Error).message);
       setStatus("unsaved");
+      return false;
     }
   }
 
@@ -215,7 +217,6 @@ export function WebsitePage() {
         ...org.data,
         customDomain: domain,
         websiteUrl: domain ? `https://${domain}` : previewPath,
-        websitePublished: true,
         settingsJson: JSON.stringify({ ...previous, domain: { hostTarget: HOST_TARGET, status: domain ? "PENDING" : "" } }),
       });
       org.reload();
@@ -240,7 +241,10 @@ export function WebsitePage() {
   }
 
   async function switchPage(id: string) {
-    if (dirty) await savePage();
+    if (dirty) {
+      const ok = await savePage();
+      if (!ok) return;
+    }
     setDirty(false);
     setPageId(id);
   }
@@ -325,7 +329,9 @@ export function WebsitePage() {
         <button type="button" className="rounded-full border border-line px-3 py-1.5 text-sm" onClick={() => setShareOpen(true)}>
           {siteLive ? "Share website" : "Preview link"}
         </button>
-        <PrimaryButton onClick={() => void publish()}>Publish</PrimaryButton>
+        <PrimaryButton disabled={demoLocked} onClick={() => void publish()}>
+          Publish
+        </PrimaryButton>
       </header>
       {error && (
         <div className="px-4 py-2">

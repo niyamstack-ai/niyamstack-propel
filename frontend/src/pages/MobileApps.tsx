@@ -4,6 +4,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { prettyLabel } from "../labels";
 import { enqueueOffline, flushOffline, pendingOffline } from "../offline";
+import { localToday } from "../localDate";
 import { Card, ErrorText, Field, PrimaryButton, Select, formatDay, formatInr, useApi } from "../ui";
 
 type Home = {
@@ -276,7 +277,7 @@ function FacultyAttend({
       type: "ATTENDANCE" as const,
       studentId,
       batchId,
-      sessionDate: new Date().toISOString().slice(0, 10),
+      sessionDate: localToday(),
       status: "PRESENT",
     };
     try {
