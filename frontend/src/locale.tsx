@@ -50,8 +50,9 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
       });
       setLocaleState(r.locale ?? next);
       setDictionary(r.dictionary ?? {});
-    } catch {
+    } catch (e) {
       setLocaleState(prev);
+      window.alert((e as Error).message || "Could not save language preference");
     }
   }, [locale]);
 

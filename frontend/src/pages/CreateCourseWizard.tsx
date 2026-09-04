@@ -127,7 +127,8 @@ export function CreateCourseWizard() {
   const discountAmt = Math.max(0, Number(discount || 0));
   const afterDiscount = Math.max(0, listPrice - discountAmt);
   const gst = includeTax ? afterDiscount * (Number(taxPercent || 0) / 100) : 0;
-  const effective = paid ? Math.round((afterDiscount + gst) * 100) / 100 : 0;
+  const effective = paid ? Math.round(afterDiscount * 100) / 100 : 0;
+  const effectiveWithTax = paid ? Math.round((afterDiscount + gst) * 100) / 100 : 0;
 
   const durationMonths = useMemo(() => {
     const n = Number(validityValue) || 1;
@@ -365,7 +366,7 @@ export function CreateCourseWizard() {
                 </li>
                 <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
                   <span>Create installments</span>
-                  <Toggle on={installmentsOn} onChange={setInstallmentsOn} />
+                  <Toggle on={installmentsOn} onChange={(v) => { setInstallmentsOn(v); if (v) madePlan.current = false; }} />
                 </li>
                 {installmentsOn && (
                   <li>
@@ -472,8 +473,13 @@ export function CreateCourseWizard() {
                     <PriceField label="Price" value={fees} onChange={setFees} />
                     <PriceField label="Discount" value={discount} onChange={setDiscount} />
                     <label className="block text-sm">
-                      <span className="text-slate-600">Effective Price</span>
+                      <span className="text-slate-600">Course price (checkout)</span>
                       <input className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm" value={`₹${effective.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`} readOnly />
+                      {includeTax && gst > 0 && (
+                        <span className="mt-1 block text-xs text-slate-500">
+                          + GST {taxPercent}% → ₹{effectiveWithTax.toLocaleString("en-IN", { maximumFractionDigits: 2 })} on fee plans
+                        </span>
+                      )}
                     </label>
                   </div>
                 </div>

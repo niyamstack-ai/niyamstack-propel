@@ -50,9 +50,11 @@ export function CommsPage() {
     if (!editTpl) return;
     setError(null);
     try {
+      const existing = (tpls.data ?? []).find((t) => t.id === editTpl);
+      if (!existing) throw new Error("Template not found");
       await api(`/api/message-templates/${editTpl}`, {
         method: "PUT",
-        body: JSON.stringify({ body: editBody }),
+        body: JSON.stringify({ ...existing, body: editBody }),
       });
       tpls.reload();
       setSendStatus("Template saved.");

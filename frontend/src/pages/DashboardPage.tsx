@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
 import { hasGrowthTier, pathAllowed } from "../packs";
-import { Card, PrimaryButton, formatInr, formatWhen, useApi } from "../ui";
+import { Card, formatInr, formatWhen, useApi } from "../ui";
 import { OnboardingWizard } from "./OnboardingWizard";
 
 type Dash = {
@@ -181,8 +181,8 @@ function AccountsHome() {
         <HomeLink to="/fees" title="Fee ledger" text="Collect, receipts, refunds" />
         <HomeLink to="/analytics" title="Finance" text="Course and counsellor split" />
       </div>
-      <Link to="/fees">
-        <PrimaryButton>Open fee ledger</PrimaryButton>
+      <Link to="/fees" className="inline-flex rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
+        Open fee ledger
       </Link>
     </div>
   );
@@ -210,8 +210,8 @@ function CounselorHome() {
         <HomeLink to="/crm" title="Leads" text="Counselling stages" />
         <HomeLink to="/students" title="Students" text="Enrol after convert" />
       </div>
-      <Link to="/crm">
-        <PrimaryButton>Open pipeline</PrimaryButton>
+      <Link to="/crm" className="inline-flex rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
+        Open pipeline
       </Link>
     </div>
   );
@@ -226,8 +226,8 @@ function PlacementHome({ recruiter }: { recruiter: boolean }) {
         {recruiter ? "Update drive outcomes for your company." : "Drives, ATS, readiness, alumni."}
       </p>
       <p className="text-sm">{dash.data?.applications ?? 0} applications · {dash.data?.offers ?? 0} offers</p>
-      <Link to="/placement">
-        <PrimaryButton>Open ATS</PrimaryButton>
+      <Link to="/placement" className="inline-flex rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
+        Open ATS
       </Link>
     </div>
   );
@@ -419,8 +419,8 @@ function UpcomingClasses() {
           ))}
         </ul>
       )}
-      <Link to="/lms#live">
-        <PrimaryButton>Open live classes</PrimaryButton>
+      <Link to="/lms#live" className="inline-flex rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
+        Open live classes
       </Link>
     </Card>
   );

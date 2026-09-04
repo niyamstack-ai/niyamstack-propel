@@ -130,11 +130,23 @@ public class GrowService {
         if (phoneTaken || emailTaken) {
             seed.setOrganizationId(orgId());
             seed.setEnrollmentDate(LocalDate.now());
+            AppUser existing = phoneTaken ? store.findUserByPhone(phone) : null;
+            if (existing == null && emailTaken) {
+                existing = store.findUserByEmail(inquiry.getEmail().trim().toLowerCase());
+            }
+            if (existing != null && existing.getOrganizationId() != null
+                    && existing.getOrganizationId().equals(orgId())
+                    && Roles.STUDENT.equals(existing.getRole())) {
+                seed.setUserId(existing.getId());
+            }
             Student saved = store.save(seed);
             enrolled = new LinkedHashMap<>();
             enrolled.put("id", saved.getId());
             enrolled.put("fullName", saved.getFullName());
             enrolled.put("studentCode", saved.getStudentCode());
+            if (saved.getUserId() == null) {
+                enrolled.put("loginWarning", "Phone or email already has an account — link a login from Students.");
+            }
         } else {
             enrolled = students.enrollFromOwner(seed);
         }
@@ -155,8 +167,9 @@ public class GrowService {
                     List<FeeInstallment> inst = fees.scheduleInstallments(UUID.fromString(body.get("feePlanId")), studentId);
                     enrolled.put("feeScheduled", !inst.isEmpty());
                     enrolled.put("installments", inst.size());
-                } catch (Exception ignored) {
+                } catch (Exception ex) {
                     enrolled.put("feeScheduled", false);
+                    enrolled.put("feeError", ex.getMessage() == null ? "Could not schedule fees" : ex.getMessage());
                 }
             } else {
                 List<FeeInstallment> inst = fees.scheduleDefaultForStudent(studentId, courseId, batchId);

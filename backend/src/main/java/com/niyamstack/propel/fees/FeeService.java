@@ -12,6 +12,7 @@ import com.niyamstack.propel.integration.PaymentGateway;
 import com.niyamstack.propel.catalog.Packs;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
+import com.niyamstack.propel.security.DataScope;
 import com.niyamstack.propel.security.Gstins;
 import com.niyamstack.propel.security.PropelUser;
 import com.niyamstack.propel.security.Roles;
@@ -39,21 +40,23 @@ public class FeeService {
     private final AuditService audit;
     private final EventHook hooks;
     private final CompensationService compensation;
+    private final DataScope scope;
 
     public FeeService(Store store, PaymentGateway payments, MessagingGateway messaging, AuditService audit, EventHook hooks,
-                      CompensationService compensation) {
+                      CompensationService compensation, DataScope scope) {
         this.store = store;
         this.payments = payments;
         this.messaging = messaging;
         this.audit = audit;
         this.hooks = hooks;
         this.compensation = compensation;
+        this.scope = scope;
     }
 
     @Transactional
     public List<FeeInstallment> scheduleInstallments(UUID planId, UUID studentId) {
         PropelUser user = Auth.current();
-        Access.requireAny(user, Roles.OWNER, Roles.ACCOUNTANT);
+        Access.requireAny(user, Roles.OWNER, Roles.ACCOUNTANT, Roles.COUNSELOR);
         FeePlan plan = store.getOwned(FeePlan.class, planId, user.organizationId());
         Student student = store.getOwned(Student.class, studentId, user.organizationId());
         int count = plan.getInstallmentCount() == null || plan.getInstallmentCount() < 1 ? 2 : plan.getInstallmentCount();
@@ -144,6 +147,13 @@ public class FeeService {
             if (isOffline(method)) {
                 throw new ApiException(HttpStatus.FORBIDDEN, "Ask the institute to record cash or cheque");
             }
+        } else if (Roles.PARENT.equals(user.role())) {
+            if (invoice.getStudentId() == null || !scope.parentStudentIds(user).contains(invoice.getStudentId())) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "You can only pay fees for your linked child");
+            }
+            if (isOffline(method)) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Ask the institute to record cash or cheque");
+            }
         } else {
             Access.requireAny(user, Roles.OWNER, Roles.ACCOUNTANT);
         }
@@ -157,7 +167,7 @@ public class FeeService {
         UUID orgId = user.organizationId();
         Organization org = store.get(Organization.class, orgId);
         if (isOffline(method)) {
-            if (Roles.STUDENT.equals(user.role())) {
+            if (Roles.STUDENT.equals(user.role()) || Roles.PARENT.equals(user.role())) {
                 throw new ApiException(HttpStatus.FORBIDDEN, "Ask the institute to record cash or cheque");
             }
             String ref = (reference == null || reference.isBlank()) ? "OFFLINE-" + Instant.now().toEpochMilli() : reference.trim();

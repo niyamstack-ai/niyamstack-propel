@@ -78,27 +78,32 @@ export function MobileApp() {
         <h1 className="text-lg font-semibold">{user?.orgName || home.data?.name || "Propel"}</h1>
         {offline && <p className="text-xs text-amber-200">Offline — actions queue and sync later.</p>}
         {isOwner && (
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              className={`rounded-full px-2.5 py-1 text-xs ${previewAs === "faculty" ? "bg-white text-navy" : "bg-white/15"}`}
-              onClick={() => {
-                setPreviewAs("faculty");
-                setTab("home");
-              }}
-            >
-              Faculty preview
-            </button>
-            <button
-              type="button"
-              className={`rounded-full px-2.5 py-1 text-xs ${previewAs === "student" ? "bg-white text-navy" : "bg-white/15"}`}
-              onClick={() => {
-                setPreviewAs("student");
-                setTab("home");
-              }}
-            >
-              Student preview
-            </button>
+          <div className="mt-2 space-y-1">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={`rounded-full px-2.5 py-1 text-xs ${previewAs === "faculty" ? "bg-white text-navy" : "bg-white/15"}`}
+                onClick={() => {
+                  setPreviewAs("faculty");
+                  setTab("home");
+                }}
+              >
+                Faculty preview
+              </button>
+              <button
+                type="button"
+                className={`rounded-full px-2.5 py-1 text-xs ${previewAs === "student" ? "bg-white text-navy" : "bg-white/15"}`}
+                onClick={() => {
+                  setPreviewAs("student");
+                  setTab("home");
+                }}
+              >
+                Student layout
+              </button>
+            </div>
+            {previewAs === "student" && (
+              <p className="text-[11px] text-amber-100">Layout only — data is still from your staff login. Open the student website to see real student data.</p>
+            )}
           </div>
         )}
       </header>

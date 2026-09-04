@@ -31,9 +31,21 @@ public class DataScope {
 
     public Set<UUID> parentStudentIds(PropelUser user) {
         return store.list(Guardian.class, user.organizationId()).stream()
-                .filter(g -> user.email() != null && user.email().equalsIgnoreCase(g.getEmail()))
+                .filter(g -> {
+                    if (g.getStudentId() == null) return false;
+                    if (user.userId() != null && user.userId().equals(g.getUserId())) return true;
+                    if (user.email() != null && !user.email().isBlank()
+                            && user.email().equalsIgnoreCase(blank(g.getEmail(), ""))) return true;
+                    String phone = blank(user.phone(), "");
+                    String gPhone = blank(g.getPhone(), "");
+                    return !phone.isBlank() && phone.equals(gPhone);
+                })
                 .map(Guardian::getStudentId)
                 .collect(Collectors.toSet());
+    }
+
+    private static String blank(String v, String fallback) {
+        return v == null || v.isBlank() ? fallback : v.trim();
     }
 
     public <T extends TenantEntity> List<T> restrict(Class<T> type, List<T> rows, PropelUser user) {

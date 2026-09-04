@@ -740,7 +740,6 @@ function AttendanceTab({ hr }: { hr: boolean }) {
   const [regReason, setRegReason] = useState("");
 
   const options = people.data ?? [];
-  const selfId = options[0]?.id ?? "";
 
   async function mark() {
     setError(null);
@@ -748,16 +747,11 @@ function AttendanceTab({ hr }: { hr: boolean }) {
       setError("Select an employee before saving attendance.");
       return;
     }
-    const id = hr ? employeeId : selfId;
-    if (!id) {
-      setError("Employee profile is still loading. Try again in a moment.");
-      return;
-    }
     try {
       await api("/api/actions/ess/attendance", {
         method: "POST",
         body: JSON.stringify({
-          employeeId: id,
+          employeeId: hr ? employeeId : null,
           workDate,
           shift,
           status,

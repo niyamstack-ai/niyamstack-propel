@@ -40,6 +40,7 @@ function escHtml(value: string | number | undefined) {
 }
 
 function MyFees() {
+  const { user } = useAuth();
   const invoices = useApi<Invoice[]>("/api/invoices");
   const payments = useApi<Payment[]>("/api/payments");
   const receipts = useApi<{ id: string; receiptNo: string; amount: number; issuedAt?: string }[]>("/api/receipts");
@@ -84,7 +85,9 @@ function MyFees() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-navy">My fees</h1>
-      <p className="text-sm text-slate-500">Pay dues and download receipts for this student account.</p>
+      <p className="text-sm text-slate-500">
+        {user?.role === "PARENT" ? "Pay dues and download receipts for your child." : "Pay dues and download receipts for this student account."}
+      </p>
       {dueTotal > 0 && <p className="text-sm font-medium text-navy">Total due ₹{dueTotal}</p>}
       <ErrorText error={error} />
       <Card title="Invoices">

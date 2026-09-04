@@ -102,23 +102,32 @@ export function CrmPage() {
     if (!convertId) return;
     if (!window.confirm("Enrol this lead as a student? Fee plan will be scheduled if one matches the course.")) return;
     await run(async () => {
-      const out = await api<{ feeScheduled?: boolean; installments?: number }>(`/api/actions/inquiries/${convertId}/convert`, {
-        method: "POST",
-        body: JSON.stringify({
-          courseId: convertCourse || undefined,
-          batchId: convertBatch || undefined,
-          feePlanId: convertFeePlan || undefined,
-          autoFees: "true",
-        }),
-      });
+      const out = await api<{ feeScheduled?: boolean; installments?: number; feeError?: string; loginWarning?: string }>(
+        `/api/actions/inquiries/${convertId}/convert`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            courseId: convertCourse || undefined,
+            batchId: convertBatch || undefined,
+            feePlanId: convertFeePlan || undefined,
+            autoFees: "true",
+          }),
+        },
+      );
       setConvertId("");
       inquiries.reload();
       students.reload();
-      setNotice(
+      const bits = [
         out.feeScheduled
-          ? `Enrolled. Fee installments scheduled (${out.installments ?? 0}).`
-          : "Enrolled. No matching fee plan — schedule fees manually under Fees.",
-      );
+          ? `Fee installments scheduled (${out.installments ?? 0}).`
+          : out.feeError
+            ? `Fees not scheduled: ${out.feeError}`
+            : user?.role === "COUNSELOR"
+              ? "Ask an owner or accountant if fees still need scheduling."
+              : "No matching fee plan — schedule under Fees if needed.",
+        out.loginWarning,
+      ].filter(Boolean);
+      setNotice(`Enrolled. ${bits.join(" ")}`);
     });
   }
 

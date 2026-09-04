@@ -95,6 +95,7 @@ function roleNav(role?: string): NavEntry[] {
         { to: "/crm", label: "Leads" },
         { to: "/landing-pages", label: "Landing pages" },
         { to: "/students", label: "Students" },
+        { to: "/fees", label: "Fees" },
         { to: "/comms", label: "Notices" },
         { to: "/campaigns", label: "Campaigns" },
       ];
