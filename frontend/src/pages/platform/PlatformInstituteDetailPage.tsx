@@ -30,7 +30,7 @@ export function PlatformInstituteDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [acting, setActing] = useState<null | "paid" | "approve" | "failed" | "suspend">(null);
+  const [acting, setActing] = useState<null | "paid" | "approve" | "failed" | "suspend" | "restore">(null);
   const canMarkPaid = hasCap(user, "MARK_PAID");
   const canApprove = hasCap(user, "APPROVE");
   const canSuspend = hasCap(user, "SUSPEND");
@@ -107,6 +107,7 @@ export function PlatformInstituteDetailPage() {
   const org = rec.data;
   const paid = org?.paymentStatus === "PAID";
   const active = org?.accessStatus === "ACTIVE";
+  const suspended = org?.accessStatus === "SUSPENDED";
 
   return (
     <div className="space-y-6">
@@ -146,9 +147,25 @@ export function PlatformInstituteDetailPage() {
             </button>
           )}
           {canSuspend && (
-            <button type="button" className="rounded-full border border-red-200 px-4 py-2 text-sm text-red-700" disabled={saving || !!acting} onClick={() => action("suspend", "suspend", "Institute suspended.")}>
-              {acting === "suspend" ? "Suspending…" : "Suspend"}
-            </button>
+            suspended ? (
+              <button
+                type="button"
+                className="rounded-full border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-800"
+                disabled={saving || !!acting}
+                onClick={() => action("restore", "restore", "Institute restored.")}
+              >
+                {acting === "restore" ? "Restoring…" : "Restore"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="rounded-full border border-red-200 px-4 py-2 text-sm text-red-700"
+                disabled={saving || !!acting}
+                onClick={() => action("suspend", "suspend", "Institute suspended.")}
+              >
+                {acting === "suspend" ? "Suspending…" : "Suspend"}
+              </button>
+            )
           )}
         </div>
         <p className="mt-3 text-xs text-slate-500">

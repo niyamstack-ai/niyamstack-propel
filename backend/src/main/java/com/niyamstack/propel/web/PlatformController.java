@@ -89,6 +89,11 @@ public class PlatformController {
         return platform.suspend(id);
     }
 
+    @PostMapping("/institutes/{id}/restore")
+    public Map<String, Object> restore(@PathVariable UUID id) {
+        return platform.restore(id);
+    }
+
     @GetMapping("/employees")
     public List<Map<String, Object>> employees() {
         return platform.employees();

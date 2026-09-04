@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
+import { useLocale } from "../locale";
 import { Card, PrimaryButton, useApi } from "../ui";
 
 type Article = { pageKey?: string; title?: string; body?: string; locale?: string };
@@ -7,11 +8,15 @@ type Tour = { pageKey?: string; steps?: { title: string; body: string }[] };
 
 export function HelpPage() {
   const location = useLocation();
+  const { locale, setLocale, t } = useLocale();
   const page = new URLSearchParams(location.search).get("page") || "dashboard";
-  const [locale, setLocale] = useState("en");
   const articles = useApi<Article[]>(`/api/actions/help/articles?locale=${locale}`);
   const tour = useApi<Tour>(`/api/actions/help/tour?page=${page}`);
   const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    setStep(0);
+  }, [page, locale]);
 
   const steps = tour.data?.steps ?? [];
 
@@ -19,12 +24,16 @@ export function HelpPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-navy">{locale === "hi" ? "मदद केंद्र" : "Help center"}</h1>
+          <h1 className="text-2xl font-bold text-navy">{t("help_center", "Help center")}</h1>
           <p className="text-sm text-slate-500">
             {locale === "hi" ? "मार्गदर्शित टूर और पृष्ठ सहायता।" : "Guided tours and page tips for your institute."}
           </p>
         </div>
-        <select className="rounded-lg border border-line px-3 py-2 text-sm" value={locale} onChange={(e) => setLocale(e.target.value)}>
+        <select
+          className="rounded-lg border border-line px-3 py-2 text-sm"
+          value={locale}
+          onChange={(e) => void setLocale(e.target.value)}
+        >
           <option value="en">English</option>
           <option value="hi">हिन्दी</option>
         </select>

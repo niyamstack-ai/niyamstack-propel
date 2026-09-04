@@ -240,6 +240,23 @@ public class PlatformService {
         return toView(org);
     }
 
+    @Transactional
+    public Map<String, Object> restore(UUID id) {
+        requireCap(PlatformCaps.SUSPEND);
+        Organization org = store.get(Organization.class, id);
+        if (!"SUSPENDED".equals(nz(org.getAccessStatus(), ""))) {
+            return toView(org);
+        }
+        if ("PAID".equals(nz(org.getPaymentStatus(), "UNPAID"))) {
+            org.setAccessStatus("ACTIVE");
+        } else {
+            org.setAccessStatus("DEMO");
+        }
+        store.save(org);
+        audit.log("PLATFORM_RESTORE", "Organization", org.getId(), org.getName());
+        return toView(org);
+    }
+
     public List<Map<String, Object>> employees() {
         requireCap(PlatformCaps.MANAGE_EMPLOYEES);
         List<Map<String, Object>> rows = new ArrayList<>();

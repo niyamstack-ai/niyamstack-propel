@@ -14,6 +14,8 @@ public class OtpService {
     public static final String LOGIN = "LOGIN";
     public static final String SIGNUP = "SIGNUP";
     public static final String RESET = "RESET";
+    public static final String VERIFY_EMAIL = "VERIFY_EMAIL";
+    public static final String VERIFY_PHONE = "VERIFY_PHONE";
 
     private final String devCode;
     private final boolean reveal;

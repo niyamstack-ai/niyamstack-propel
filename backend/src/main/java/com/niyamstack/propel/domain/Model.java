@@ -89,6 +89,10 @@ public final class Model {
         private String capabilitiesCsv;
         private UUID companyId;
         private String uiLocale = "en";
+        @jakarta.persistence.Column(nullable = false, columnDefinition = "boolean default false")
+        private boolean emailVerified = false;
+        @jakarta.persistence.Column(nullable = false, columnDefinition = "boolean default false")
+        private boolean phoneVerified = false;
     }
 
     @Entity(name = "AcademicYear") @Table(name = "academic_years") @Getter @Setter

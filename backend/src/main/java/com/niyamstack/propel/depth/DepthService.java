@@ -491,30 +491,110 @@ public class DepthService {
     }
 
     private Map<String, String> dictionary(String locale) {
-        if ("hi".equals(locale)) {
-            return Map.of(
-                    "dashboard", "डैशबोर्ड",
-                    "people", "लोग",
-                    "fees", "फीस",
-                    "support", "सहायता",
-                    "help", "मदद",
-                    "compliance", "अनुपालन",
-                    "enterprise", "एंटरप्राइज़",
-                    "intelligence", "इंटेलिजेंस",
-                    "settings", "सेटिंग्स"
-            );
+        Map<String, String> en = new LinkedHashMap<>();
+        en.put("dashboard", "Dashboard");
+        en.put("grow", "Grow");
+        en.put("website", "Website");
+        en.put("your_app", "Your App");
+        en.put("mobile_apps", "Mobile apps");
+        en.put("landing_pages", "Landing Pages");
+        en.put("campaigns", "Campaigns");
+        en.put("courses", "Courses");
+        en.put("tests", "Tests");
+        en.put("lms", "LMS");
+        en.put("academics", "Academics");
+        en.put("people", "People");
+        en.put("students", "Students");
+        en.put("staff", "Staff");
+        en.put("alumni", "Alumni");
+        en.put("ess", "ESS");
+        en.put("admissions", "Admissions");
+        en.put("money", "Money");
+        en.put("fees", "Fees");
+        en.put("analytics", "Analytics");
+        en.put("intelligence", "Intelligence");
+        en.put("enterprise", "Enterprise");
+        en.put("compliance", "Compliance");
+        en.put("scale", "Scale depth");
+        en.put("placements", "Placements");
+        en.put("placement", "Placement");
+        en.put("readiness", "Readiness");
+        en.put("communicate", "Communicate");
+        en.put("notices", "Notices");
+        en.put("chats", "Chats");
+        en.put("one_to_one", "1:1 Sessions");
+        en.put("support", "Support");
+        en.put("help", "Help");
+        en.put("settings", "Settings");
+        en.put("institute", "Institute");
+        en.put("activity_log", "Activity log");
+        en.put("integrations", "Integrations");
+        en.put("license_map", "License map");
+        en.put("email_support", "Email support");
+        en.put("help_center", "Help center");
+        en.put("get_started", "Get started");
+        en.put("create_course", "Create a course");
+        en.put("invite_staff", "Invite staff");
+        en.put("publish_website", "Publish website");
+        en.put("institute_profile", "Institute profile");
+        en.put("add_center", "Add a center");
+        en.put("open", "Open");
+        en.put("my_institute", "My institute");
+        en.put("grow_and_run", "Grow and run the institute");
+        if (!"hi".equals(locale)) {
+            return en;
         }
-        return Map.of(
-                "dashboard", "Dashboard",
-                "people", "People",
-                "fees", "Fees",
-                "support", "Support",
-                "help", "Help",
-                "compliance", "Compliance",
-                "enterprise", "Enterprise",
-                "intelligence", "Intelligence",
-                "settings", "Settings"
-        );
+        Map<String, String> hi = new LinkedHashMap<>();
+        hi.put("dashboard", "डैशबोर्ड");
+        hi.put("grow", "विकास");
+        hi.put("website", "वेबसाइट");
+        hi.put("your_app", "आपका ऐप");
+        hi.put("mobile_apps", "मोबाइल ऐप्स");
+        hi.put("landing_pages", "लैंडिंग पेज");
+        hi.put("campaigns", "अभियान");
+        hi.put("courses", "कोर्स");
+        hi.put("tests", "टेस्ट");
+        hi.put("lms", "एलएमएस");
+        hi.put("academics", "अकादमिक");
+        hi.put("people", "लोग");
+        hi.put("students", "छात्र");
+        hi.put("staff", "स्टाफ");
+        hi.put("alumni", "पूर्व छात्र");
+        hi.put("ess", "ईएसएस");
+        hi.put("admissions", "प्रवेश");
+        hi.put("money", "पैसे");
+        hi.put("fees", "फीस");
+        hi.put("analytics", "एनालिटिक्स");
+        hi.put("intelligence", "इंटेलिजेंस");
+        hi.put("enterprise", "एंटरप्राइज़");
+        hi.put("compliance", "अनुपालन");
+        hi.put("scale", "स्केल डेप्थ");
+        hi.put("placements", "प्लेसमेंट");
+        hi.put("placement", "प्लेसमेंट");
+        hi.put("readiness", "रेडीनेस");
+        hi.put("communicate", "संपर्क");
+        hi.put("notices", "सूचनाएँ");
+        hi.put("chats", "चैट");
+        hi.put("one_to_one", "1:1 सत्र");
+        hi.put("support", "सहायता");
+        hi.put("help", "मदद");
+        hi.put("settings", "सेटिंग्स");
+        hi.put("institute", "संस्थान");
+        hi.put("activity_log", "गतिविधि लॉग");
+        hi.put("integrations", "इंटीग्रेशन");
+        hi.put("license_map", "लाइसेंस मैप");
+        hi.put("email_support", "ईमेल सहायता");
+        hi.put("help_center", "मदद केंद्र");
+        hi.put("get_started", "शुरू करें");
+        hi.put("create_course", "कोर्स बनाएँ");
+        hi.put("invite_staff", "स्टाफ आमंत्रित करें");
+        hi.put("publish_website", "वेबसाइट प्रकाशित करें");
+        hi.put("institute_profile", "संस्थान प्रोफ़ाइल");
+        hi.put("add_center", "केंद्र जोड़ें");
+        hi.put("open", "खोलें");
+        hi.put("my_institute", "मेरा संस्थान");
+        hi.put("grow_and_run", "संस्थान चलाएँ और बढ़ाएँ");
+        return hi;
     }
 
     private List<Map<String, Object>> defaultHelp(String locale, String pageKey) {

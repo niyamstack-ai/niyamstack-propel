@@ -1,27 +1,20 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { api } from "./api";
 import { useAuth } from "./auth";
 import { NiyamstackLogo } from "./brand/NiyamstackLogo";
+import { labelKey, useLocale } from "./locale";
 import { isNavGroup, navForRole, portalTitle, type NavGroup } from "./portals";
 import { UserMenu } from "./UserMenu";
 import { UnifiedSearch } from "./UnifiedSearch";
 
 function LocaleToggle() {
-  const [locale, setLocale] = useState("en");
-  useEffect(() => {
-    void api<{ locale?: string }>("/api/actions/locale")
-      .then((r) => setLocale(r.locale ?? "en"))
-      .catch(() => undefined);
-  }, []);
+  const { locale, setLocale } = useLocale();
   return (
     <select
       className="w-full rounded-lg border border-white/15 bg-transparent px-3 py-2 text-sm text-slate-300"
       value={locale}
       onChange={(e) => {
-        const next = e.target.value;
-        setLocale(next);
-        void api("/api/actions/locale", { method: "POST", body: JSON.stringify({ locale: next }) });
+        void setLocale(e.target.value);
       }}
     >
       <option value="en">English</option>
@@ -46,6 +39,7 @@ function SidebarNav({
   onNavigate?: () => void;
 }) {
   const { user } = useAuth();
+  const { t } = useLocale();
   const location = useLocation();
   const nav = navForRole(user?.role, user?.modules, user?.capabilities);
   const groups = nav.filter(isNavGroup);
@@ -69,7 +63,7 @@ function SidebarNav({
               onClick={onNavigate}
               className={({ isActive }) => linkClass(isActive)}
             >
-              {entry.label}
+              {t(labelKey(entry.label), entry.label)}
             </NavLink>
           );
         }
@@ -85,7 +79,7 @@ function SidebarNav({
               aria-expanded={open}
               onClick={() => setOpenGroup(entry.label)}
             >
-              {entry.label}
+              {t(labelKey(entry.label), entry.label)}
               <span className="text-[10px] opacity-70">{open ? "▾" : "▸"}</span>
             </button>
             {open && (
@@ -99,7 +93,7 @@ function SidebarNav({
                       linkClass(isActive || (item.to !== "/" && location.pathname.startsWith(item.to + "/")))
                     }
                   >
-                    {item.label}
+                    {t(labelKey(item.label), item.label)}
                   </NavLink>
                 ))}
               </div>
@@ -113,7 +107,10 @@ function SidebarNav({
 
 function SidebarBrand() {
   const { user } = useAuth();
+  const { t } = useLocale();
   const portal = portalTitle(user?.role);
+  const name = !user?.role || user.role === "OWNER" ? t("my_institute", portal.name) : portal.name;
+  const blurb = !user?.role || user.role === "OWNER" ? t("grow_and_run", portal.blurb) : portal.blurb;
   return (
     <div className="px-5 py-6">
       <div className="flex items-center gap-3">
@@ -123,8 +120,8 @@ function SidebarBrand() {
           <p className="text-[10px] tracking-[0.2em] text-sky-300">PROPEL</p>
         </div>
       </div>
-      <p className="mt-5 text-xl font-bold">{portal.name}</p>
-      <p className="mt-1 text-xs text-slate-300">{portal.blurb}</p>
+      <p className="mt-5 text-xl font-bold">{name}</p>
+      <p className="mt-1 text-xs text-slate-300">{blurb}</p>
     </div>
   );
 }
@@ -139,6 +136,7 @@ function isWebsiteBuilder(path: string) {
 
 export function Shell() {
   const { user } = useAuth();
+  const { t } = useLocale();
   const location = useLocation();
   const portal = portalTitle(user?.role);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -204,10 +202,10 @@ export function Shell() {
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
               <path d="M4 4h16v12H5.2L4 17.2V4Zm2 4.4 6 3.6 6-3.6V6H6v2.4Z" />
             </svg>
-            Email support
+            {t("email_support", "Email support")}
           </a>
           <NavLink to="/help" className="block rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-white/5 hover:text-white">
-            Help center
+            {t("help_center", "Help center")}
           </NavLink>
           <LocaleToggle />
         </div>

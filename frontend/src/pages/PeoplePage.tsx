@@ -13,6 +13,9 @@ type Staff = {
   id: string;
   fullName: string;
   email: string;
+  phone?: string;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
   role: string;
   active: boolean;
   capabilities?: string[];
@@ -74,6 +77,10 @@ function InstituteStaff() {
   const [memberPhone, setMemberPhone] = useState("");
   const [memberRole, setMemberRole] = useState("FACULTY");
   const [rights, setRights] = useState<string[]>(presetRights("FACULTY"));
+  const [verifyTarget, setVerifyTarget] = useState<{ id: string; channel: "email" | "phone"; label: string } | null>(null);
+  const [otp, setOtp] = useState("");
+  const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [verifyBusy, setVerifyBusy] = useState(false);
 
   function presetRights(role: string) {
     if (role === "COUNSELOR" || role === "PLACEMENT_HEAD") return ["STUDENTS", "CRM"];
@@ -135,6 +142,55 @@ function InstituteStaff() {
     }
   }
 
+  async function startVerify(s: Staff, channel: "email" | "phone") {
+    setError(null);
+    setNotice(null);
+    setOtp("");
+    setDevOtp(null);
+    setVerifyBusy(true);
+    try {
+      const res = await api<{ status?: string; devOtp?: string }>(`/api/staff/${s.id}/verify/${channel}/request`, {
+        method: "POST",
+      });
+      if (res.status === "already_verified") {
+        setNotice(`${channel === "email" ? "Email" : "Mobile"} is already verified.`);
+        staff.reload();
+        return;
+      }
+      setVerifyTarget({
+        id: s.id,
+        channel,
+        label: channel === "email" ? s.email : s.phone || "",
+      });
+      if (res.devOtp) setDevOtp(res.devOtp);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setVerifyBusy(false);
+    }
+  }
+
+  async function confirmVerify() {
+    if (!verifyTarget) return;
+    setVerifyBusy(true);
+    setError(null);
+    try {
+      await api(`/api/staff/${verifyTarget.id}/verify/${verifyTarget.channel}`, {
+        method: "POST",
+        body: JSON.stringify({ otp }),
+      });
+      setNotice(`${verifyTarget.channel === "email" ? "Email" : "Mobile"} verified.`);
+      setVerifyTarget(null);
+      setOtp("");
+      setDevOtp(null);
+      staff.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setVerifyBusy(false);
+    }
+  }
+
   function RightsChips({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
     return (
       <div className="flex flex-wrap gap-3">
@@ -155,16 +211,42 @@ function InstituteStaff() {
     );
   }
 
+  function VerifyCell({ s, channel }: { s: Staff; channel: "email" | "phone" }) {
+    const value = channel === "email" ? s.email : s.phone;
+    const verified = channel === "email" ? s.emailVerified : s.phoneVerified;
+    if (!value) {
+      return <span className="text-xs text-slate-400">—</span>;
+    }
+    return (
+      <div className="space-y-1">
+        <p className="text-sm">{value}</p>
+        {verified ? (
+          <p className="text-xs font-medium text-emerald-700">Verified</p>
+        ) : (
+          <button
+            type="button"
+            className="text-xs font-semibold text-brand hover:underline"
+            disabled={verifyBusy}
+            onClick={() => void startVerify(s, channel)}
+          >
+            Verify
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
       <Card title="Institute staff">
         <p className="mb-3 text-sm text-slate-500">Teachers, counselors, accountants, and placement staff. They log in to this portal, not the student website. Tick what they may see. HR records (code, department, leave, salary) live under ESS.</p>
         <Table
           empty="No staff besides you yet. Add a teacher below."
-          columns={["Member", "Email", "Role", "ESS", "Rights", "Active"]}
+          columns={["Member", "Email", "Mobile", "Role", "ESS", "Rights", "Active"]}
           rows={(staff.data ?? []).filter((s) => s.role !== "OWNER").map((s) => [
             s.fullName,
-            s.email,
+            <VerifyCell key={`${s.id}-email`} s={s} channel="email" />,
+            <VerifyCell key={`${s.id}-phone`} s={s} channel="phone" />,
             prettyLabel(s.role),
             s.hasEmployee ? (
               <span key={`${s.id}-ess`} className="text-xs text-emerald-700">
@@ -182,6 +264,34 @@ function InstituteStaff() {
       </Card>
       <ErrorText error={error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      {verifyTarget && (
+        <Card title={`Verify ${verifyTarget.channel === "email" ? "email" : "mobile"}`}>
+          <p className="mb-3 text-sm text-slate-600">
+            Enter the OTP sent to <span className="font-medium text-navy">{verifyTarget.label}</span>.
+          </p>
+          {devOtp && <p className="mb-2 text-xs text-amber-700">Testing OTP: {devOtp}</p>}
+          <FormGrid>
+            <Field label="OTP" value={otp} onChange={setOtp} placeholder="6-digit code" />
+          </FormGrid>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <PrimaryButton disabled={!otp.trim() || verifyBusy} onClick={() => void confirmVerify()}>
+              {verifyBusy ? "Verifying…" : "Confirm"}
+            </PrimaryButton>
+            <button
+              type="button"
+              className="rounded-full border border-line px-4 py-2 text-sm"
+              disabled={verifyBusy}
+              onClick={() => {
+                setVerifyTarget(null);
+                setOtp("");
+                setDevOtp(null);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </Card>
+      )}
       <Card title="Add staff login">
         <FormGrid>
           <Field label="Name" value={memberName} onChange={setMemberName} placeholder="Full name" />

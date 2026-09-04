@@ -633,6 +633,8 @@ public class SchemaPatch {
                 "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS default_royalty_pct NUMERIC(6,4) DEFAULT 0",
                 "ALTER TABLE centers ADD COLUMN IF NOT EXISTS royalty_pct NUMERIC(6,4) DEFAULT 0",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS ui_locale VARCHAR(10) DEFAULT 'en'",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN DEFAULT FALSE",
                 "ALTER TABLE industry_events ADD COLUMN IF NOT EXISTS account_id UUID",
                 "ALTER TABLE industry_events ADD COLUMN IF NOT EXISTS event_type VARCHAR(40) DEFAULT 'CAMPUS_VISIT'",
                 "ALTER TABLE alumni_jobs ADD COLUMN IF NOT EXISTS routed_drive_id UUID",

@@ -23,8 +23,10 @@ import com.niyamstack.propel.security.SessionService;
 import com.niyamstack.propel.security.LicenseService;
 import com.niyamstack.propel.foundation.FoundationService;
 import com.niyamstack.propel.grow.GrowService;
+import com.niyamstack.propel.integration.MailService;
 import com.niyamstack.propel.sis.SisService;
 import com.niyamstack.propel.sis.StudentAccountService;
+import com.niyamstack.propel.security.OtpService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
@@ -53,11 +55,13 @@ public class ResourceController {
     private final GrowService grow;
     private final FoundationService foundation;
     private final CompensationService compensation;
+    private final OtpService otp;
+    private final MailService mail;
 
     public ResourceController(Store store, DataScope scope, LmsService lms, PasswordEncoder encoder, FeeService fees,
                               StudentAccountService studentAccounts, SessionService sessions, LicenseService licenses,
                               EssService ess, SisService sis, GrowService grow, FoundationService foundation,
-                              CompensationService compensation) {
+                              CompensationService compensation, OtpService otp, MailService mail) {
         this.store = store;
         this.scope = scope;
         this.lms = lms;
@@ -71,6 +75,8 @@ public class ResourceController {
         this.grow = grow;
         this.foundation = foundation;
         this.compensation = compensation;
+        this.otp = otp;
+        this.mail = mail;
     }
 
     @GetMapping("/features")
@@ -477,6 +483,8 @@ public class ResourceController {
 
     public record StaffUpdate(String capabilitiesCsv, List<String> capabilities, String role) {}
 
+    public record StaffVerifyRequest(@jakarta.validation.constraints.NotBlank String otp) {}
+
     @GetMapping("/staff")
     public List<Map<String, Object>> staff() {
         Access.requireTenant(Auth.current());
@@ -559,11 +567,91 @@ public class ResourceController {
         return staffView(store.save(user));
     }
 
+    @PostMapping("/staff/{id}/verify/email/request")
+    public Map<String, Object> requestStaffEmailOtp(@PathVariable UUID id) {
+        AppUser user = requireStaffMember(id);
+        String email = user.getEmail() == null ? "" : user.getEmail().trim().toLowerCase();
+        if (email.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "This staff member has no email");
+        }
+        if (user.isEmailVerified()) {
+            return Map.of("status", "already_verified", "channel", "email");
+        }
+        var issued = otp.issue(email, OtpService.VERIFY_EMAIL);
+        if (mail.canDeliver(email)) {
+            try {
+                mail.sendOtp(email, OtpService.VERIFY_EMAIL, issued.code());
+            } catch (Exception ignored) {
+                /* still return OTP for testing when SMTP fails */
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
+        out.put("channel", "email");
+        return out;
+    }
+
+    @PostMapping("/staff/{id}/verify/email")
+    public Map<String, Object> verifyStaffEmail(@PathVariable UUID id, @RequestBody StaffVerifyRequest body) {
+        AppUser user = requireStaffMember(id);
+        String email = user.getEmail() == null ? "" : user.getEmail().trim().toLowerCase();
+        if (email.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "This staff member has no email");
+        }
+        otp.verify(email, OtpService.VERIFY_EMAIL, body.otp());
+        user.setEmailVerified(true);
+        return staffView(store.save(user));
+    }
+
+    @PostMapping("/staff/{id}/verify/phone/request")
+    public Map<String, Object> requestStaffPhoneOtp(@PathVariable UUID id) {
+        AppUser user = requireStaffMember(id);
+        String phone = user.getPhone() == null ? "" : Phones.normalize(user.getPhone());
+        if (phone.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Add a mobile number before verifying");
+        }
+        if (user.isPhoneVerified()) {
+            return Map.of("status", "already_verified", "channel", "phone");
+        }
+        var issued = otp.issue(phone, OtpService.VERIFY_PHONE);
+        Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
+        out.put("channel", "phone");
+        return out;
+    }
+
+    @PostMapping("/staff/{id}/verify/phone")
+    public Map<String, Object> verifyStaffPhone(@PathVariable UUID id, @RequestBody StaffVerifyRequest body) {
+        AppUser user = requireStaffMember(id);
+        String phone = user.getPhone() == null ? "" : Phones.normalize(user.getPhone());
+        if (phone.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Add a mobile number before verifying");
+        }
+        otp.verify(phone, OtpService.VERIFY_PHONE, body.otp());
+        user.setPhoneVerified(true);
+        return staffView(store.save(user));
+    }
+
+    private AppUser requireStaffMember(UUID id) {
+        Access.requireTenant(Auth.current());
+        Access.requireWrite(Auth.current(), "SETUP");
+        Access.requireAnyModule(Auth.current(), "STAFF");
+        AppUser user = store.get(AppUser.class, id);
+        if (user.getOrganizationId() == null || !user.getOrganizationId().equals(Auth.current().organizationId())) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Staff member not found");
+        }
+        if (!INSTITUTE_STAFF.contains(user.getRole()) || Roles.OWNER.equals(user.getRole())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Only institute staff can be verified here");
+        }
+        return user;
+    }
+
     private Map<String, Object> staffView(AppUser u) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", u.getId());
         row.put("fullName", u.getFullName());
         row.put("email", u.getEmail());
+        row.put("phone", u.getPhone() == null ? "" : u.getPhone());
+        row.put("emailVerified", u.isEmailVerified());
+        row.put("phoneVerified", u.isPhoneVerified());
         row.put("role", u.getRole());
         row.put("centerId", u.getCenterId() == null ? "" : u.getCenterId());
         row.put("active", u.isActive());

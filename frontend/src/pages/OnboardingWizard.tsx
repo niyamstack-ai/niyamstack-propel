@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { labelKey, useLocale } from "../locale";
 import { Card, PrimaryButton, useApi } from "../ui";
 
 type Onboarding = {
@@ -13,12 +14,13 @@ type Onboarding = {
 const STEP_META: { id: string; label: string; to: string; blurb: string }[] = [
   { id: "profile", label: "Institute profile", to: "/institute", blurb: "Name, contact, and branding" },
   { id: "center", label: "Add a center", to: "/institute", blurb: "At least one location or branch" },
-  { id: "course", label: "Create a course", to: "/courses", blurb: "Your first program to sell or run" },
+  { id: "course", label: "Create a course", to: "/courses/new", blurb: "Your first program to sell or run" },
   { id: "staff", label: "Invite staff", to: "/people/staff", blurb: "Teachers, counselors, or accounts" },
   { id: "website", label: "Publish website", to: "/website", blurb: "Let students find and enroll online" },
 ];
 
 export function OnboardingWizard() {
+  const { t } = useLocale();
   const status = useApi<Onboarding>("/api/foundation/onboarding");
   if (status.loading || !status.data || status.data.completed) return null;
 
@@ -35,7 +37,7 @@ export function OnboardingWizard() {
   }
 
   return (
-    <Card title={`Get started (${done}/${total})`}>
+    <Card title={`${t("get_started", "Get started")} (${done}/${total})`}>
       <p className="mb-4 text-sm text-slate-500">
         Finish these steps to run your institute on Propel. You can return to any step later.
       </p>
@@ -47,13 +49,13 @@ export function OnboardingWizard() {
               <div>
                 <p className={`text-sm font-medium ${complete ? "text-emerald-700" : "text-navy"}`}>
                   {complete ? "✓ " : ""}
-                  {step.label}
+                  {t(labelKey(step.label), step.label)}
                 </p>
                 <p className="text-xs text-slate-500">{step.blurb}</p>
               </div>
               {!complete && (
                 <Link to={step.to} className="shrink-0 text-sm font-semibold text-brand hover:underline">
-                  Open
+                  {t("open", "Open")}
                 </Link>
               )}
             </li>
