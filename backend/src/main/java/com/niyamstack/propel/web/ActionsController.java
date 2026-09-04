@@ -730,6 +730,11 @@ public class ActionsController {
         return sis.saveCustomValues(entityType, id, body);
     }
 
+    @GetMapping("/sis/custom/{entityType}/{id}")
+    public Map<String, Object> getCustom(@PathVariable String entityType, @PathVariable UUID id) {
+        return sis.getCustomValues(entityType, id);
+    }
+
     @PostMapping("/sis/approvals")
     public ApprovalRequest submitApproval(@RequestBody Map<String, Object> body) {
         return sis.submitApproval(body);

@@ -326,6 +326,16 @@ function OwnerCourses() {
     }
   }
 
+  async function toggleCoupon(c: Coupon) {
+    setError(null);
+    try {
+      await updateRecord(`/api/coupons/${c.id}`, { ...c, live: !c.live });
+      coupons.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function addStudentToCourse() {
     setError(null);
     if (!addCourse || !addStudent) {
@@ -422,9 +432,10 @@ function OwnerCourses() {
                   String(c.discountValue),
                   c.live ? "Live" : "Off",
                   String(c.redeemedCount ?? 0),
-                  <LinkButton key={c.id} onClick={() => removeCoupon(c.id)}>
-                    Delete
-                  </LinkButton>,
+                  <span key={c.id} className="flex flex-wrap gap-3">
+                    <LinkButton onClick={() => void toggleCoupon(c)}>{c.live ? "Turn off" : "Go live"}</LinkButton>
+                    <LinkButton onClick={() => removeCoupon(c.id)}>Delete</LinkButton>
+                  </span>,
                 ])}
               />
             </div>

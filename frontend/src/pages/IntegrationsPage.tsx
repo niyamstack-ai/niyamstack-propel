@@ -57,7 +57,7 @@ export function IntegrationsPage() {
           smtpFrom: row.smtpFrom || "",
         }));
       })
-      .catch(() => undefined);
+      .catch((e) => setError((e as Error).message || "Could not load live keys"));
   }, []);
 
   const byProvider = useMemo(() => {

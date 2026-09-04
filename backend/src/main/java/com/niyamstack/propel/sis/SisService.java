@@ -366,6 +366,41 @@ public class SisService {
         return Map.of("id", id, "customJson", json);
     }
 
+    public Map<String, Object> getCustomValues(String entityType, UUID id) {
+        Access.requireTenant(Auth.current());
+        String json = "";
+        switch (entityType.toUpperCase()) {
+            case "STUDENT" -> {
+                Student s = store.getOwned(Student.class, id, orgId());
+                json = blank(s.getCustomJson(), "");
+            }
+            case "INQUIRY", "LEAD" -> {
+                Inquiry inq = store.getOwned(Inquiry.class, id, orgId());
+                json = blank(inq.getCustomJson(), "");
+            }
+            case "EMPLOYEE" -> {
+                Employee e = store.getOwned(Employee.class, id, orgId());
+                json = blank(e.getCustomJson(), "");
+            }
+            default -> throw new ApiException(HttpStatus.BAD_REQUEST, "Custom fields apply to student, lead, or employee");
+        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        if (!json.isBlank()) {
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> parsed = new com.fasterxml.jackson.databind.ObjectMapper().readValue(json, Map.class);
+                if (parsed != null) values.putAll(parsed);
+            } catch (Exception ignored) {
+                /* return empty map if corrupt */
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", id);
+        out.put("values", values);
+        out.put("customJson", json);
+        return out;
+    }
+
     @Transactional
     public ApprovalRequest submitApproval(Map<String, Object> body) {
         Access.requireTenant(Auth.current());

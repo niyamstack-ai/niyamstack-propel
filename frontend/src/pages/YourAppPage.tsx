@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "../api";
-import { createRecord, updateRecord } from "../ops";
+import { createRecord, deleteRecord, updateRecord } from "../ops";
 import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
 
 type Org = { name: string; slug?: string; appShareUrl?: string; logoUrl?: string; brandPrimary?: string };
@@ -39,6 +39,27 @@ export function YourAppPage() {
       setBTitle("");
       setBImage("");
       setBLink("");
+      banners.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function toggleBanner(b: Banner) {
+    setError(null);
+    try {
+      await updateRecord(`/api/app-banners/${b.id}`, { ...b, live: !b.live });
+      banners.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function removeBanner(b: Banner) {
+    if (!window.confirm(`Delete banner “${b.title}”?`)) return;
+    setError(null);
+    try {
+      await deleteRecord(`/api/app-banners/${b.id}`);
       banners.reload();
     } catch (e) {
       setError((e as Error).message);
@@ -147,8 +168,20 @@ export function YourAppPage() {
           </div>
           <div className="mt-4">
             <Table
-              columns={["Title", "Link", "Live"]}
-              rows={(banners.data ?? []).map((b) => [b.title, b.linkUrl || "—", b.live ? "Live" : "Off"])}
+              columns={["Title", "Link", "Live", ""]}
+              rows={(banners.data ?? []).map((b) => [
+                b.title,
+                b.linkUrl || "—",
+                b.live ? "Live" : "Off",
+                <span key={b.id} className="flex flex-wrap gap-3">
+                  <button type="button" className="text-sm font-medium text-brand hover:underline" onClick={() => void toggleBanner(b)}>
+                    {b.live ? "Turn off" : "Go live"}
+                  </button>
+                  <button type="button" className="text-sm font-medium text-red-600 hover:underline" onClick={() => void removeBanner(b)}>
+                    Delete
+                  </button>
+                </span>,
+              ])}
             />
           </div>
         </Card>

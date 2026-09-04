@@ -123,7 +123,7 @@ function ParentHome() {
 
 function FacultyHome() {
   const load = useApi<{ fullName: string; weeklyHours: number; batches: number }[]>("/api/actions/sis/workload");
-  const live = useApi<{ title: string; startsAt?: string }[]>("/api/live-sessions");
+  const live = useApi<{ title: string; startsAt?: string; meetingUrl?: string }[]>("/api/live-sessions");
   const mine = (load.data ?? [])[0];
   return (
     <div className="space-y-6">
@@ -140,9 +140,21 @@ function FacultyHome() {
         <HomeLink to="/comms" title="Notices" text="Announce to a batch" />
       </div>
       <Card title="Upcoming live classes">
-        <ul className="text-sm">
+        <ul className="space-y-2 text-sm">
           {(live.data ?? []).slice(0, 5).map((l, i) => (
-            <li key={i}>{l.title}</li>
+            <li key={i} className="flex flex-wrap items-center justify-between gap-2">
+              <span>
+                {l.title}
+                {l.startsAt ? ` · ${formatWhen(l.startsAt)}` : ""}
+              </span>
+              {l.meetingUrl ? (
+                <a className="text-brand hover:underline" href={l.meetingUrl} target="_blank" rel="noreferrer">
+                  Join
+                </a>
+              ) : (
+                <span className="text-xs text-slate-400">No join link</span>
+              )}
+            </li>
           ))}
           {(live.data ?? []).length === 0 && <li className="text-slate-500">No live classes scheduled.</li>}
         </ul>

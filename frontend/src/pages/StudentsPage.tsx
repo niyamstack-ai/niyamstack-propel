@@ -32,7 +32,10 @@ export function MyStudentRecord() {
   const guardians = useApi<{ fullName: string; relation: string }[]>("/api/guardians");
   const attendance = useApi<{ sessionDate: string; status: string }[]>("/api/attendance");
   const certs = useApi<{ id?: string; title: string; issuedOn?: string; certificateNo?: string }[]>("/api/certificates");
-  const record = students.data?.[0];
+  const kids = students.data ?? [];
+  const isParent = user?.role === "PARENT";
+  const [childId, setChildId] = useState("");
+  const record = (childId ? kids.find((s) => s.id === childId) : undefined) || kids[0];
   const [name, setName] = useState(user?.name || "");
   const [email, setEmail] = useState(user?.email || "");
   const [phone, setPhone] = useState(user?.phone || record?.phone || "");
@@ -44,10 +47,21 @@ export function MyStudentRecord() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    if (!kids.length) return;
+    if (!childId || !kids.some((s) => s.id === childId)) setChildId(kids[0].id);
+  }, [kids, childId]);
+
+  useEffect(() => {
+    if (isParent) {
+      setName(user?.name || "");
+      setEmail(user?.email || "");
+      setPhone(user?.phone || "");
+      return;
+    }
     setName(user?.name || record?.fullName || "");
     setEmail(user?.email || record?.email || "");
     setPhone(user?.phone || record?.phone || "");
-  }, [user?.name, user?.email, user?.phone, record?.fullName, record?.email, record?.phone]);
+  }, [isParent, user?.name, user?.email, user?.phone, record?.fullName, record?.email, record?.phone]);
 
   const present = (attendance.data ?? []).filter((a) => a.status === "PRESENT").length;
   const attTotal = (attendance.data ?? []).length;
@@ -94,9 +108,41 @@ export function MyStudentRecord() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-navy">My profile</h1>
+      <h1 className="text-2xl font-bold text-navy">{isParent ? "My child" : "My profile"}</h1>
       <ErrorText error={error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      {isParent && (
+        <Card title="My children">
+          {kids.length === 0 ? (
+            <p className="text-sm text-slate-500">No linked students yet.</p>
+          ) : (
+            <>
+              <ul className="mb-3 space-y-1 text-sm">
+                {kids.map((s) => (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      className={`text-left ${s.id === record?.id ? "font-semibold text-navy" : "text-brand hover:underline"}`}
+                      onClick={() => setChildId(s.id)}
+                    >
+                      {s.fullName}
+                      <span className="ml-2 text-xs font-normal text-slate-400">
+                        {s.studentCode} · {s.status}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {record && (
+                <p className="text-xs text-slate-400">
+                  Showing {record.fullName}
+                  {record.enrollmentDate ? ` · enrolled ${formatDay(record.enrollmentDate)}` : ""}
+                </p>
+              )}
+            </>
+          )}
+        </Card>
+      )}
       <Card title="Account">
         <FormGrid>
           <Field label="Name" value={name} onChange={setName} />
@@ -108,7 +154,7 @@ export function MyStudentRecord() {
             {busy ? "Saving…" : "Save profile"}
           </PrimaryButton>
         </div>
-        {record && (
+        {!isParent && record && (
           <p className="mt-3 text-xs text-slate-400">
             {record.studentCode} · {record.status}
             {record.enrollmentDate ? ` · enrolled ${formatDay(record.enrollmentDate)}` : ""}
@@ -531,6 +577,31 @@ function CustomFieldsCard({ students }: { students: Student[] }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const studentFields = (fields.data ?? []).filter((f) => f.entityType === "STUDENT");
+
+  useEffect(() => {
+    if (!studentId) {
+      setValues({});
+      return;
+    }
+    let cancelled = false;
+    setError(null);
+    api<{ values?: Record<string, unknown> }>(`/api/actions/sis/custom/STUDENT/${studentId}`)
+      .then((row) => {
+        if (cancelled) return;
+        const next: Record<string, string> = {};
+        Object.entries(row.values ?? {}).forEach(([k, v]) => {
+          next[k] = v == null ? "" : String(v);
+        });
+        setValues(next);
+      })
+      .catch((e) => {
+        if (!cancelled) setError((e as Error).message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [studentId]);
+
   return (
     <Card title="Custom fields">
       <p className="mb-3 text-sm text-slate-500">Institute fields defined under Academics, saved on this student.</p>

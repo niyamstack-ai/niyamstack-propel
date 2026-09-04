@@ -1959,6 +1959,20 @@ public class EssService {
         row.put("punchAt", p.getPunchAt());
         row.put("punchType", p.getPunchType());
         row.put("rawRef", p.getRawRef());
+        if (p.getEmployeeId() != null) {
+            try {
+                row.put("employeeName", store.getOwned(Employee.class, p.getEmployeeId(), orgId()).getFullName());
+            } catch (Exception ignored) {
+                row.put("employeeName", "");
+            }
+        }
+        if (p.getStudentId() != null) {
+            try {
+                row.put("studentName", store.getOwned(Student.class, p.getStudentId(), orgId()).getFullName());
+            } catch (Exception ignored) {
+                row.put("studentName", "");
+            }
+        }
         return row;
     }
 

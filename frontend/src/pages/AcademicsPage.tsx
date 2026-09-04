@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import { createRecord } from "../ops";
 import { prettyLabel } from "../labels";
@@ -448,6 +448,31 @@ function FillCustomCard() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const studentFields = (fields.data ?? []).filter((f) => f.entityType === "STUDENT");
+
+  useEffect(() => {
+    if (!studentId) {
+      setValues({});
+      return;
+    }
+    let cancelled = false;
+    setError(null);
+    api<{ values?: Record<string, unknown> }>(`/api/actions/sis/custom/STUDENT/${studentId}`)
+      .then((row) => {
+        if (cancelled) return;
+        const next: Record<string, string> = {};
+        Object.entries(row.values ?? {}).forEach(([k, v]) => {
+          next[k] = v == null ? "" : String(v);
+        });
+        setValues(next);
+      })
+      .catch((e) => {
+        if (!cancelled) setError((e as Error).message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [studentId]);
+
   return (
     <Card title="Fill student fields">
       <ErrorText error={error} />

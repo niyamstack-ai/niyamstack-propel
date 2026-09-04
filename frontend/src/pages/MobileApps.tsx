@@ -16,7 +16,7 @@ type Home = {
   content?: { id: string; title: string; contentType?: string }[];
   drives?: { id: string; title: string; packageLpa?: number }[];
   batches?: { id: string; name: string }[];
-  submissions?: { id: string; assignmentId?: string; status?: string }[];
+  submissions?: { id: string; assignmentId?: string; status?: string; studentName?: string; assignmentTitle?: string }[];
   live?: { id: string; title: string; startsAt?: string }[];
   students?: { id: string; fullName: string; batchId?: string }[];
 };
@@ -327,9 +327,15 @@ function FacultyNotice({
 function FacultyGrade({ data }: { data?: Home }) {
   return (
     <Card title="Pending submissions">
-      <ul className="text-sm">
+      <ul className="space-y-2 text-sm">
         {(data?.submissions ?? []).map((s) => (
-          <li key={s.id}>{prettyLabel(s.status) || "Submitted"}</li>
+          <li key={s.id}>
+            <span className="font-medium text-navy">{s.studentName || "Student"}</span>
+            {" · "}
+            {s.assignmentTitle || "Assignment"}
+            {" · "}
+            {prettyLabel(s.status) || "Submitted"}
+          </li>
         ))}
         {(data?.submissions ?? []).length === 0 && <li className="text-slate-500">Nothing to grade.</li>}
       </ul>

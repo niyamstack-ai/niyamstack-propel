@@ -492,7 +492,7 @@ function TeamTab({ hr }: { hr: boolean }) {
           ])}
         />
       </Card>
-      {hr && (
+      {(hr || (box?.resignation?.length ?? 0) > 0) && (
         <Card title="Resignation requests">
           <Table
             empty="No pending resignations."
@@ -507,7 +507,7 @@ function TeamTab({ hr }: { hr: boolean }) {
                   <LinkButton onClick={() => void decideResign(r.id, false)}>Reject</LinkButton>
                 </span>
               ) : (
-                ""
+                <span key={r.id} className="text-xs text-slate-500">View only</span>
               ),
             ])}
           />
@@ -1601,7 +1601,7 @@ function DevicesTab() {
             formatWhen(p.punchAt) || "—",
             prettyLabel(p.punchType),
             p.deviceId || "—",
-            p.employeeId ? "Staff" : p.studentId ? "Student" : "—",
+            p.employeeName || p.studentName || (p.employeeId ? "Staff" : p.studentId ? "Student" : "—"),
           ])}
         />
       </Card>

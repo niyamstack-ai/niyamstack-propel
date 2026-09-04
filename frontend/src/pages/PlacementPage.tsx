@@ -157,6 +157,9 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
   const [internCompany, setInternCompany] = useState("");
   const [internRole, setInternRole] = useState("Java intern");
   const [internStipend, setInternStipend] = useState("15000");
+  const [checkStudentId, setCheckStudentId] = useState("");
+  const [roundName, setRoundName] = useState("HR");
+  const [offerPkg, setOfferPkg] = useState("");
 
   async function run(fn: () => Promise<void>) {
     setError(null);
@@ -282,6 +285,16 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
         </>
       )}
       <Card title="Drives">
+        {!recruiter && (
+          <div className="mb-3 max-w-sm">
+            <Select
+              label="Student for eligibility check"
+              value={checkStudentId}
+              onChange={setCheckStudentId}
+              options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))}
+            />
+          </div>
+        )}
         <Table
           columns={recruiter ? ["Drive", "Package", "Deadline"] : ["Drive", "Package", "Min attendance", "Status", "Eligibility"]}
           rows={(drives.data ?? []).map((d) =>
@@ -293,18 +306,19 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
                   d.minAttendancePct ? `${d.minAttendancePct}%` : "—",
                   prettyLabel(d.status),
                   <PrimaryButton
+                    key={`${d.id}-elig`}
+                    disabled={!checkStudentId}
                     onClick={() =>
                       run(async () => {
-                        const studentId = students.data?.[0]?.id;
-                        if (!studentId) throw new Error("Add a student first");
+                        if (!checkStudentId) throw new Error("Select a student first");
                         const result = await api<{ eligible: boolean; reason: string; attendancePct: number }>(
-                          `/api/actions/eligibility/${d.id}/${studentId}`
+                          `/api/actions/eligibility/${d.id}/${checkStudentId}`
                         );
                         setNotice(`${result.eligible ? "Eligible" : "Not eligible"} — ${result.reason} (attendance ${result.attendancePct}%).`);
                       })
                     }
                   >
-                    Check first student
+                    Check eligibility
                   </PrimaryButton>,
                 ],
           )}
@@ -322,6 +336,12 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
         </Card>
       )}
       <Card title={recruiter ? "Candidate pool" : "ATS"}>
+        {!recruiter && (
+          <div className="mb-3 grid max-w-xl gap-3 sm:grid-cols-2">
+            <Field label="Round name for Record" value={roundName} onChange={setRoundName} placeholder="HR / Technical" />
+            <Field label="Offer package LPA (blank = drive package)" value={offerPkg} onChange={setOfferPkg} placeholder="e.g. 6.5" />
+          </div>
+        )}
         <Table
           columns={["Student", "Drive", "Status", "Eligible", "Round", "Actions"]}
           rows={(apps.data ?? []).map((a) => {
@@ -353,10 +373,10 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
                     await api(`/api/actions/applications/${a.id}/rounds`, {
                       method: "POST",
                       body: JSON.stringify({
-                        roundName: "HR",
+                        roundName: roundName || "HR",
                         outcome: "PASS",
-                        feedback: "Clear communication",
-                        panel: "Campus HR",
+                        feedback: "",
+                        panel: "",
                         scheduledAt: new Date().toISOString(),
                       }),
                     });
@@ -366,16 +386,17 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
                   })
                 }
               >
-                Record round
+                Record {roundName || "round"}
               </PrimaryButton>
               {!recruiter && (
                 <PrimaryButton
                   onClick={() =>
                     run(async () => {
+                      const pkgLpa = offerPkg || String(drive?.packageLpa ?? "6.5");
                       await api(`/api/actions/applications/${a.id}/offer`, {
                         method: "POST",
                         body: JSON.stringify({
-                          packageLpa: "6.5",
+                          packageLpa: pkgLpa,
                           joiningDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
                           notes: "Campus offer",
                         }),
@@ -426,19 +447,9 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
                       Letter
                     </PrimaryButton>
                     {o.status === "OFFERED" && (
-                      <PrimaryButton
-                        onClick={() =>
-                          run(async () => {
-                            await api(`/api/actions/offers/${o.id}/accept`, { method: "POST", body: JSON.stringify({ accept: true }) });
-                            offers.reload();
-                            apps.reload();
-                          })
-                        }
-                      >
-                        Accept
-                      </PrimaryButton>
+                      <span className="text-xs text-slate-500">Waiting for student accept</span>
                     )}
-                    {(o.status === "ACCEPTED" || o.status === "OFFERED") && (
+                    {o.status === "ACCEPTED" && (
                       <PrimaryButton
                         onClick={() =>
                           run(async () => {

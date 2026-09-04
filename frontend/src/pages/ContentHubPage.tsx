@@ -39,6 +39,17 @@ export function ContentHubPage() {
     }
   }
 
+  async function removeMaterial(m: FreeMaterial) {
+    if (!window.confirm(`Delete free material “${m.title}”?`)) return;
+    setError(null);
+    try {
+      await deleteRecord(`/api/free-materials/${m.id}`);
+      materials.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function removeTest(row: AssessmentRow) {
     if (!window.confirm(`Delete test “${row.title}”?`)) return;
     setError(null);
@@ -175,8 +186,20 @@ export function ContentHubPage() {
           </div>
           <div className="mt-4">
             <Table
-              columns={["Title", "Type", "URL / File"]}
-              rows={(materials.data ?? []).map((m) => [m.title, m.materialType, m.url || m.fileName || "—"])}
+              columns={["Title", "Type", "URL / File", ""]}
+              rows={(materials.data ?? []).map((m) => [
+                m.title,
+                m.materialType,
+                m.url || m.fileName || "—",
+                <button
+                  key={m.id}
+                  type="button"
+                  className="text-sm font-medium text-red-600 hover:underline"
+                  onClick={() => void removeMaterial(m)}
+                >
+                  Delete
+                </button>,
+              ])}
             />
           </div>
         </Card>

@@ -6,7 +6,20 @@ import { useAuth } from "../auth";
 import { prettyLabel } from "../labels";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatDay, formatInr, useApi } from "../ui";
 
-type Invoice = { id: string; invoiceNo: string; amount: number; paidAmount?: number; status: string; cgst?: number; sgst?: number; igst?: number; dueDate?: string; feePlanId?: string };
+type Invoice = {
+  id: string;
+  invoiceNo: string;
+  amount: number;
+  paidAmount?: number;
+  status: string;
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
+  dueDate?: string;
+  feePlanId?: string;
+  studentId?: string;
+  buyerName?: string;
+};
 type Payment = { id: string; gatewayRef: string; method: string; amount: number; receiptNo?: string };
 type Refund = { id: string; amount: number; status: string; reason?: string; creditNoteNo?: string; gatewayRefundRef?: string };
 type Student = { id: string; fullName: string };
@@ -132,9 +145,13 @@ function StaffFees() {
   const invoices = useApi<Invoice[]>("/api/invoices");
   const payments = useApi<Payment[]>("/api/payments");
   const receipts = useApi<{ receiptNo: string; amount: number }[]>("/api/receipts");
-  const installments = useApi<{ seqNo: number; amount: number; dueDate: string; status: string }[]>("/api/installments");
+  const installments = useApi<{ seqNo: number; amount: number; dueDate: string; status: string; studentId?: string }[]>("/api/installments");
   const refunds = useApi<Refund[]>("/api/refunds");
   const students = useApi<Student[]>("/api/students");
+  const { user } = useAuth();
+  const canApproveRefunds = user?.role === "OWNER";
+  const studentName = (id?: string, buyer?: string) =>
+    buyer || (students.data ?? []).find((s) => s.id === id)?.fullName || "—";
   const courses = useApi<{ id: string; name: string }[]>("/api/courses");
   const terms = useApi<{ id: string; name: string }[]>("/api/terms");
   const gateway = useApi<{ payments: { provider: string; live: boolean } }>("/api/actions/integrations");
@@ -381,17 +398,24 @@ function StaffFees() {
       <Card title="Installments">
         <Table
           empty="No instalments yet. Pick a fee plan and student above, then generate invoices."
-          columns={["#", "Amount", "Due", "Status"]}
-          rows={(installments.data ?? []).map((i) => [String(i.seqNo), formatInr(i.amount), i.dueDate, prettyLabel(i.status)])}
+          columns={["#", "Student", "Amount", "Due", "Status"]}
+          rows={(installments.data ?? []).map((i) => [
+            String(i.seqNo),
+            studentName(i.studentId),
+            formatInr(i.amount),
+            i.dueDate,
+            prettyLabel(i.status),
+          ])}
         />
       </Card>
       <Card title="Invoices & collection">
         <p className="mb-3 text-xs text-slate-500">Tax invoices show GSTIN, SAC 999293, place of supply, and CGST/SGST or IGST. Same-state uses CGST+SGST; other state uses IGST when you set GST state in Integrations.</p>
         <Table
           empty="No invoices yet."
-          columns={["Invoice", "Amount", "Paid", "Tax", "Status", ""]}
+          columns={["Invoice", "Student", "Amount", "Paid", "Tax", "Status", ""]}
           rows={(invoices.data ?? []).map((inv) => [
             inv.invoiceNo,
+            studentName(inv.studentId, inv.buyerName),
             formatInr(inv.amount),
             formatInr(inv.paidAmount ?? 0),
             formatInr((inv.cgst ?? 0) + (inv.sgst ?? 0) + (inv.igst ?? 0)),
@@ -579,7 +603,7 @@ function StaffFees() {
               {formatInr(r.amount)} — {prettyLabel(r.status)} {r.reason ? `· ${r.reason}` : ""}
               {r.creditNoteNo ? ` · Credit note ${r.creditNoteNo}` : ""}
               {r.gatewayRefundRef ? " · refunded on Razorpay" : ""}
-              {r.status === "REQUESTED" && (
+              {r.status === "REQUESTED" && canApproveRefunds && (
                 <span className="ml-2 space-x-2">
                   <PrimaryButton
                     onClick={() =>
@@ -607,6 +631,9 @@ function StaffFees() {
                     Reject
                   </button>
                 </span>
+              )}
+              {r.status === "REQUESTED" && !canApproveRefunds && (
+                <span className="ml-2 text-xs text-slate-500">Waiting for owner approval</span>
               )}
               {r.creditNoteNo && (
                 <button

@@ -6,7 +6,7 @@ import { useLocation, useSearchParams } from "react-router-dom";
 import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, formatWhen, studentChoice, useApi } from "../ui";
 import { BatchAttendanceSheet } from "./BatchAttendanceSheet";
 
-type Content = { id: string; title: string; contentType: string; scormStandard?: string; published?: boolean; courseId?: string };
+type Content = { id: string; title: string; contentType: string; scormStandard?: string; published?: boolean; courseId?: string; url?: string; body?: string };
 type Assignment = { id: string; title: string; instructions: string; courseId?: string; batchId?: string; dueAt?: string; maxScore?: number };
 type Submission = { id: string; assignmentId?: string; grade?: string; status?: string; content?: string; fileUrl?: string; feedback?: string; submittedAt?: string };
 type Assessment = { id: string; title: string; kind: string; proctoring: boolean; published: boolean; courseId?: string };
@@ -199,9 +199,21 @@ export function StudentLms({
       )}
       {embedded ? null : (
         <Card title="PDFs, videos & notes">
-          <ul className="text-sm">
+          <ul className="space-y-2 text-sm">
+            {materials.length === 0 && <li className="text-slate-500">No materials in this course yet.</li>}
             {materials.map((c) => (
-              <li key={c.id}>{c.title} · {c.contentType}</li>
+              <li key={c.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  {c.title} · {c.contentType}
+                </span>
+                {c.url ? (
+                  <a className="text-brand hover:underline" href={fileSrc(c.url)} target="_blank" rel="noreferrer">
+                    Open
+                  </a>
+                ) : (
+                  <span className="text-xs text-slate-400">No file</span>
+                )}
+              </li>
             ))}
           </ul>
         </Card>

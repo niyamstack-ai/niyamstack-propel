@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class ScaleService {
@@ -67,8 +68,23 @@ public class ScaleService {
             out.put("drives", store.list(Drive.class, org).stream().filter(d -> "OPEN".equals(d.getStatus())).toList());
         } else {
             out.put("batches", store.list(Batch.class, org));
+            Map<UUID, String> studentNames = studentNames(org);
+            Map<UUID, String> assignmentTitles = store.list(Assignment.class, org).stream()
+                    .collect(Collectors.toMap(Assignment::getId, a -> blank(a.getTitle(), "Assignment"), (a, b) -> a));
             out.put("submissions", store.list(Submission.class, org).stream()
-                    .filter(s -> s.getGrade() == null || s.getGrade().isBlank()).limit(20).toList());
+                    .filter(s -> s.getGrade() == null || s.getGrade().isBlank())
+                    .limit(20)
+                    .map(s -> {
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        row.put("id", s.getId());
+                        row.put("assignmentId", s.getAssignmentId());
+                        row.put("studentId", s.getStudentId());
+                        row.put("status", s.getStatus());
+                        row.put("studentName", s.getStudentId() == null ? "" : studentNames.getOrDefault(s.getStudentId(), ""));
+                        row.put("assignmentTitle", s.getAssignmentId() == null ? "" : assignmentTitles.getOrDefault(s.getAssignmentId(), "Assignment"));
+                        return row;
+                    })
+                    .toList());
             out.put("live", store.list(LiveSession.class, org).stream().limit(8).toList());
             out.put("students", store.list(Student.class, org).stream().limit(80).toList());
         }
