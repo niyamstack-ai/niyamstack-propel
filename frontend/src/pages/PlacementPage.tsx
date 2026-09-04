@@ -71,7 +71,7 @@ function StudentJobs() {
                 })
               }
             >
-              {applied ? "Applied" : studentMissing ? "Unavailable" : "Apply"}
+              {applied ? "Applied" : me.loading ? "…" : studentMissing ? "Unavailable" : "Apply"}
             </PrimaryButton>
             </div>,
           ];

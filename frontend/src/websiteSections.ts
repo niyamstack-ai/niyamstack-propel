@@ -27,6 +27,7 @@ export type SiteSection = {
   address?: string;
   quotes?: string;
   buttonLabel?: string;
+  buttonUrl?: string;
 };
 
 export type Testimonial = { name: string; text: string; imageUrl?: string };

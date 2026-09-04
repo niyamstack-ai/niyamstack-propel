@@ -110,11 +110,12 @@ export function MobileApp() {
       <main className="space-y-4 p-4">
         <ErrorText error={error || home.error} />
         {notice && <p className="text-sm text-emerald-700">{notice}</p>}
-        {tab === "home" && !faculty && <StudentToday data={home.data ?? undefined} />}
+        {tab === "home" && home.loading && <p className="text-sm text-slate-500">Loading…</p>}
+        {tab === "home" && !faculty && !home.loading && <StudentToday data={home.data ?? undefined} />}
         {tab === "learn" && <StudentLearn data={home.data ?? undefined} />}
         {tab === "fees" && <StudentFees data={home.data ?? undefined} />}
         {tab === "jobs" && <StudentJobs data={home.data ?? undefined} />}
-        {tab === "home" && faculty && <FacultyBatches data={home.data ?? undefined} />}
+        {tab === "home" && faculty && !home.loading && <FacultyBatches data={home.data ?? undefined} />}
         {tab === "attend" && faculty && (
           <FacultyAttend
             data={home.data ?? undefined}
@@ -130,7 +131,9 @@ export function MobileApp() {
             reload={home.reload}
           />
         )}
-        {tab === "grade" && faculty && <FacultyGrade data={home.data ?? undefined} />}
+        {tab === "grade" && faculty && (
+          <FacultyGrade data={home.data ?? undefined} onError={setError} onNotice={setNotice} reload={home.reload} />
+        )}
         <p className="text-center text-xs text-slate-400">
           <Link className="text-brand" to="/">
             Open desktop portal
@@ -355,17 +358,48 @@ function FacultyNotice({
   );
 }
 
-function FacultyGrade({ data }: { data?: Home }) {
+function FacultyGrade({
+  data,
+  onError,
+  onNotice,
+  reload,
+}: {
+  data?: Home;
+  onError: (m: string | null) => void;
+  onNotice: (m: string | null) => void;
+  reload: () => void;
+}) {
   return (
     <Card title="Pending submissions">
-      <ul className="space-y-2 text-sm">
+      <ul className="space-y-3 text-sm">
         {(data?.submissions ?? []).map((s) => (
-          <li key={s.id}>
-            <span className="font-medium text-navy">{s.studentName || "Student"}</span>
-            {" · "}
-            {s.assignmentTitle || "Assignment"}
-            {" · "}
-            {prettyLabel(s.status) || "Submitted"}
+          <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-3 py-2">
+            <span>
+              <span className="font-medium text-navy">{s.studentName || "Student"}</span>
+              {" · "}
+              {s.assignmentTitle || "Assignment"}
+              {" · "}
+              {prettyLabel(s.status) || "Submitted"}
+            </span>
+            <PrimaryButton
+              onClick={() =>
+                void (async () => {
+                  onError(null);
+                  try {
+                    await api(`/api/actions/submissions/${s.id}/grade`, {
+                      method: "POST",
+                      body: JSON.stringify({ grade: "A", feedback: "Meets outcomes." }),
+                    });
+                    onNotice("Graded.");
+                    reload();
+                  } catch (e) {
+                    onError((e as Error).message);
+                  }
+                })()
+              }
+            >
+              Grade A
+            </PrimaryButton>
           </li>
         ))}
         {(data?.submissions ?? []).length === 0 && <li className="text-slate-500">Nothing to grade.</li>}

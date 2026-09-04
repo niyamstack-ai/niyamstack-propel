@@ -593,6 +593,7 @@ function CoursePage() {
   const [price, setPrice] = useState<number | null>(null);
   const [couponOk, setCouponOk] = useState<string | null>(null);
   const [owned, setOwned] = useState(false);
+  const [ownedError, setOwnedError] = useState<string | null>(null);
   const [validityOption, setValidityOption] = useState("a");
 
   useEffect(() => {
@@ -608,9 +609,19 @@ function CoursePage() {
       .then(setOutline)
       .catch(() => setOutline([]));
     if (token && user?.role === "STUDENT") {
+      setOwnedError(null);
       api<MyCourse[]>("/api/actions/my-courses")
-        .then((rows) => setOwned(rows.some((r) => r.course.id === courseId)))
-        .catch(() => setOwned(false));
+        .then((rows) => {
+          setOwned(rows.some((r) => r.course.id === courseId));
+          setOwnedError(null);
+        })
+        .catch((err: Error) => {
+          setOwned(false);
+          setOwnedError(err.message || "Could not check enrolment");
+        });
+    } else {
+      setOwned(false);
+      setOwnedError(null);
     }
   }, [slug, courseId, token, user?.role]);
 
@@ -809,6 +820,11 @@ function CoursePage() {
           <p className="mt-1 text-xs text-sky-200">{course.category || "Course"}</p>
         </div>
         <div className="space-y-3 p-5">
+          {ownedError && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Could not verify if you already own this course. You can still enrol; refresh if you already paid.
+            </p>
+          )}
           {owned ? (
             <>
               <p className="text-sm text-slate-600">This course is already in your library.</p>

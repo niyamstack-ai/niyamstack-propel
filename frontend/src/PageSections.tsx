@@ -246,13 +246,25 @@ export function SectionView({
         <LiveText tag="p" className={`mt-3 max-w-2xl whitespace-pre-wrap ${sizeClass(section.textSize, "text", "text-sm leading-6")} ${colorClass(section.textColor, "text-sky-100")}`} value={section.text} placeholder="A short line about your coaching" onChange={edit?.("text")} />
         {(section.buttonLabel || onChange) && (
           onChange ? (
-            <LiveText tag="span" className="mt-5 inline-block rounded-full bg-brand px-5 py-2 text-sm font-semibold" value={section.buttonLabel} placeholder="View courses" onChange={edit?.("buttonLabel")} />
+            <div className="mt-5 space-y-2">
+              <LiveText tag="span" className="inline-block rounded-full bg-brand px-5 py-2 text-sm font-semibold" value={section.buttonLabel} placeholder="View courses" onChange={edit?.("buttonLabel")} />
+              <LiveText tag="p" className="text-xs text-sky-200" value={section.buttonUrl} placeholder="Optional link, e.g. /courses or https://…" onChange={edit?.("buttonUrl")} />
+            </div>
+          ) : section.buttonUrl?.startsWith("http") ? (
+            <a className="mt-5 inline-block rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white" href={section.buttonUrl} target="_blank" rel="noreferrer">
+              {section.buttonLabel || "View courses"}
+            </a>
           ) : slug ? (
-            <Link className="mt-5 inline-block rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white" to={isProductHost() ? `/s/${slug}` : "/"}>
+            <Link
+              className="mt-5 inline-block rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white"
+              to={section.buttonUrl || (isProductHost() ? `/s/${slug}` : "/")}
+            >
               {section.buttonLabel || "View courses"}
             </Link>
           ) : (
-            <span className="mt-5 inline-block rounded-full bg-brand px-5 py-2 text-sm font-semibold">{section.buttonLabel || "View courses"}</span>
+            <Link className="mt-5 inline-block rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white" to={section.buttonUrl || "/"}>
+              {section.buttonLabel || "View courses"}
+            </Link>
           )
         )}
       </div>
@@ -413,13 +425,23 @@ export function SectionView({
         <LiveText tag="h2" className="text-2xl font-bold" value={section.heading} placeholder="Ready to join?" onChange={edit?.("heading")} />
         <LiveText tag="p" className="mx-auto mt-2 max-w-lg text-sm text-sky-50" value={section.text} placeholder="Invite students to enrol" onChange={edit?.("text")} />
         {onChange ? (
-          <LiveText tag="span" className="mt-5 inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand" value={section.buttonLabel} placeholder="Get started" onChange={edit?.("buttonLabel")} />
+          <div className="mt-5 space-y-2">
+            <LiveText tag="span" className="inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand" value={section.buttonLabel} placeholder="Get started" onChange={edit?.("buttonLabel")} />
+            <LiveText tag="p" className="text-xs text-sky-100" value={section.buttonUrl} placeholder="Optional link, e.g. /register" onChange={edit?.("buttonUrl")} />
+          </div>
+        ) : section.buttonUrl?.startsWith("http") ? (
+          <a className="mt-5 inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand" href={section.buttonUrl} target="_blank" rel="noreferrer">
+            {section.buttonLabel || "Get started"}
+          </a>
         ) : slug ? (
-          <Link className="mt-5 inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand" to={isProductHost() ? `/s/${slug}/register` : "/register"}>
+          <Link
+            className="mt-5 inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand"
+            to={section.buttonUrl || (isProductHost() ? `/s/${slug}/register` : "/register")}
+          >
             {section.buttonLabel || "Get started"}
           </Link>
         ) : (
-          <Link className="mt-5 inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand" to="/register">
+          <Link className="mt-5 inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand" to={section.buttonUrl || "/register"}>
             {section.buttonLabel || "Get started"}
           </Link>
         )}

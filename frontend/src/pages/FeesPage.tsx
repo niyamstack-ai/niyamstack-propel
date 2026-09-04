@@ -153,6 +153,8 @@ function StaffFees() {
   const students = useApi<Student[]>("/api/students");
   const { user } = useAuth();
   const canApproveRefunds = user?.role === "OWNER";
+  const canCollect = user?.role === "OWNER" || user?.role === "ACCOUNTANT";
+  const canManagePlans = canCollect || user?.role === "COUNSELOR";
   const studentName = (id?: string, buyer?: string) =>
     buyer || (students.data ?? []).find((s) => s.id === id)?.fullName || "—";
   const courses = useApi<{ id: string; name: string }[]>("/api/courses");
@@ -288,6 +290,7 @@ function StaffFees() {
           Send overdue reminders
         </button>
       </div>
+      {canManagePlans && (
       <Card title="Create fee plan">
         <FormGrid>
           <Field label="Plan name" value={planName} onChange={setPlanName} />
@@ -333,6 +336,20 @@ function StaffFees() {
           ))}
         </ul>
       </Card>
+      )}
+      {!canManagePlans && (
+        <Card title="Fee plans">
+          <ul className="text-sm">
+            {(plans.data ?? []).map((p) => (
+              <li key={p.id}>
+                {p.name}: {formatInr(p.totalAmount)}
+                {p.gstRate ? ` · GST ${p.gstRate}%` : ""} · {p.installmentCount || 1} installments
+              </li>
+            ))}
+            {(plans.data ?? []).length === 0 && <li className="text-slate-500">No fee plans yet.</li>}
+          </ul>
+        </Card>
+      )}
       <Card title="Schedule installments for a student">
         <FormGrid>
           <Select label="Plan" value={schedPlan} onChange={setSchedPlan} options={(plans.data ?? []).map((p) => ({ value: p.id, label: p.name }))} />
@@ -476,20 +493,24 @@ function StaffFees() {
               </button>
               {inv.status !== "PAID" && inv.status !== "CANCELLED" && (
                 <>
-                  <PrimaryButton
-                    onClick={() =>
-                      run(async () => {
-                        await collectInvoice(inv.id);
-                        invoices.reload();
-                        payments.reload();
-                        receipts.reload();
-                        ledger.reload();
-                        recon.reload();
-                      })
-                    }
-                  >
-                    Collect (Razorpay / demo)
-                  </PrimaryButton>
+                  {canCollect ? (
+                    <PrimaryButton
+                      onClick={() =>
+                        run(async () => {
+                          await collectInvoice(inv.id);
+                          invoices.reload();
+                          payments.reload();
+                          receipts.reload();
+                          ledger.reload();
+                          recon.reload();
+                        })
+                      }
+                    >
+                      Collect (Razorpay / demo)
+                    </PrimaryButton>
+                  ) : (
+                    <span className="text-xs text-slate-400">Collect: owner/accountant</span>
+                  )}
                   <button
                     type="button"
                     className="text-sm text-brand hover:underline"
@@ -508,6 +529,7 @@ function StaffFees() {
           ])}
         />
       </Card>
+      {canCollect && (
       <Card title="Record cash / cheque / UPI (no gateway)">
         <p className="mb-3 text-xs text-slate-500">Use this when the student already paid in the office. Razorpay is not opened.</p>
         <FormGrid>
@@ -555,6 +577,7 @@ function StaffFees() {
           </div>
         </FormGrid>
       </Card>
+      )}
       <Card title="Reconciliation">
         <Table
           empty="No pending gateway orders or offline receipts."

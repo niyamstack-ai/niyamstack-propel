@@ -31,11 +31,11 @@ export function CommsPage() {
     setError(null);
     setSendStatus(null);
     try {
-      await createRecord("/api/announcements", { title, body, batchId: batchId || null });
       const out = await api<{ sent?: number; status?: string; detail?: string }>("/api/actions/notices/send", {
         method: "POST",
         body: JSON.stringify({ channel, title, body, batchId: batchId || undefined }),
       });
+      await createRecord("/api/announcements", { title, body, batchId: batchId || null });
       setSendStatus(out.detail || `${prettyLabel(out.status)} · ${out.sent ?? 0} recipient(s)`);
       setTitle("");
       setBody("");
@@ -147,7 +147,9 @@ export function CommsPage() {
                     setActiveInbox(m);
                     setReplyBody("");
                     if (m.status === "UNREAD" || m.status === "NEW") {
-                      void updateRecord(`/api/inbox/${m.id}`, { ...m, status: "READ" }).then(() => inbox.reload()).catch(() => undefined);
+                      void updateRecord(`/api/inbox/${m.id}`, { ...m, status: "READ" })
+                        .then(() => inbox.reload())
+                        .catch((e) => setError((e as Error).message || "Could not mark as read"));
                     }
                   }}
                 >
@@ -163,7 +165,7 @@ export function CommsPage() {
             <div className="mt-4 space-y-3 border-t border-line pt-3">
               <p className="text-sm font-medium text-navy">{activeInbox.subject}</p>
               <p className="whitespace-pre-wrap text-sm text-slate-600">{activeInbox.body || "No message body."}</p>
-              <Field label="Reply" value={replyBody} onChange={setReplyBody} />
+              <Field label="Note (saved in inbox — not emailed)" value={replyBody} onChange={setReplyBody} />
               <div className="flex flex-wrap gap-2">
                 <PrimaryButton
                   disabled={!replyBody.trim()}
@@ -179,7 +181,7 @@ export function CommsPage() {
                         });
                         await updateRecord(`/api/inbox/${activeInbox.id}`, { ...activeInbox, status: "REPLIED" });
                         setReplyBody("");
-                        setSendStatus("Reply saved in inbox.");
+                        setSendStatus("Note saved in inbox (not sent by email/WhatsApp).");
                         inbox.reload();
                       } catch (e) {
                         setError((e as Error).message);
@@ -187,7 +189,7 @@ export function CommsPage() {
                     })()
                   }
                 >
-                  Send reply
+                  Save note in inbox
                 </PrimaryButton>
                 <LinkButton onClick={() => setActiveInbox(null)}>Close</LinkButton>
               </div>

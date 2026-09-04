@@ -17,7 +17,7 @@ const CATEGORY_LINKS: Record<string, { to: string; label: string }> = {
   Fees: { to: "/fees", label: "Open fees" },
   Placement: { to: "/placement", label: "Open placement" },
   ESS: { to: "/ess", label: "Open ESS" },
-  Growth: { to: "/your-app", label: "Open growth tools" },
+  Growth: { to: "/crm", label: "Open growth / CRM" },
   Comms: { to: "/comms", label: "Open communication" },
   Analytics: { to: "/analytics", label: "Open analytics" },
   Website: { to: "/website", label: "Open website" },

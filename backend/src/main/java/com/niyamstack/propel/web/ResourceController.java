@@ -475,8 +475,14 @@ public class ResourceController {
     }
 
     @GetMapping("/integration-connections") public List<IntegrationConnection> integrationConnections() { return list(IntegrationConnection.class); }
-    @PostMapping("/integration-connections") public IntegrationConnection createIntegrationConnection(@RequestBody IntegrationConnection body) { return create(body, "GROWTH"); }
-    @PutMapping("/integration-connections/{id}") public IntegrationConnection updateIntegrationConnection(@PathVariable UUID id, @RequestBody IntegrationConnection body) { return update(IntegrationConnection.class, id, body, "GROWTH"); }
+    @PostMapping("/integration-connections") public IntegrationConnection createIntegrationConnection(@RequestBody IntegrationConnection body) {
+        Access.requireAny(Auth.current(), Roles.OWNER);
+        return create(body, "SETUP");
+    }
+    @PutMapping("/integration-connections/{id}") public IntegrationConnection updateIntegrationConnection(@PathVariable UUID id, @RequestBody IntegrationConnection body) {
+        Access.requireAny(Auth.current(), Roles.OWNER);
+        return update(IntegrationConnection.class, id, body, "SETUP");
+    }
 
     private static final Set<String> INSTITUTE_STAFF = Set.of(
             Roles.OWNER, Roles.PLACEMENT_HEAD, Roles.FACULTY, Roles.COUNSELOR, Roles.ACCOUNTANT);

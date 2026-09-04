@@ -100,6 +100,15 @@ export function CrmPage() {
 
   async function convert() {
     if (!convertId) return;
+    if (!convertCourse) {
+      setError("Select a course before enrolling.");
+      return;
+    }
+    const lead = (inquiries.data ?? []).find((i) => i.id === convertId);
+    if (!lead?.phone?.trim()) {
+      setError("This lead needs a phone number before enrolment.");
+      return;
+    }
     if (!window.confirm("Enrol this lead as a student? Fee plan will be scheduled if one matches the course.")) return;
     await run(async () => {
       const out = await api<{ feeScheduled?: boolean; installments?: number; feeError?: string; loginWarning?: string }>(
@@ -107,7 +116,7 @@ export function CrmPage() {
         {
           method: "POST",
           body: JSON.stringify({
-            courseId: convertCourse || undefined,
+            courseId: convertCourse,
             batchId: convertBatch || undefined,
             feePlanId: convertFeePlan || undefined,
             autoFees: "true",
@@ -284,7 +293,9 @@ export function CrmPage() {
               ]}
             />
             <div className="flex items-end gap-2">
-              <PrimaryButton onClick={() => void convert()}>Enrol</PrimaryButton>
+              <PrimaryButton disabled={!convertCourse} onClick={() => void convert()}>
+                Enrol
+              </PrimaryButton>
               <button type="button" className="text-sm text-slate-500" onClick={() => setConvertId("")}>
                 Cancel
               </button>
@@ -334,13 +345,14 @@ export function CrmPage() {
                   <LinkButton
                     onClick={() =>
                       void run(async () => {
+                        if (!f.phone?.trim()) throw new Error("Applicant needs a phone number before converting to a lead.");
                         await createRecord("/api/inquiries", {
                           fullName: f.applicantName,
-                          phone: f.phone || "",
+                          phone: f.phone,
                           email: f.email || undefined,
                           source: "ADMISSION_FORM",
                           stage: "NEW",
-                          notes: `From online form ${f.id}`,
+                          notes: `From online form ${f.id}${f.courseId ? ` · course ${f.courseId}` : ""}`,
                         });
                         await updateRecord(`/api/admission-forms/${f.id}`, { ...f, status: "CONVERTED" });
                         setNotice(`${f.applicantName} added to leads.`);

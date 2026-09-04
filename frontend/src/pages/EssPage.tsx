@@ -1517,8 +1517,8 @@ function DevicesTab() {
   const [punchType, setPunchType] = useState("IN");
   const [codes, setCodes] = useState("");
   const punchUrl = useMemo(() => {
-    const slug = user?.orgSlug || "your-slug";
-    return `/api/public/sites/${slug}/punch`;
+    if (!user?.orgSlug) return null;
+    return `/api/public/sites/${user.orgSlug}/punch`;
   }, [user?.orgSlug]);
 
   async function punch() {
@@ -1560,7 +1560,15 @@ function DevicesTab() {
         <p className="mb-3 text-sm text-slate-500">
           Match staff by employee code or mobile. Students match by student code, roll number, or mobile. Devices can POST JSON
           {" "}
-          <code className="text-xs">{`{ "code", "deviceId", "punchType" }`}</code> to <code className="text-xs">{punchUrl}</code>.
+          <code className="text-xs">{`{ "code", "deviceId", "punchType" }`}</code>
+          {punchUrl ? (
+            <>
+              {" "}
+              to <code className="text-xs">{punchUrl}</code>.
+            </>
+          ) : (
+            <> once your institute website slug is set (Institute settings).</>
+          )}
         </p>
         <FormGrid>
           <Field label="Code or mobile" value={code} onChange={setCode} placeholder="EMP-0001 or 10-digit mobile" />

@@ -24,6 +24,7 @@ export function IntegrationsPage() {
   const connections = useApi<Connection[]>("/api/integration-connections");
   const gateway = useApi<Gateway>("/api/actions/integrations");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [keys, setKeys] = useState({
     razorpayKeyId: "",
@@ -68,6 +69,7 @@ export function IntegrationsPage() {
 
   async function save(provider: string) {
     setError(null);
+    setNotice(null);
     try {
       const existing = byProvider.get(provider);
       const configJson = JSON.stringify({ value: values[provider] || "" });
@@ -85,6 +87,7 @@ export function IntegrationsPage() {
         });
       }
       connections.reload();
+      setNotice("Integration saved.");
     } catch (e) {
       setError((e as Error).message);
     }
@@ -99,6 +102,7 @@ export function IntegrationsPage() {
         <p className="text-sm text-slate-500">Paste your Razorpay, WhatsApp, and SMTP keys here. Until they are saved, fees and notices stay recorded in Propel only.</p>
       </div>
       <ErrorText error={error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Payments (Razorpay / UPI)">
           <p className="text-sm text-slate-500">
@@ -123,6 +127,7 @@ export function IntegrationsPage() {
               onClick={() =>
                 void (async () => {
                   setError(null);
+                  setNotice(null);
                   try {
                     const saved = await api<typeof keyStatus>("/api/actions/live-keys", {
                       method: "PUT",
@@ -130,6 +135,7 @@ export function IntegrationsPage() {
                     });
                     setKeyStatus(saved);
                     gateway.reload();
+                    setNotice("Payment keys saved.");
                   } catch (e) {
                     setError((e as Error).message);
                   }
@@ -153,6 +159,7 @@ export function IntegrationsPage() {
               onClick={() =>
                 void (async () => {
                   setError(null);
+                  setNotice(null);
                   try {
                     const saved = await api<typeof keyStatus>("/api/actions/live-keys", {
                       method: "PUT",
@@ -160,6 +167,7 @@ export function IntegrationsPage() {
                     });
                     setKeyStatus(saved);
                     gateway.reload();
+                    setNotice("WhatsApp keys saved.");
                   } catch (e) {
                     setError((e as Error).message);
                   }
@@ -186,6 +194,7 @@ export function IntegrationsPage() {
               onClick={() =>
                 void (async () => {
                   setError(null);
+                  setNotice(null);
                   try {
                     const saved = await api<typeof keyStatus>("/api/actions/live-keys", {
                       method: "PUT",
@@ -193,6 +202,7 @@ export function IntegrationsPage() {
                     });
                     setKeyStatus(saved);
                     gateway.reload();
+                    setNotice("Email (SMTP) settings saved.");
                   } catch (e) {
                     setError((e as Error).message);
                   }
@@ -214,6 +224,7 @@ export function IntegrationsPage() {
               onClick={() =>
                 void (async () => {
                   setError(null);
+                  setNotice(null);
                   try {
                     const saved = await api<typeof keyStatus>("/api/actions/live-keys", {
                       method: "PUT",
@@ -221,13 +232,14 @@ export function IntegrationsPage() {
                     });
                     setKeyStatus(saved);
                     gateway.reload();
+                    setNotice("GST invoice settings saved.");
                   } catch (e) {
                     setError((e as Error).message);
                   }
                 })()
               }
             >
-              Save payment, WhatsApp, email, GST
+              Save GST settings
             </PrimaryButton>
           </div>
         </Card>

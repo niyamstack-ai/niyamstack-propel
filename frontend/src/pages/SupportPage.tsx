@@ -82,11 +82,16 @@ export function SupportPage() {
               <LinkButton
                 key={t.id}
                 onClick={async () => {
-                  await api(`/api/actions/support/tickets/${t.id}`, {
-                    method: "POST",
-                    body: JSON.stringify({ status: "RESOLVED" }),
-                  });
-                  tickets.reload();
+                  setError(null);
+                  try {
+                    await api(`/api/actions/support/tickets/${t.id}`, {
+                      method: "POST",
+                      body: JSON.stringify({ status: "RESOLVED" }),
+                    });
+                    tickets.reload();
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
                 }}
               >
                 Resolve

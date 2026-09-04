@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useLocale } from "../locale";
 import { Card, PrimaryButton, useApi } from "../ui";
 
@@ -47,9 +47,9 @@ export function HelpPage() {
             <p>{tour.error || (locale === "hi" ? "इस पृष्ठ के लिए टूर अभी उपलब्ध नहीं है।" : "No guided tour for this page yet.")}</p>
             <p>
               {locale === "hi" ? "नीचे लेख देखें, या " : "See articles below, or open "}
-              <a className="font-medium text-brand hover:underline" href="/support">
+              <Link className="font-medium text-brand hover:underline" to="/support">
                 {locale === "hi" ? "सहायता टिकट" : "Support"}
-              </a>
+              </Link>
               .
             </p>
           </div>

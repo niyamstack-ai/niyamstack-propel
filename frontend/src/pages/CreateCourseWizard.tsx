@@ -50,6 +50,7 @@ export function CreateCourseWizard() {
   const { courseId } = useParams();
   const courses = useApi<Draft[]>("/api/courses");
   const terms = useApi<{ id: string; name: string }[]>("/api/terms");
+  const feePlans = useApi<{ id: string; courseId?: string; gstRate?: number }[]>("/api/fee-plans");
   const editing = Boolean(courseId);
   const [loaded, setLoaded] = useState(false);
 
@@ -91,7 +92,7 @@ export function CreateCourseWizard() {
   const madePlan = useRef(false);
 
   useEffect(() => {
-    if (!courseId || loaded || !courses.data) return;
+    if (!courseId || loaded || !courses.data || feePlans.loading) return;
     const existing = courses.data.find((c) => c.id === courseId);
     if (!existing) {
       setError("This course was not found.");
@@ -119,8 +120,16 @@ export function CreateCourseWizard() {
     setAllowLive(Boolean(existing.allowLive));
     setFeatured(Boolean(existing.featured));
     setBundleIds((existing.bundleCsv || "").split(",").filter(Boolean));
+    const plan = (feePlans.data ?? []).find((p) => p.courseId === existing.id);
+    if (plan && plan.gstRate != null && Number(plan.gstRate) > 0) {
+      setIncludeTax(true);
+      setTaxPercent(String(plan.gstRate));
+    } else if (plan) {
+      setIncludeTax(false);
+      setTaxPercent("18");
+    }
     setLoaded(true);
-  }, [courseId, courses.data, loaded]);
+  }, [courseId, courses.data, feePlans.data, feePlans.loading, loaded]);
 
   const paid = courseType === "PAID";
   const listPrice = Math.max(0, Number(fees || 0));
@@ -227,8 +236,8 @@ export function CreateCourseWizard() {
       const saved = await persist(true);
       try {
         await ensureWebsitePublished();
-      } catch {
-        /* course is published even if the website flag cannot be updated */
+      } catch (pubErr) {
+        setError(`Course published, but website publish failed: ${(pubErr as Error).message}`);
       }
       navigate(`/courses/${saved.id}?share=1`);
     });
