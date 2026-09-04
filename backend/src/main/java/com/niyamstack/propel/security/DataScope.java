@@ -30,18 +30,30 @@ public class DataScope {
     }
 
     public Set<UUID> parentStudentIds(PropelUser user) {
+        String userPhone = parentLoginPhone(user);
         return store.list(Guardian.class, user.organizationId()).stream()
                 .filter(g -> {
                     if (g.getStudentId() == null) return false;
                     if (user.userId() != null && user.userId().equals(g.getUserId())) return true;
                     if (user.email() != null && !user.email().isBlank()
                             && user.email().equalsIgnoreCase(blank(g.getEmail(), ""))) return true;
-                    String phone = blank(user.phone(), "");
                     String gPhone = blank(g.getPhone(), "");
-                    return !phone.isBlank() && phone.equals(gPhone);
+                    return !userPhone.isBlank() && userPhone.equals(gPhone);
                 })
                 .map(Guardian::getStudentId)
                 .collect(Collectors.toSet());
+    }
+
+    private String parentLoginPhone(PropelUser user) {
+        if (user.userId() == null) {
+            return "";
+        }
+        try {
+            AppUser account = store.get(AppUser.class, user.userId());
+            return blank(account.getPhone(), "");
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private static String blank(String v, String fallback) {

@@ -751,7 +751,9 @@ public class ResourceController {
                 if (att.getBatchId() != null) {
                     existing.setBatchId(att.getBatchId());
                 }
-                return store.save(existing);
+                @SuppressWarnings("unchecked")
+                T updated = (T) store.save(existing);
+                return updated;
             }
         }
         if (student) {
