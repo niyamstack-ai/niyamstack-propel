@@ -23,7 +23,7 @@ type Named = { id: string; name: string; code?: string; courseId?: string };
 export function StudentsPage() {
   const { user } = useAuth();
   if (user?.role === "STUDENT" || user?.role === "PARENT") return <MyStudentRecord />;
-  return <StaffStudents canEnroll={user?.role === "OWNER" || user?.role === "COUNSELOR"} />;
+  return <StaffStudents canEnroll={user?.role === "OWNER" || user?.role === "COUNSELOR" || (user?.capabilities ?? []).includes("STUDENTS")} />;
 }
 
 export function MyStudentRecord() {

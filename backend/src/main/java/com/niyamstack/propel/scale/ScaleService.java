@@ -167,15 +167,23 @@ public class ScaleService {
 
     @Transactional
     public Map<String, Object> sendReport(UUID reportId) {
+        return sendReport(reportId, Map.of());
+    }
+
+    @Transactional
+    public Map<String, Object> sendReport(UUID reportId, Map<String, ?> body) {
         PropelUser user = Auth.current();
         Access.requireAny(user, Roles.OWNER);
         ReportDefinition def = store.getOwned(ReportDefinition.class, reportId, user.organizationId());
-        String to = store.list(ScheduledReport.class, user.organizationId()).stream()
-                .filter(s -> reportId.equals(s.getReportId()))
-                .map(ScheduledReport::getEmailTo)
-                .filter(e -> e != null && !e.isBlank())
-                .findFirst()
-                .orElse(user.email());
+        String requested = body == null || body.get("emailTo") == null ? "" : String.valueOf(body.get("emailTo")).trim();
+        String to = !requested.isBlank()
+                ? requested
+                : store.list(ScheduledReport.class, user.organizationId()).stream()
+                        .filter(s -> reportId.equals(s.getReportId()))
+                        .map(ScheduledReport::getEmailTo)
+                        .filter(e -> e != null && !e.isBlank())
+                        .findFirst()
+                        .orElse(user.email());
         return emailReport(def, to);
     }
 

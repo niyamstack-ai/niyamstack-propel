@@ -4,6 +4,7 @@ import { api } from "../api";
 import { createRecord } from "../ops";
 import { useAuth } from "../auth";
 import { prettyLabel } from "../labels";
+import { useLocale } from "../locale";
 import { hasGrowthTier } from "../packs";
 import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, TextArea, formatDay, formatInr, formatWhen, useApi } from "../ui";
 
@@ -146,6 +147,7 @@ type Tab = (typeof HR_TABS)[number];
 
 export function EssPage() {
   const { user } = useAuth();
+  const { t } = useLocale();
   const hr = user?.role === "OWNER" || (user?.capabilities ?? []).includes("ESS_MANAGE");
   const payroll = hr || user?.role === "ACCOUNTANT";
   const growth = hasGrowthTier(user?.packageTier, user?.modules);
@@ -158,10 +160,10 @@ export function EssPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-navy">ESS</h1>
+        <h1 className="text-2xl font-bold text-navy">{t("ess_title", "ESS")}</h1>
         <p className="text-sm text-slate-500">
           {hr
-            ? "Employee master, staff attendance, leave, payroll, and institute hiring. Staff logins stay under People → Staff."
+            ? t("ess_subtitle", "Employee master, staff attendance, leave, payroll, and institute hiring. Staff logins stay under People → Staff.")
             : payroll
               ? "Payroll settings, payslips, attendance, and leave. Hiring and employee master stay with the owner."
               : manager
@@ -1734,7 +1736,7 @@ function CompensationTab() {
             value={planType}
             onChange={setPlanType}
             options={[
-              { value: "HOURLY", label: "Hourly (from timetable)" },
+              { value: "HOURLY", label: "Hourly (from attendance punches)" },
               { value: "PER_BATCH", label: "Per batch" },
               { value: "FIXED", label: "Fixed only (salary structure)" },
             ]}

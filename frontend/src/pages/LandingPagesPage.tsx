@@ -65,6 +65,10 @@ export function LandingPagesPage() {
 
   async function save() {
     setError(null);
+    if (!name.trim() || !headline.trim()) {
+      setError("Name and headline are required.");
+      return;
+    }
     try {
       const payload = {
         name,
@@ -94,6 +98,10 @@ export function LandingPagesPage() {
 
   async function publish(p: Landing) {
     try {
+      if (!p.published && !(p.headline || "").trim()) {
+        setError("Add a headline before publishing.");
+        return;
+      }
       await updateRecord(`/api/landing-pages/${p.id}`, { ...p, published: !p.published });
       pages.reload();
     } catch (e) {

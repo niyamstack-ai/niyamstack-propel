@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../api";
 import { hasCap, usePlatformAuth } from "../../platformAuth";
@@ -173,6 +173,11 @@ function RoleCard({
 }) {
   const [name, setName] = useState(role.name);
   const [selected, setSelected] = useState<string[]>(role.capabilities);
+
+  useEffect(() => {
+    setName(role.name);
+    setSelected(role.capabilities);
+  }, [role.id, role.name, role.capabilities]);
 
   function toggle(cap: string) {
     setSelected(selected.includes(cap) ? selected.filter((c) => c !== cap) : [...selected, cap]);

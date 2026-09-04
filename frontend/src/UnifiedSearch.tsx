@@ -37,7 +37,7 @@ export function UnifiedSearch() {
   }
 
   return (
-    <div className="relative hidden min-w-[220px] flex-1 sm:block md:max-w-md">
+    <div className="relative min-w-0 flex-1 md:max-w-md">
       <input
         className="w-full rounded-lg border border-line px-3 py-2 text-sm"
         placeholder="Search students, leads, fees…"

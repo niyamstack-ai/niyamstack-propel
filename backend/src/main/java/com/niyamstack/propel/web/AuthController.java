@@ -17,12 +17,15 @@ import com.niyamstack.propel.security.SessionService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,6 +42,8 @@ public class AuthController {
     private final SessionService sessions;
     private final MailService mail;
     private final FoundationService foundation;
+    private final Environment environment;
+    private final boolean demoAliases;
     private final ConcurrentHashMap<String, Integer> ipFailures = new ConcurrentHashMap<>();
 
     public AuthController(
@@ -49,7 +54,9 @@ public class AuthController {
             ResetTokenService resets,
             SessionService sessions,
             MailService mail,
-            FoundationService foundation
+            FoundationService foundation,
+            Environment environment,
+            @Value("${propel.demo-aliases:false}") boolean demoAliases
     ) {
         this.store = store;
         this.encoder = encoder;
@@ -59,6 +66,8 @@ public class AuthController {
         this.sessions = sessions;
         this.mail = mail;
         this.foundation = foundation;
+        this.environment = environment;
+        this.demoAliases = demoAliases;
     }
 
     public record LoginRequest(
@@ -95,7 +104,7 @@ public class AuthController {
         String ip = clientIp(request);
         guardIp(ip);
         AppUser user = store.findUserByEmail(body.email() == null ? "" : body.email().trim());
-        if (user == null) {
+        if (user == null && allowDemoAliases()) {
             String email = body.email() == null ? "" : body.email().trim();
             if ("deepak@yopmail.com".equalsIgnoreCase(email)) {
                 user = store.findUserByEmail("owner@aarohan.demo");
@@ -393,6 +402,14 @@ public class AuthController {
             i++;
         }
         return slug;
+    }
+
+    private boolean allowDemoAliases() {
+        if (demoAliases) {
+            return true;
+        }
+        return Arrays.stream(environment.getActiveProfiles())
+                .anyMatch(p -> "seed".equalsIgnoreCase(p) || "demo".equalsIgnoreCase(p) || "local".equalsIgnoreCase(p));
     }
 
     private static String clientIp(jakarta.servlet.http.HttpServletRequest request) {

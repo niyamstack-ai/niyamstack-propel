@@ -161,7 +161,10 @@ export function PlatformInstituteDetailPage() {
                 type="button"
                 className="rounded-full border border-red-200 px-4 py-2 text-sm text-red-700"
                 disabled={saving || !!acting}
-                onClick={() => action("suspend", "suspend", "Institute suspended.")}
+                onClick={() => {
+                  if (!window.confirm("Suspend this institute? Users will lose access until restored.")) return;
+                  action("suspend", "suspend", "Institute suspended.");
+                }}
               >
                 {acting === "suspend" ? "Suspending…" : "Suspend"}
               </button>

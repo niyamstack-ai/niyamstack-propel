@@ -32,6 +32,9 @@ export function MobileApp() {
   const home = useApi<Home>("/api/actions/mobile/home");
   const isOwner = user?.role === "OWNER";
   const faculty = user?.role === "FACULTY" || (isOwner && previewAs === "faculty");
+  const studentPreview = isOwner && previewAs === "student";
+  /** Owner student preview is layout-only — do not reuse faculty home payload as student data. */
+  const studentData: Home | undefined = studentPreview ? undefined : home.data ?? undefined;
 
   useEffect(() => {
     const on = () => setOffline(false);
@@ -73,7 +76,7 @@ export function MobileApp() {
       ];
 
   return (
-    <div className="mx-auto min-h-screen max-w-md bg-mist pb-20">
+    <div className="relative mx-auto min-h-screen max-w-md bg-mist pb-20">
       <header className="sticky top-0 z-10 border-b border-line bg-navy px-4 py-3 text-white">
         <p className="text-xs uppercase tracking-wide text-white/70">{faculty ? "Faculty app" : "Student app"}</p>
         <h1 className="text-lg font-semibold">{user?.orgName || home.data?.name || "Propel"}</h1>
@@ -112,10 +115,25 @@ export function MobileApp() {
         <ErrorText error={error || home.error} />
         {notice && <p className="text-sm text-emerald-700">{notice}</p>}
         {tab === "home" && home.loading && <p className="text-sm text-slate-500">Loading…</p>}
-        {tab === "home" && !faculty && !home.loading && <StudentToday data={home.data ?? undefined} />}
-        {tab === "learn" && <StudentLearn data={home.data ?? undefined} />}
-        {tab === "fees" && <StudentFees data={home.data ?? undefined} />}
-        {tab === "jobs" && <StudentJobs data={home.data ?? undefined} />}
+        {tab === "home" && !faculty && !home.loading && (
+          studentPreview ? (
+            <Card title="Student preview">
+              <p className="text-sm text-slate-600">
+                This is a layout preview only. Staff home data is hidden so it does not look like a real student. Open your public student website for real courses, fees, and attendance.
+              </p>
+            </Card>
+          ) : (
+            <StudentToday data={studentData} />
+          )
+        )}
+        {tab === "learn" && !studentPreview && <StudentLearn data={studentData} />}
+        {tab === "fees" && !studentPreview && <StudentFees data={studentData} />}
+        {tab === "jobs" && !studentPreview && <StudentJobs data={studentData} />}
+        {(tab === "learn" || tab === "fees" || tab === "jobs") && studentPreview && (
+          <Card title="Preview">
+            <p className="text-sm text-slate-600">Student tabs are empty in owner preview. Use the public site for real student flows.</p>
+          </Card>
+        )}
         {tab === "home" && faculty && !home.loading && <FacultyBatches data={home.data ?? undefined} />}
         {tab === "attend" && faculty && (
           <FacultyAttend
@@ -141,7 +159,7 @@ export function MobileApp() {
           </Link>
         </p>
       </main>
-      <nav className="fixed bottom-0 left-0 right-0 mx-auto grid max-w-md grid-cols-4 border-t border-line bg-white">
+      <nav className="absolute bottom-0 left-0 right-0 grid grid-cols-4 border-t border-line bg-white">
         {tabs.map(([id, label]) => (
           <button
             key={id}
@@ -304,17 +322,19 @@ function FacultyAttend({
   return (
     <Card title="Mark attendance">
       <Select label="Batch" value={batchId} onChange={setBatchId} options={(data?.batches ?? []).map((b) => ({ value: b.id, label: b.name }))} />
-      <ul className="mt-3 space-y-2 text-sm">
-        {students.map((s) => (
-          <li key={s.id} className="flex items-center justify-between gap-2">
-            <span>{s.fullName}</span>
-            <PrimaryButton disabled={!batchId} onClick={() => mark(s.id)}>
-              Present
-            </PrimaryButton>
-          </li>
-        ))}
-        {students.length === 0 && <li className="text-slate-500">Pick a batch.</li>}
-      </ul>
+      {!batchId ? (
+        <p className="mt-3 text-sm text-slate-500">Pick a batch to see students.</p>
+      ) : (
+        <ul className="mt-3 space-y-2 text-sm">
+          {students.map((s) => (
+            <li key={s.id} className="flex items-center justify-between gap-2">
+              <span>{s.fullName}</span>
+              <PrimaryButton onClick={() => void mark(s.id)}>Present</PrimaryButton>
+            </li>
+          ))}
+          {students.length === 0 && <li className="text-slate-500">No students in this batch.</li>}
+        </ul>
+      )}
     </Card>
   );
 }

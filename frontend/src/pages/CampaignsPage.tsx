@@ -39,6 +39,10 @@ export function CampaignsPage() {
 
   async function create() {
     setError(null);
+    if (!name.trim() || !title.trim() || !body.trim()) {
+      setError("Name, title, and message are required before saving.");
+      return;
+    }
     try {
       await createRecord("/api/campaigns", {
         name,
@@ -62,9 +66,22 @@ export function CampaignsPage() {
   }
 
   async function launch(c: Campaign) {
+    setError(null);
+    if (!(c.title || c.name || "").trim() || !(c.body || "").trim()) {
+      setError("Add a title and message before launching this campaign.");
+      return;
+    }
     try {
-      await api(`/api/actions/campaigns/${c.id}/launch`, { method: "POST", body: "{}" });
+      const out = await api<{ sent?: number; queued?: number; lastSendDetail?: string; detail?: string }>(
+        `/api/actions/campaigns/${c.id}/launch`,
+        { method: "POST", body: "{}" },
+      );
+      const detail = out.lastSendDetail || out.detail;
+      if (detail) setError(null);
       campaigns.reload();
+      if ((out.sent ?? 0) + (out.queued ?? 0) === 0) {
+        setError(detail || "Launch finished with nobody to send to — keep as draft until you have an audience.");
+      }
     } catch (e) {
       setError((e as Error).message);
     }

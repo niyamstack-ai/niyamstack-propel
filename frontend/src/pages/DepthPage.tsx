@@ -103,6 +103,29 @@ export function DepthPage() {
           <FormGrid>
             <Field label="Default royalty (0–1)" value={royalty} onChange={setRoyalty} />
           </FormGrid>
+          <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={hub.data?.indiaDataResidency !== false}
+              onChange={async (e) => {
+                setError(null);
+                try {
+                  await api("/api/actions/depth/org", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      indiaDataResidency: e.target.checked,
+                      dataMode: hub.data?.dataMode ?? "SHARED",
+                      defaultRoyaltyPct: Number(royalty) || 0,
+                    }),
+                  });
+                  hub.reload();
+                } catch (err) {
+                  setError((err as Error).message);
+                }
+              }}
+            />
+            Keep data residency in India
+          </label>
           <div className="mt-3 flex flex-wrap gap-2">
             <PrimaryButton
               onClick={async () => {
@@ -111,7 +134,7 @@ export function DepthPage() {
                   await api("/api/actions/depth/org", {
                     method: "POST",
                     body: JSON.stringify({
-                      indiaDataResidency: true,
+                      indiaDataResidency: hub.data?.indiaDataResidency !== false,
                       dataMode: hub.data?.dataMode ?? "SHARED",
                       defaultRoyaltyPct: Number(royalty) || 0,
                     }),

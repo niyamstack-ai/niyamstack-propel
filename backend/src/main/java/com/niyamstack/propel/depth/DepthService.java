@@ -246,25 +246,26 @@ public class DepthService {
                 }).toList();
     }
 
-    public Map<String, Object> guidedTour(String pageKey) {
+    public Map<String, Object> guidedTour(String pageKey, String locale) {
         Access.requireTenant(Auth.current());
         String key = blank(pageKey, "dashboard");
+        boolean hi = "hi".equalsIgnoreCase(blank(locale, "en"));
         List<Map<String, Object>> steps = switch (key) {
             case "compliance" -> List.of(
-                    step("Trust hub", "Review exports, deletion requests, and residency."),
-                    step("Subject export", "Download a student data bundle with masking."),
-                    step("Deletion queue", "Log GDPR-style erasure requests."));
+                    step(hi ? "ट्रस्ट हब" : "Trust hub", hi ? "एक्सपोर्ट, डिलीशन और रेजीडेंसी देखें।" : "Review exports, deletion requests, and residency."),
+                    step(hi ? "डेटा एक्सपोर्ट" : "Subject export", hi ? "छात्र डेटा बंडल डाउनलोड करें।" : "Download a student data bundle with masking."),
+                    step(hi ? "डिलीशन कतार" : "Deletion queue", hi ? "मिटाने के अनुरोध लॉग करें।" : "Log GDPR-style erasure requests."));
             case "enterprise" -> List.of(
-                    step("Workflows", "Build multi-step approval chains."),
-                    step("AI suite", "Use coach, resume, and career tools."),
-                    step("Accreditation", "Track NAAC/NBA evidence."));
+                    step(hi ? "वर्कफ़्लो" : "Workflows", hi ? "मल्टी-स्टेप अप्रूवल बनाएँ।" : "Build multi-step approval chains."),
+                    step(hi ? "एआई सूट" : "AI suite", hi ? "कोच, रिज़्यूमे और करियर टूल।" : "Use coach, resume, and career tools."),
+                    step(hi ? "एक्रेडिटेशन" : "Accreditation", hi ? "NAAC/NBA साक्ष्य ट्रैक करें।" : "Track NAAC/NBA evidence."));
             case "support" -> List.of(
-                    step("Raise a ticket", "Describe the issue and category."),
-                    step("Track status", "Owners can close or resolve tickets."));
+                    step(hi ? "टिकट बनाएँ" : "Raise a ticket", hi ? "समस्या और श्रेणी लिखें।" : "Describe the issue and category."),
+                    step(hi ? "स्थिति देखें" : "Track status", hi ? "मालिक टिकट बंद कर सकते हैं।" : "Owners can close or resolve tickets."));
             default -> List.of(
-                    step("Dashboard", "See KPIs and alerts for your institute."),
-                    step("People", "Manage students, staff, and alumni."),
-                    step("Help", "Open Help anytime from the sidebar."));
+                    step(hi ? "डैशबोर्ड" : "Dashboard", hi ? "अपने संस्थान के KPI और अलर्ट देखें।" : "See KPIs and alerts for your institute."),
+                    step(hi ? "लोग" : "People", hi ? "छात्र, स्टाफ और पूर्व छात्र प्रबंधित करें।" : "Manage students, staff, and alumni."),
+                    step(hi ? "मदद" : "Help", hi ? "साइडबार से मदद खोलें।" : "Open Help anytime from the sidebar."));
         };
         return Map.of("pageKey", key, "steps", steps);
     }
@@ -547,6 +548,12 @@ public class DepthService {
         en.put("open", "Open");
         en.put("my_institute", "My institute");
         en.put("grow_and_run", "Grow and run the institute");
+        en.put("ess_title", "ESS");
+        en.put("ess_subtitle", "Employee master, attendance, leave, payroll, and hiring.");
+        en.put("fees_title", "Fees & finance");
+        en.put("fees_subtitle", "Build plans, raise invoices, collect, and approve refunds.");
+        en.put("admissions_title", "Admissions");
+        en.put("admissions_subtitle", "Move a lead New → Counselling → Demo → Enrolled.");
         if (!"hi".equals(locale)) {
             return en;
         }
@@ -606,6 +613,12 @@ public class DepthService {
         hi.put("open", "खोलें");
         hi.put("my_institute", "मेरा संस्थान");
         hi.put("grow_and_run", "संस्थान चलाएँ और बढ़ाएँ");
+        hi.put("ess_title", "ईएसएस");
+        hi.put("ess_subtitle", "कर्मचारी मास्टर, उपस्थिति, छुट्टी, पेरोल और हायरिंग।");
+        hi.put("fees_title", "फीस और वित्त");
+        hi.put("fees_subtitle", "प्लान बनाएँ, इनवॉइस जारी करें, कलेक्ट करें और रिफंड स्वीकृत करें।");
+        hi.put("admissions_title", "प्रवेश");
+        hi.put("admissions_subtitle", "लीड को नया → काउंसलिंग → डेमो → नामांकित में ले जाएँ।");
         return hi;
     }
 

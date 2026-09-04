@@ -36,7 +36,11 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
         setLocaleState(r.locale ?? "en");
         setDictionary(r.dictionary ?? {});
       })
-      .catch(() => undefined)
+      .catch(() => {
+        setLocaleState("en");
+        setDictionary({});
+        window.alert("Could not load language pack — showing English.");
+      })
       .finally(() => setLoading(false));
   }, [token, user?.id]);
 

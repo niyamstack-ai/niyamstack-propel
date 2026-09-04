@@ -5,6 +5,7 @@ import { hasGrowthTier } from "../packs";
 import { api } from "../api";
 import { createRecord, updateRecord } from "../ops";
 import { prettyLabel } from "../labels";
+import { useLocale } from "../locale";
 import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, formatInr, useApi } from "../ui";
 
 type Inquiry = {
@@ -32,6 +33,7 @@ const STAGES = [
 
 export function CrmPage() {
   const { user } = useAuth();
+  const { t } = useLocale();
   const growth = hasGrowthTier(user?.packageTier, user?.modules);
   const org = useApi<{ slug?: string }>("/api/organization");
   const siteSlug = org.data?.slug || user?.orgSlug || "your-slug";
@@ -181,8 +183,8 @@ export function CrmPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-navy">Admissions</h1>
-        <p className="text-sm text-slate-500">Move a lead New → Counselling → Demo → Enrolled. Website and referral links land here.</p>
+        <h1 className="text-2xl font-bold text-navy">{t("admissions_title", "Admissions")}</h1>
+        <p className="text-sm text-slate-500">{t("admissions_subtitle", "Move a lead New → Counselling → Demo → Enrolled. Website and referral links land here.")}</p>
       </div>
       <ErrorText error={error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}

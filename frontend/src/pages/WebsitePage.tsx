@@ -107,8 +107,8 @@ export function WebsitePage() {
   );
   const current = sorted.find((p) => p.id === pageId) || sorted[0] || null;
   const previewPath = studentPreviewPath(org.data?.slug);
-  const liveUrl = studentPublicUrl(org.data);
   const siteLive = org.data?.websitePublished === true;
+  const liveUrl = siteLive ? studentPublicUrl(org.data) : `${typeof window !== "undefined" ? window.location.origin : ""}${previewPath}`;
   const host = cleanHost(customDomain);
   const institute = org.data?.name || "your institute";
   const liveCourses = (courses.data ?? []).filter((c) => c.published !== false).slice(0, 4);
@@ -339,8 +339,8 @@ export function WebsitePage() {
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 grid-cols-[104px_minmax(0,1fr)]">
-        <aside className="overflow-y-auto border-r border-line bg-white p-2">
+      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[104px_minmax(0,1fr)]">
+        <aside className="overflow-x-auto overflow-y-auto border-b border-line bg-white p-2 md:border-b-0 md:border-r">
           <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Add</p>
           <div className="grid gap-1.5">
             {BLOCKS.map((block) => {
@@ -399,7 +399,7 @@ export function WebsitePage() {
                   className={`group relative rounded-2xl ${picked === section.id ? "ring-2 ring-brand" : "hover:ring-1 hover:ring-slate-200"}`}
                   onClick={() => setPicked(section.id)}
                 >
-                  <div className={`absolute -top-3 right-3 z-10 gap-1 ${picked === section.id ? "flex" : "hidden group-hover:flex"}`}>
+                  <div className="absolute -top-3 right-3 z-10 flex gap-1">
                     <button type="button" className="rounded bg-white px-2 py-0.5 text-[11px] shadow" onClick={() => move(index, -1)}>
                       Up
                     </button>

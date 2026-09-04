@@ -446,8 +446,11 @@ export function AnalyticsPage() {
                   setError(null);
                   setExportStatus(null);
                   try {
-                    await api(`/api/actions/reports/${r.id}/send`, { method: "POST", body: "{}" });
-                    setExportStatus(`Email queued for “${r.name}”.`);
+                    await api(`/api/actions/reports/${r.id}/send`, {
+                      method: "POST",
+                      body: JSON.stringify({ emailTo: emailTo || undefined }),
+                    });
+                    setExportStatus(`Email queued for “${r.name}”${emailTo ? ` → ${emailTo}` : ""}.`);
                   } catch (e) {
                     setError((e as Error).message);
                   }

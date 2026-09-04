@@ -3,3 +3,5 @@
 app:
   seed:
     enabled: true
+propel:
+  demo-aliases: true

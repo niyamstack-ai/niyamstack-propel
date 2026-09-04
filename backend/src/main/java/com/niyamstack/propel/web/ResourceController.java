@@ -33,6 +33,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -717,9 +718,25 @@ public class ResourceController {
             if (att.getStudentId() == null) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "Student is required for attendance");
             }
-            Student student = store.getOwned(Student.class, att.getStudentId(), Auth.current().organizationId());
-            if (att.getBatchId() != null && (student.getBatchId() == null || !att.getBatchId().equals(student.getBatchId()))) {
+            UUID org = Auth.current().organizationId();
+            Student pupil = store.getOwned(Student.class, att.getStudentId(), org);
+            if (att.getBatchId() != null && (pupil.getBatchId() == null || !att.getBatchId().equals(pupil.getBatchId()))) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "That student is not in the selected batch");
+            }
+            LocalDate day = att.getSessionDate() != null ? att.getSessionDate() : java.time.LocalDate.now();
+            att.setSessionDate(day);
+            AttendanceRecord existing = store.listBy(AttendanceRecord.class, org, "studentId", att.getStudentId()).stream()
+                    .filter(a -> day.equals(a.getSessionDate())
+                            && (att.getBatchId() == null || att.getBatchId().equals(a.getBatchId())))
+                    .findFirst()
+                    .orElse(null);
+            if (existing != null) {
+                existing.setStatus(att.getStatus() == null || att.getStatus().isBlank() ? "PRESENT" : att.getStatus());
+                existing.setSource(att.getSource() == null || att.getSource().isBlank() ? existing.getSource() : att.getSource());
+                if (att.getBatchId() != null) {
+                    existing.setBatchId(att.getBatchId());
+                }
+                return store.save(existing);
             }
         }
         if (student) {

@@ -4,6 +4,7 @@ import { collectInvoice } from "../razorpay";
 import { createRecord } from "../ops";
 import { useAuth } from "../auth";
 import { prettyLabel } from "../labels";
+import { useLocale } from "../locale";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatDay, formatInr, useApi } from "../ui";
 
 type Invoice = {
@@ -144,6 +145,7 @@ function MyFees() {
 }
 
 function StaffFees() {
+  const { t } = useLocale();
   const plans = useApi<Plan[]>("/api/fee-plans");
   const invoices = useApi<Invoice[]>("/api/invoices");
   const payments = useApi<Payment[]>("/api/payments");
@@ -155,6 +157,7 @@ function StaffFees() {
   const canApproveRefunds = user?.role === "OWNER";
   const canCollect = user?.role === "OWNER" || user?.role === "ACCOUNTANT";
   const canManagePlans = canCollect;
+  const canSchedule = canCollect || user?.role === "COUNSELOR";
   const studentName = (id?: string, buyer?: string) =>
     buyer || (students.data ?? []).find((s) => s.id === id)?.fullName || "—";
   const courses = useApi<{ id: string; name: string }[]>("/api/courses");
@@ -214,9 +217,9 @@ function StaffFees() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-navy">Fees & finance</h1>
+        <h1 className="text-2xl font-bold text-navy">{t("fees_title", "Fees & finance")}</h1>
         <p className="text-sm text-slate-500">
-          Build plans, raise invoices, collect, and approve refunds. Gateway: {prettyLabel(provider)}
+          {t("fees_subtitle", "Build plans, raise invoices, collect, and approve refunds.")} Gateway: {prettyLabel(provider)}
           {live ? " — live Razorpay Checkout opens when you Collect or Pay." : " — paste Razorpay keys in Integrations to collect live. Cash, UPI, and cheque can be recorded here without the gateway."}
         </p>
       </div>
@@ -350,6 +353,7 @@ function StaffFees() {
           </ul>
         </Card>
       )}
+      {canSchedule && (
       <Card title="Schedule installments for a student">
         <FormGrid>
           <Select label="Plan" value={schedPlan} onChange={setSchedPlan} options={(plans.data ?? []).map((p) => ({ value: p.id, label: p.name }))} />
@@ -376,6 +380,8 @@ function StaffFees() {
           </div>
         </FormGrid>
       </Card>
+      )}
+      {canCollect && (
       <Card title="Raise invoice">
         <FormGrid>
           <Select
@@ -420,6 +426,7 @@ function StaffFees() {
           </div>
         </FormGrid>
       </Card>
+      )}
       <Card title="Installments">
         <Table
           empty="No instalments yet. Pick a fee plan and student above, then generate invoices."

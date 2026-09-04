@@ -25,6 +25,7 @@ import com.niyamstack.propel.placement.PlacementService;
 import com.niyamstack.propel.scale.ScaleService;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
+import com.niyamstack.propel.security.PropelUser;
 import com.niyamstack.propel.security.Roles;
 import com.niyamstack.propel.storefront.StorefrontService;
 import org.springframework.http.HttpStatus;
@@ -859,8 +860,8 @@ public class ActionsController {
     }
 
     @PostMapping("/reports/{id}/send")
-    public Map<String, Object> sendReport(@PathVariable UUID id) {
-        return scale.sendReport(id);
+    public Map<String, Object> sendReport(@PathVariable UUID id, @RequestBody(required = false) Map<String, Object> body) {
+        return scale.sendReport(id, body == null ? Map.of() : body);
     }
 
     @PostMapping("/reports/run-due")
@@ -1204,8 +1205,9 @@ public class ActionsController {
     }
 
     @GetMapping("/help/tour")
-    public Map<String, Object> helpTour(@RequestParam(defaultValue = "dashboard") String page) {
-        return depth.guidedTour(page);
+    public Map<String, Object> helpTour(@RequestParam(defaultValue = "dashboard") String page,
+                                        @RequestParam(defaultValue = "en") String locale) {
+        return depth.guidedTour(page, locale);
     }
 
     @GetMapping("/api-tokens")
@@ -1270,7 +1272,12 @@ public class ActionsController {
 
     @GetMapping("/dashboard")
     public Map<String, Object> dashboard(@RequestParam(defaultValue = "0") int days) {
-        UUID org = Auth.current().organizationId();
+        PropelUser user = Auth.current();
+        Access.requireTenant(user);
+        if (Roles.STUDENT.equals(user.role()) || Roles.PARENT.equals(user.role()) || Roles.RECRUITER.equals(user.role())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Staff dashboard is not available for this role");
+        }
+        UUID org = user.organizationId();
         Instant from = days > 0 ? Instant.now().minus(days, ChronoUnit.DAYS) : Instant.EPOCH;
         List<Inquiry> inquiries = store.list(Inquiry.class, org);
         List<Student> students = store.list(Student.class, org);

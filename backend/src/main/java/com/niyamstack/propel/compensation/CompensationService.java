@@ -246,7 +246,7 @@ public class CompensationService {
             return BigDecimal.ZERO;
         }
         return switch (blank(plan.getPlanType(), "FIXED")) {
-            case "HOURLY" -> hourlyPay(orgId, employee.getUserId(), plan.getRateAmount());
+            case "HOURLY" -> hourlyPay(orgId, employee.getId(), year, month, plan.getRateAmount());
             case "PER_BATCH" -> perBatchPay(orgId, employee.getUserId(), plan.getRateAmount());
             default -> BigDecimal.ZERO;
         };
@@ -275,21 +275,23 @@ public class CompensationService {
         return out;
     }
 
-    private BigDecimal hourlyPay(UUID orgId, UUID facultyUserId, BigDecimal hourlyRate) {
-        if (hourlyRate == null || hourlyRate.signum() <= 0) {
+    /** Hours from staff punch IN→OUT for the pay month — not invented from timetable. */
+    private BigDecimal hourlyPay(UUID orgId, UUID employeeId, int year, int month, BigDecimal hourlyRate) {
+        if (hourlyRate == null || hourlyRate.signum() <= 0 || employeeId == null) {
             return BigDecimal.ZERO;
         }
-        long weeklyMinutes = 0;
-        for (TimetableSlot slot : store.list(TimetableSlot.class, orgId)) {
-            if (!facultyUserId.equals(slot.getFacultyUserId()) || slot.getStartTime() == null || slot.getEndTime() == null) {
+        long minutes = 0;
+        for (StaffAttendance a : store.listBy(StaffAttendance.class, orgId, "employeeId", employeeId)) {
+            if (a.getWorkDate() == null || a.getWorkDate().getYear() != year || a.getWorkDate().getMonthValue() != month) {
                 continue;
             }
-            weeklyMinutes += Math.max(0, Duration.between(slot.getStartTime(), slot.getEndTime()).toMinutes());
+            if (a.getInTime() == null || a.getOutTime() == null) {
+                continue;
+            }
+            minutes += Math.max(0, Duration.between(a.getInTime(), a.getOutTime()).toMinutes());
         }
-        BigDecimal monthlyHours = BigDecimal.valueOf(weeklyMinutes)
-                .divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP)
-                .multiply(new BigDecimal("4.33"));
-        return monthlyHours.multiply(hourlyRate).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal hours = BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
+        return hours.multiply(hourlyRate).setScale(2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal perBatchPay(UUID orgId, UUID facultyUserId, BigDecimal rate) {

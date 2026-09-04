@@ -73,6 +73,10 @@ export function PlatformEmployeesPage() {
 
   async function saveRoles(emp: Employee, nextIds: string[]) {
     if (emp.role === "PLATFORM_OWNER") return;
+    if (nextIds.length === 0) {
+      setError("Pick at least one platform role.");
+      return;
+    }
     setError(null);
     try {
       await api(`/api/platform/employees/${emp.id}`, {

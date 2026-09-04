@@ -11,7 +11,7 @@ export function HelpPage() {
   const { locale, setLocale, t } = useLocale();
   const page = new URLSearchParams(location.search).get("page") || "dashboard";
   const articles = useApi<Article[]>(`/api/actions/help/articles?locale=${locale}`);
-  const tour = useApi<Tour>(`/api/actions/help/tour?page=${page}`);
+  const tour = useApi<Tour>(`/api/actions/help/tour?page=${page}&locale=${locale}`);
   const [step, setStep] = useState(0);
 
   useEffect(() => {
