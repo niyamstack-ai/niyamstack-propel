@@ -491,6 +491,7 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
   const batches = useApi<Named[]>("/api/batches");
   const students = useApi<Student[]>("/api/students");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
   const [ctype, setCtype] = useState("PDF");
@@ -528,6 +529,7 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
 
   async function run(fn: () => Promise<void>) {
     setError(null);
+    setNotice(null);
     try {
       await fn();
     } catch (e) {
@@ -552,6 +554,7 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
         <p className="text-sm text-slate-500">Attendance, assignments, and live class for this course.</p>
       )}
       <ErrorText error={error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       {!embedded && (
         <div className="flex flex-wrap gap-2">
           {LMS_TABS.map((item) => (
@@ -713,6 +716,8 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
                         status: attStatus,
                         source: "MANUAL",
                       });
+                      setNotice("Attendance saved.");
+                      setAttStudent("");
                     })
                   }
                 >

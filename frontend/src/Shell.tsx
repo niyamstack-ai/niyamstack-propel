@@ -169,10 +169,15 @@ export function Shell() {
   const subscribeModal = subscribeOpen ? (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onClick={() => setSubscribeOpen(false)}>
       <div className="w-full max-w-md rounded-2xl bg-white p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-bold text-navy">You are not a paid user</h2>
-        <p className="mt-2 text-sm text-slate-600">Please subscribe and take this facility. You can browse the menus in this demo workspace; saving and other live actions stay locked until Niyamstack activates your institute.</p>
+        <h2 className="text-lg font-bold text-navy">{t("subscribe_title", "You are not a paid user")}</h2>
+        <p className="mt-2 text-sm text-slate-600">
+          {t(
+            "subscribe_body",
+            "Please subscribe and take this facility. You can browse the menus in this demo workspace; saving and other live actions stay locked until Niyamstack activates your institute.",
+          )}
+        </p>
         <button type="button" className="mt-5 rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white" onClick={() => setSubscribeOpen(false)}>
-          OK
+          {t("ok", "OK")}
         </button>
       </div>
     </div>
@@ -228,21 +233,22 @@ export function Shell() {
         {(user?.accessStatus === "DEMO" || user?.accessStatus === "PENDING_APPROVAL" || user?.accessStatus === "SUSPENDED") && (
           <div className={`px-4 py-2 text-sm sm:px-6 ${user.accessStatus === "SUSPENDED" ? "bg-red-50 text-red-900" : "bg-amber-50 text-amber-900"}`}>
             {user.accessStatus === "DEMO"
-              ? "This is a demo workspace. You can open every menu. Saving and other live actions need a paid subscription."
+              ? t("demo_banner", "This is a demo workspace. You can open every menu. Saving and other live actions need a paid subscription.")
               : user.accessStatus === "SUSPENDED"
-                ? "This institute is suspended. Contact Niyamstack to restore access."
-                : "Payment received. Waiting for Niyamstack to activate your institute."}
+                ? t("suspended_banner", "This institute is suspended. Contact Niyamstack to restore access.")
+                : t("pending_banner", "Payment received. Waiting for Niyamstack to activate your institute.")}
           </div>
         )}
         {courseChrome ? (
-          <div className="flex items-center px-4 py-2 sm:hidden">
+          <div className="flex items-center justify-between gap-3 px-4 py-2 sm:hidden">
             <button
               type="button"
               className="rounded-lg border border-line px-2.5 py-1.5 text-sm"
               onClick={() => setMenuOpen(true)}
             >
-              Menu
+              {t("menu", "Menu")}
             </button>
+            <UserMenu />
           </div>
         ) : (
           <header className="border-b border-line bg-white">
@@ -253,7 +259,7 @@ export function Shell() {
                   className="rounded-lg border border-line px-2.5 py-1.5 text-sm sm:hidden"
                   onClick={() => setMenuOpen(true)}
                 >
-                  Menu
+                  {t("menu", "Menu")}
                 </button>
                 <div className="min-w-0 sm:hidden">
                   <p className="text-xs text-slate-500">{portal.name}</p>

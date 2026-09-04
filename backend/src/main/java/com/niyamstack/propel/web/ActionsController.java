@@ -697,6 +697,18 @@ public class ActionsController {
         return compensation.myCommissions();
     }
 
+    @PostMapping("/compensation/mark-paid")
+    public Map<String, Object> markCommissionsPaid(@RequestBody Map<String, Object> body) {
+        int year = body.get("year") == null ? LocalDate.now().getYear() : Integer.parseInt(String.valueOf(body.get("year")));
+        int month = body.get("month") == null ? LocalDate.now().getMonthValue() : Integer.parseInt(String.valueOf(body.get("month")));
+        if (body.get("employeeId") == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "employeeId is required");
+        }
+        UUID employeeId = UUID.fromString(String.valueOf(body.get("employeeId")));
+        compensation.markCommissionsPaid(Auth.current().organizationId(), employeeId, year, month);
+        return Map.of("status", "PAID", "employeeId", employeeId.toString(), "year", year, "month", month);
+    }
+
     @GetMapping("/ess/payslips/{id}")
     public Map<String, Object> payslip(@PathVariable UUID id) {
         return ess.payslip(id);

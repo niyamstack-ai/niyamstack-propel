@@ -93,7 +93,18 @@ public class ScaleService {
                     })
                     .toList());
             out.put("live", store.list(LiveSession.class, org).stream().limit(8).toList());
-            out.put("students", store.list(Student.class, org).stream().limit(80).toList());
+            if (Roles.FACULTY.equals(user.role())) {
+                Set<UUID> facultyBatchIds = store.list(Batch.class, org).stream()
+                        .filter(b -> user.userId().equals(b.getFacultyUserId()))
+                        .map(Batch::getId)
+                        .collect(Collectors.toSet());
+                out.put("students", store.list(Student.class, org).stream()
+                        .filter(s -> s.getBatchId() != null && facultyBatchIds.contains(s.getBatchId()))
+                        .limit(80)
+                        .toList());
+            } else {
+                out.put("students", store.list(Student.class, org).stream().limit(80).toList());
+            }
         }
         return out;
     }

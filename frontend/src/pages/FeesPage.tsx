@@ -159,7 +159,9 @@ function StaffFees() {
   const canApproveRefunds = user?.role === "OWNER";
   const canCollect = user?.role === "OWNER" || user?.role === "ACCOUNTANT";
   const canManagePlans = canCollect;
-  const canSchedule = canCollect || user?.role === "COUNSELOR";
+  const viewOnlyFaculty = user?.role === "FACULTY";
+  const canSchedule = !viewOnlyFaculty && (canCollect || user?.role === "COUNSELOR");
+  const feesReadOnly = viewOnlyFaculty || (!canCollect && !canSchedule && user?.role !== "OWNER");
   const studentName = (id?: string, buyer?: string) =>
     buyer || (students.data ?? []).find((s) => s.id === id)?.fullName || "—";
   const courses = useApi<{ id: string; name: string }[]>("/api/courses");
@@ -221,8 +223,11 @@ function StaffFees() {
       <div>
         <h1 className="text-2xl font-bold text-navy">{t("fees_title", "Fees & finance")}</h1>
         <p className="text-sm text-slate-500">
-          {t("fees_subtitle", "Build plans, raise invoices, collect, and approve refunds.")} Gateway: {prettyLabel(provider)}
-          {live ? " — live Razorpay Checkout opens when you Collect or Pay." : " — paste Razorpay keys in Integrations to collect live. Cash, UPI, and cheque can be recorded here without the gateway."}
+          {viewOnlyFaculty
+            ? "View-only fees access for faculty. Collecting and plans are limited to accounts staff."
+            : `${t("fees_subtitle", "Build plans, raise invoices, collect, and approve refunds.")} Gateway: ${prettyLabel(provider)}${
+                live ? " — live Razorpay Checkout opens when you Collect or Pay." : " — paste Razorpay keys in Integrations to collect live. Cash, UPI, and cheque can be recorded here without the gateway."
+              }`}
         </p>
       </div>
       <ErrorText error={error} />
@@ -241,6 +246,7 @@ function StaffFees() {
           <p className="mt-1 text-2xl font-bold text-navy">{formatInr(finance.data?.collected ?? 0)}</p>
         </div>
       </div>
+      {!feesReadOnly && (
       <div>
         <button
           type="button"
@@ -295,6 +301,7 @@ function StaffFees() {
           Send overdue reminders
         </button>
       </div>
+      )}
       {canManagePlans && (
       <Card title="Create fee plan">
         <FormGrid>

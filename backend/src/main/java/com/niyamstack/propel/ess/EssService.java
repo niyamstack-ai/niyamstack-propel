@@ -548,6 +548,19 @@ public class EssService {
             req.setStatus("APPROVED");
             e.setStatus("ON_NOTICE");
             store.save(e);
+            boolean exitNow = bool(body, "deactivateLogin")
+                    || (req.getLastWorkingDate() != null && !req.getLastWorkingDate().isAfter(LocalDate.now()));
+            if (exitNow && e.getUserId() != null) {
+                try {
+                    AppUser user = store.get(AppUser.class, e.getUserId());
+                    user.setActive(false);
+                    store.save(user);
+                    e.setStatus("INACTIVE");
+                    store.save(e);
+                } catch (Exception ignored) {
+                    /* keep ON_NOTICE if user missing */
+                }
+            }
         } else {
             req.setStatus("REJECTED");
         }

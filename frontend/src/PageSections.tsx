@@ -181,9 +181,9 @@ function FramedPhoto({
       <img
         src={fileSrc(src)}
         alt=""
-        className={`${className || ""} ${onChange ? "cursor-grab active:cursor-grabbing" : ""}`}
+        className={`${className || ""} ${onFocus ? "cursor-grab active:cursor-grabbing" : ""}`}
         style={{ objectPosition: `center ${y}%` }}
-        onClick={onChange ? (e) => { e.stopPropagation(); void pickImage(onChange); } : undefined}
+        draggable={false}
         onMouseDown={
           onFocus
             ? (e) => {
@@ -208,6 +208,17 @@ function FramedPhoto({
       {onChange && (
         <p className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
           <span>{hint}</span>
+          <button
+            type="button"
+            className="font-medium text-brand"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void pickImage(onChange);
+            }}
+          >
+            Replace photo
+          </button>
           <button type="button" className="font-medium text-brand" disabled={cropping} onClick={(e) => void saveCrop(e)}>
             {cropping ? "Cropping…" : "Save this crop"}
           </button>

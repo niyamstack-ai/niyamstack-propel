@@ -89,6 +89,7 @@ export function AnalyticsPage() {
   const [dataset, setDataset] = useState("students");
   const [filterStage, setFilterStage] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [filterSource, setFilterSource] = useState("");
   const [emailTo, setEmailTo] = useState("");
   const [runRows, setRunRows] = useState<{ columns: string[]; rows: string[][] } | null>(null);
   const [subject, setSubject] = useState("");
@@ -384,7 +385,7 @@ export function AnalyticsPage() {
             />
           )}
           {dataset === "inquiries" && (
-            <Field label="Filter source (optional)" value={filterStatus} onChange={setFilterStatus} placeholder="WALKIN" />
+            <Field label="Filter source (optional)" value={filterSource} onChange={setFilterSource} placeholder="WALKIN" />
           )}
           <Field label="Email to (schedule)" value={emailTo} onChange={setEmailTo} placeholder="owner@institute.com" />
           <div className="flex items-end">
@@ -396,7 +397,7 @@ export function AnalyticsPage() {
                   const filters: Record<string, string> = {};
                   if (dataset === "inquiries") {
                     if (filterStage) filters.stage = filterStage;
-                    if (filterStatus) filters.source = filterStatus;
+                    if (filterSource) filters.source = filterSource;
                   } else if (filterStatus) {
                     filters.status = filterStatus;
                   }

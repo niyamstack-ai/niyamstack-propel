@@ -289,6 +289,17 @@ export function CourseContentPanel({ courseId }: { courseId: string }) {
   const [movePick, setMovePick] = useState<LibraryItem | null>(null);
   const dragging = useRef(false);
 
+  useEffect(() => {
+    if (!menuId) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.("[data-content-menu]")) return;
+      setMenuId(null);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [menuId]);
+
   const courseContent = (content.data ?? []).filter((row) => sameId(row.courseId, courseId));
   const courseExams = (exams.data ?? []).filter((row) => sameId(row.courseId, courseId));
   const items = itemsInFolder(courseContent, courseExams, folderId);
@@ -415,8 +426,56 @@ export function CourseContentPanel({ courseId }: { courseId: string }) {
     } else if (item.content) {
       actions.push({ label: "Preview", onClick: () => setPreview(item.content!) });
       actions.push({ label: "Rename", onClick: () => rename(item.content!) });
+      actions.push({
+        label: item.content.published === false ? "Publish" : "Unpublish",
+        onClick: () =>
+          void (async () => {
+            setError(null);
+            try {
+              await updateRecord(`/api/content/${item.content!.id}`, {
+                ...item.content,
+                published: item.content!.published === false,
+              });
+              content.reload();
+            } catch (e) {
+              setError((e as Error).message);
+            }
+          })(),
+      });
+      actions.push({
+        label: item.content.visibility === "PREVIEW" ? "Remove storefront preview" : "Mark as storefront preview",
+        onClick: () =>
+          void (async () => {
+            setError(null);
+            try {
+              await updateRecord(`/api/content/${item.content!.id}`, {
+                ...item.content,
+                visibility: item.content!.visibility === "PREVIEW" ? "COURSE" : "PREVIEW",
+              });
+              content.reload();
+            } catch (e) {
+              setError((e as Error).message);
+            }
+          })(),
+      });
     } else if (item.test) {
       actions.push({ label: "Edit questions", onClick: () => setEditTest(item.test!) });
+      actions.push({
+        label: item.test.published === false ? "Publish" : "Unpublish",
+        onClick: () =>
+          void (async () => {
+            setError(null);
+            try {
+              await updateRecord(`/api/assessments/${item.test!.id}`, {
+                ...item.test,
+                published: item.test!.published === false,
+              });
+              exams.reload();
+            } catch (e) {
+              setError((e as Error).message);
+            }
+          })(),
+      });
     }
     if (folderId) {
       actions.push({
@@ -679,7 +738,7 @@ function ContentLine({
         <p className="text-xs text-slate-500">{subtitle}</p>
         {dropMode === "into" && <p className="text-xs font-medium text-brand">Drop to move inside</p>}
       </button>
-      <div className="relative">
+      <div className="relative" data-content-menu>
         <button type="button" className="rounded-lg px-2 py-1 text-lg text-slate-500 hover:bg-mist" aria-label="More" onClick={onOpenMenu}>
           ⋮
         </button>
@@ -921,6 +980,13 @@ export function QuizBuilder({
       setError("Choice questions need at least two options.");
       return;
     }
+    const badCode = ready.find(
+      (q) => q.questionType === "CODE" && q.tests.filter((t) => (t.stdout || t.stdin || t.setup).trim()).length === 0,
+    );
+    if (badCode) {
+      setError("Coding questions need at least one test case with expected output.");
+      return;
+    }
     setError(null);
     setBusy(true);
     try {
@@ -1006,8 +1072,9 @@ export function QuizBuilder({
           </label>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={proctoring} onChange={(e) => setProctoring(e.target.checked)} />
-            Proctoring (fullscreen, tab switch submits)
+            Proctoring (fullscreen + tab blur submits — no webcam/ID lock)
           </label>
+          <p className="text-xs text-slate-500">Soft proctoring only: browser fullscreen and tab-switch auto-submit. Students can leave fullscreen; there is no webcam or lockdown browser.</p>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={scoresPublished} onChange={(e) => setScoresPublished(e.target.checked)} />
             Publish scores to the student site
@@ -1350,9 +1417,14 @@ export function StudentCourseLibrary({ courseId, allowDownload = true, examsOnly
   const viewed = useApi<{ contentItemId?: string }[]>("/api/content-progress");
   const seen = new Set((viewed.data ?? []).map((row) => row.contentItemId).filter(Boolean));
 
+  const [progressError, setProgressError] = useState<string | null>(null);
+
   function openPreview(row: ContentRow) {
     setPreview(row);
-    void api(`/api/actions/content/${row.id}/view`, { method: "POST", body: "{}" }).then(() => viewed.reload()).catch(() => undefined);
+    setProgressError(null);
+    void api(`/api/actions/content/${row.id}/view`, { method: "POST", body: "{}" })
+      .then(() => viewed.reload())
+      .catch((e: Error) => setProgressError(e.message || "Could not save progress"));
   }
 
   const courseContent = (content.data ?? []).filter((row) => sameId(row.courseId, courseId) && row.published !== false);
@@ -1407,6 +1479,7 @@ export function StudentCourseLibrary({ courseId, allowDownload = true, examsOnly
 
   return (
     <div className="rounded-2xl border border-line bg-white p-5">
+      {progressError && <p className="mb-3 text-sm text-amber-700">{progressError}</p>}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold text-navy">{examsOnly ? "Tests" : "Contents"}</h2>
         {trail.length > 0 && !examsOnly && (
@@ -2050,7 +2123,7 @@ function TakeQuiz({
         {!result && !loading && (
           <>
             {tabLock && timed && (
-              <p className="mt-3 text-xs text-slate-500">Proctoring is on. Stay in fullscreen. Switching tabs submits the test.</p>
+              <p className="mt-3 text-xs text-slate-500">Soft proctoring: stay in fullscreen if possible. Switching tabs submits the test. There is no webcam monitoring.</p>
             )}
             <div className="mt-4 flex flex-wrap gap-1.5">
               {questions.map((q, i) => {

@@ -131,6 +131,10 @@ export function InstitutePage() {
       <h1 className="text-2xl font-bold text-navy">Institute setup</h1>
       <ErrorText error={error} />
       <Card title="Organization profile">
+        {org.loading && !org.data ? (
+          <p className="text-sm text-slate-500">Loading institute profile…</p>
+        ) : (
+          <>
         {org.data && (
           <p className="mb-3 text-sm text-slate-500">
             {org.data.name} · GSTIN {org.data.gstin || "—"} · pack {prettyLabel(org.data.productPack)} · catalog {prettyLabel(org.data.packageTier)}
@@ -149,6 +153,8 @@ export function InstitutePage() {
             <PrimaryButton onClick={saveOrg}>Save profile</PrimaryButton>
           </div>
         </FormGrid>
+          </>
+        )}
       </Card>
       <Card title="Add center">
         <FormGrid>
@@ -156,7 +162,7 @@ export function InstitutePage() {
           <Field label="Code" value={cCode} onChange={setCCode} />
           <Field label="City" value={cCity} onChange={setCCity} />
           <div className="flex items-end">
-            <PrimaryButton disabled={!cName} onClick={addCenter}>
+            <PrimaryButton disabled={!cName || !cCode} onClick={addCenter}>
               Save center
             </PrimaryButton>
           </div>
@@ -188,7 +194,7 @@ export function InstitutePage() {
           <Field label="Capacity" value={bCap} onChange={setBCap} />
         </FormGrid>
         <div className="mt-3">
-          <PrimaryButton disabled={!bName} onClick={addBatch}>
+          <PrimaryButton disabled={!bName || !bCourse} onClick={addBatch}>
             Save batch
           </PrimaryButton>
         </div>

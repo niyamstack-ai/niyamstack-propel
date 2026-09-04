@@ -653,6 +653,13 @@ public class DepthService {
         hi.put("license_map", "लाइसेंस मैप");
         hi.put("email_support", "सहायता");
         hi.put("help_center", "मदद केंद्र");
+        hi.put("menu", "मेनू");
+        hi.put("ok", "ठीक");
+        hi.put("subscribe_title", "आप भुगतान किए हुए उपयोगकर्ता नहीं हैं");
+        hi.put("subscribe_body", "कृपया सदस्यता लें। डेमो में मेनू खोल सकते हैं; सेव और लाइव क्रियाएँ सक्रियण तक लॉक रहती हैं।");
+        hi.put("demo_banner", "यह डेमो वर्कस्पेस है। हर मेनू खोल सकते हैं। सेव और लाइव क्रियाओं के लिए पेड सब्सक्रिप्शन चाहिए।");
+        hi.put("suspended_banner", "यह संस्थान निलंबित है। पहुँच बहाल करने के लिए नियामस्टैक से संपर्क करें।");
+        hi.put("pending_banner", "भुगतान प्राप्त। संस्थान सक्रिय करने की प्रतीक्षा।");
         hi.put("my_home", "मेरा होम");
         hi.put("leads", "लीड्स");
         hi.put("drives", "ड्राइव्स और ATS");
@@ -683,10 +690,28 @@ public class DepthService {
                         "body", hi ? "यहाँ संस्थान के मुख्य आंकड़े देखें।" : "See institute KPIs and alerts here.", "locale", locale),
                 Map.of("pageKey", "fees", "title", hi ? "फीस" : "Fees",
                         "body", hi ? "रसीद, किस्त और बकाया यहाँ प्रबंधित करें।" : "Manage receipts, installments, and dues.", "locale", locale),
+                Map.of("pageKey", "admissions", "title", hi ? "प्रवेश" : "Admissions",
+                        "body", hi ? "लीड कैप्चर, काउंसलिंग और नामांकन।" : "Capture leads, counsel, and enrol students.", "locale", locale),
+                Map.of("pageKey", "ess", "title", hi ? "ईएसएस" : "ESS",
+                        "body", hi ? "उपस्थिति, छुट्टी, पेरोल और कर्मचारी।" : "Attendance, leave, payroll, and employees.", "locale", locale),
+                Map.of("pageKey", "courses", "title", hi ? "कोर्स" : "Courses",
+                        "body", hi ? "कोर्स बनाएँ, मूल्य तय करें और सामग्री जोड़ें।" : "Build courses, set pricing, and add content.", "locale", locale),
+                Map.of("pageKey", "lms", "title", hi ? "एलएमएस" : "LMS",
+                        "body", hi ? "लाइव सत्र, सामग्री और उपस्थिति।" : "Live sessions, content, and attendance.", "locale", locale),
+                Map.of("pageKey", "placement", "title", hi ? "प्लेसमेंट" : "Placement",
+                        "body", hi ? "कंपनी, ड्राइव और ऑफर ट्रैक करें।" : "Track companies, drives, and offers.", "locale", locale),
+                Map.of("pageKey", "analytics", "title", hi ? "एनालिटिक्स" : "Analytics",
+                        "body", hi ? "रिपोर्ट बनाएँ और शेड्यूल करें।" : "Build and schedule reports.", "locale", locale),
+                Map.of("pageKey", "enterprise", "title", hi ? "एंटरप्राइज़" : "Enterprise",
+                        "body", hi ? "वर्कफ़्लो, एआई और एक्रेडिटेशन।" : "Workflows, AI suite, and accreditation.", "locale", locale),
+                Map.of("pageKey", "website", "title", hi ? "वेबसाइट" : "Website",
+                        "body", hi ? "पेज संपादित करें और डोमेन जोड़ें।" : "Edit pages and connect your domain.", "locale", locale),
                 Map.of("pageKey", "compliance", "title", hi ? "अनुपालन" : "Compliance",
                         "body", hi ? "डेटा निर्यात और हटाने के अनुरोध।" : "Data export and deletion requests.", "locale", locale),
                 Map.of("pageKey", "support", "title", hi ? "सहायता टिकट" : "Support tickets",
-                        "body", hi ? "समस्या दर्ज करें और स्थिति देखें।" : "Raise issues and track status.", "locale", locale)
+                        "body", hi ? "समस्या दर्ज करें और स्थिति देखें।" : "Raise issues and track status.", "locale", locale),
+                Map.of("pageKey", "help", "title", hi ? "मदद" : "Help",
+                        "body", hi ? "मार्गदर्शित टूर और पृष्ठ सुझाव।" : "Guided tours and page tips.", "locale", locale)
         );
         if (pageKey == null || pageKey.isBlank()) {
             return all;

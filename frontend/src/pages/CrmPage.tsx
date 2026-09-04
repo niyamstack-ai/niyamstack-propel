@@ -50,6 +50,7 @@ export function CrmPage() {
   const forms = useApi<{ id: string; applicantName: string; email?: string; phone?: string; status: string; courseId?: string }[]>("/api/admission-forms");
   const students = useApi<{ id: string; fullName: string }[]>("/api/students");
   const staff = useApi<StaffMember[]>("/api/staff");
+  const employees = useApi<{ id: string; userId?: string; fullName: string }[]>("/api/employees");
   const feePlans = useApi<FeePlan[]>("/api/fee-plans");
   const referrals = useApi<Referral[]>("/api/referrals");
   const scholarships = useApi<Scholarship[]>("/api/scholarships");
@@ -188,6 +189,17 @@ export function CrmPage() {
       </div>
       <ErrorText error={error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      {(() => {
+        const linked = new Set((employees.data ?? []).map((e) => e.userId).filter(Boolean));
+        const missing = (staff.data ?? []).filter((s) => s.role === "COUNSELOR" && !linked.has(s.id));
+        if (missing.length === 0) return null;
+        return (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {missing.length} counselor login(s) have no Employee row linked (People → Employees → link user). Conversions will not accrue commission until linked:{" "}
+            {missing.map((m) => m.fullName).join(", ")}.
+          </p>
+        );
+      })()}
       {user?.role === "COUNSELOR" && myCommissions.data && (
         <Card title="My commissions (this month)">
           <p className="mb-2 text-sm">
@@ -196,6 +208,7 @@ export function CrmPage() {
           </p>
           <Table
             empty="Commissions appear when your leads convert or students pay fees."
+            loading={myCommissions.loading}
             columns={["Note", "Amount", "Status"]}
             rows={(myCommissions.data.rows ?? []).map((r) => [r.description || "—", formatInr(r.amount), prettyLabel(r.status)])}
           />
@@ -431,6 +444,7 @@ export function CrmPage() {
         <div className="mt-4">
           <Table
             empty="No referral codes yet."
+            loading={referrals.loading}
             columns={["Code", "Referrer", "Status"]}
             rows={(referrals.data ?? []).map((r) => [r.code || "—", r.referrerName, prettyLabel(r.status)])}
           />
@@ -464,6 +478,7 @@ export function CrmPage() {
         <div className="mt-4">
           <Table
             empty="No scholarships yet."
+            loading={scholarships.loading}
             columns={["Name", "Amount", "Status"]}
             rows={(scholarships.data ?? []).map((s) => [s.name, s.amount != null ? String(s.amount) : "—", prettyLabel(s.approvalStatus)])}
           />

@@ -136,15 +136,15 @@ function StudentJobs() {
 
 function StaffPlacement({ recruiter }: { recruiter: boolean }) {
   const now = useMemo(() => new Date(), []);
-  const companies = useApi<Company[]>("/api/companies");
+  const companies = useApi<Company[]>(recruiter ? "" : "/api/companies");
   const drives = useApi<Drive[]>("/api/drives");
   const apps = useApi<Application[]>("/api/applications");
-  const rounds = useApi<{ roundName: string; roundType: string }[]>("/api/drive-rounds");
+  const rounds = useApi<{ roundName: string; roundType: string }[]>(recruiter ? "" : "/api/drive-rounds");
   const interviews = useApi<{ roundName: string; outcome?: string }[]>("/api/interviews");
-  const offers = useApi<Offer[]>("/api/offers");
-  const internships = useApi<Internship[]>("/api/internships");
+  const offers = useApi<Offer[]>(recruiter ? "" : "/api/offers");
+  const internships = useApi<Internship[]>(recruiter ? "" : "/api/internships");
   const students = useApi<Student[]>("/api/students");
-  const benches = useApi<{ role: string; city: string; medianLpa: number }[]>("/api/actions/salary-benchmarks");
+  const benches = useApi<{ role: string; city: string; medianLpa: number }[]>(recruiter ? "" : "/api/actions/salary-benchmarks");
   const calendar = useApi<CalItem[]>(
     `/api/actions/placement/calendar?year=${now.getFullYear()}&month=${now.getMonth() + 1}`,
   );

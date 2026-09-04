@@ -254,14 +254,50 @@ export function WebsitePage() {
       setError("Keep the Home page. Hide other tabs by deleting them.");
       return;
     }
-    if (!window.confirm(`Delete the ${page.title} page?`)) return;
+    if (!window.confirm(`Delete the ${page.title} page? Unsaved edits on this page will be discarded.`)) return;
     setError(null);
     try {
-      if (dirty) await savePage();
+      if (dirty && current?.id === page.id) {
+        setDirty(false);
+        if (saveTimer.current) window.clearTimeout(saveTimer.current);
+      } else if (dirty && current?.id !== page.id) {
+        const ok = await savePage();
+        if (!ok) return;
+      }
       await deleteRecord(`/api/website-pages/${page.id}`);
       setPageId(null);
       setPicked(null);
       pages.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function addCustomPage() {
+    const title = window.prompt("Page title", "New page");
+    if (!title?.trim()) return;
+    const slugBase = title
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "page";
+    setError(null);
+    try {
+      if (dirty) {
+        const ok = await savePage();
+        if (!ok) return;
+      }
+      const created = await createRecord<Page>("/api/website-pages", {
+        title: title.trim(),
+        slug: `${slugBase}-${Date.now().toString().slice(-4)}`,
+        pageType: "CUSTOM",
+        body: "[]",
+        hidden: false,
+        sortOrder: (pages.data?.length ?? 0) + 1,
+      });
+      pages.reload();
+      setPageId(created.id);
+      setDirty(false);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -322,6 +358,13 @@ export function WebsitePage() {
               )}
             </span>
           ))}
+          <button
+            type="button"
+            className="rounded-full border border-dashed border-line px-3 py-1 text-sm text-slate-600 hover:bg-mist"
+            onClick={() => void addCustomPage()}
+          >
+            + Page
+          </button>
         </nav>
         <p className="text-xs text-slate-400">
           {demoLocked ? "Demo — subscribe to save" : status === "saving" ? "Saving…" : status === "unsaved" ? "Editing" : "Saved"}

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { hasEnterpriseTier } from "../packs";
+import { pendingOffline, flushOffline } from "../offline";
 import { createRecord } from "../ops";
 import { prettyLabel } from "../labels";
 import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, TextArea, useApi } from "../ui";
@@ -65,6 +66,7 @@ export function EnterprisePage() {
   const [triggerType, setTriggerType] = useState("FEE_WAIVER");
   const [stepRole, setStepRole] = useState("OWNER");
   const [stepLabel, setStepLabel] = useState("Owner approval");
+  const [extraSteps, setExtraSteps] = useState<{ role: string; label: string }[]>([]);
   const [coachAnswer, setCoachAnswer] = useState("");
   const [coachQuestion, setCoachQuestion] = useState("How should we improve learning outcomes this term?");
   const [syncResult, setSyncResult] = useState<string | null>(null);
@@ -145,19 +147,43 @@ export function EnterprisePage() {
             <Select label="First step role" value={stepRole} onChange={setStepRole} allowEmpty={false} options={ROLES} />
             <Field label="Step label" value={stepLabel} onChange={setStepLabel} placeholder="Owner approval" />
           </FormGrid>
-          <div className="mt-3">
+          {extraSteps.map((s, i) => (
+            <FormGrid key={i}>
+              <Select
+                label={`Step ${i + 2} role`}
+                value={s.role}
+                onChange={(v) => setExtraSteps((rows) => rows.map((r, j) => (j === i ? { ...r, role: v } : r)))}
+                allowEmpty={false}
+                options={ROLES}
+              />
+              <Field
+                label={`Step ${i + 2} label`}
+                value={s.label}
+                onChange={(v) => setExtraSteps((rows) => rows.map((r, j) => (j === i ? { ...r, label: v } : r)))}
+              />
+            </FormGrid>
+          ))}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <LinkButton onClick={() => setExtraSteps((rows) => [...rows, { role: "OWNER", label: `Step ${rows.length + 2}` }])}>
+              Add step
+            </LinkButton>
             <PrimaryButton
               disabled={!name}
               onClick={async () => {
                 setError(null);
                 try {
+                  const steps = [
+                    { step: 1, role: stepRole, action: "APPROVE", label: stepLabel },
+                    ...extraSteps.map((s, i) => ({ step: i + 2, role: s.role, action: "APPROVE", label: s.label || `Step ${i + 2}` })),
+                  ];
                   await createRecord("/api/actions/enterprise/workflows", {
                     name,
                     triggerType,
                     active: true,
-                    steps: [{ step: 1, role: stepRole, action: "APPROVE", label: stepLabel }],
+                    steps,
                   });
                   setName("");
+                  setExtraSteps([]);
                   workflows.reload();
                   hub.reload();
                 } catch (e) {
@@ -165,7 +191,7 @@ export function EnterprisePage() {
                 }
               }}
             >
-              Save workflow
+              Save multi-step workflow
             </PrimaryButton>
           </div>
           <Link className="mt-3 inline-block text-sm text-brand hover:underline" to="/academics">
@@ -285,11 +311,13 @@ export function EnterprisePage() {
           onClick={async () => {
             setError(null);
             try {
-              const res = await api<{ applied?: number }>("/api/actions/offline/sync", {
-                method: "POST",
-                body: JSON.stringify({ events: [] }),
-              });
-              setSyncResult(`Applied ${res.applied ?? 0} offline events.`);
+              const queued = pendingOffline();
+              if (queued.length === 0) {
+                setSyncResult("No queued offline events on this browser. Mobile /m queues attendance and notices when offline.");
+                return;
+              }
+              const applied = await flushOffline(api);
+              setSyncResult(`Applied ${applied} offline event(s) from this browser queue.`);
             } catch (e) {
               setError((e as Error).message);
             }

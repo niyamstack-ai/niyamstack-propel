@@ -429,12 +429,21 @@ function TeamTab({ hr }: { hr: boolean }) {
     }
   }
 
-  async function decideResign(id: string, approve: boolean) {
+  async function decideResign(id: string, approve: boolean, deactivateLogin = false) {
     setError(null);
     try {
-      await api(`/api/actions/ess/resignation/${id}/decide`, { method: "POST", body: JSON.stringify({ approve }) });
+      await api(`/api/actions/ess/resignation/${id}/decide`, {
+        method: "POST",
+        body: JSON.stringify({ approve, deactivateLogin }),
+      });
       inbox.reload();
-      setNotice(approve ? "Resignation accepted. Employee is on notice until their last working day. Deactivate login under Employees when they exit." : "Resignation rejected.");
+      setNotice(
+        approve
+          ? deactivateLogin
+            ? "Resignation accepted. Login deactivated and employee marked inactive."
+            : "Resignation accepted. Employee is on notice until their last working day. Use Accept and exit now if their last day is today."
+          : "Resignation rejected.",
+      );
     } catch (e) {
       setError((e as Error).message);
     }
@@ -533,8 +542,9 @@ function TeamTab({ hr }: { hr: boolean }) {
               formatDay(r.lastWorkingDate) || "—",
               r.reason || "—",
               r.canDecide ? (
-                <span key={r.id} className="flex gap-2">
-                  <LinkButton onClick={() => void decideResign(r.id, true)}>Accept</LinkButton>
+                <span key={r.id} className="flex flex-wrap gap-2">
+                  <LinkButton onClick={() => void decideResign(r.id, true, false)}>Accept (on notice)</LinkButton>
+                  <LinkButton onClick={() => void decideResign(r.id, true, true)}>Accept & exit now</LinkButton>
                   <LinkButton onClick={() => void decideResign(r.id, false)}>Reject</LinkButton>
                 </span>
               ) : (
@@ -1882,7 +1892,7 @@ function CompensationTab() {
   const plans = useApi<{ id: string; employeeId: string; employeeName: string; planType: string; rateAmount?: number; effectiveFrom?: string }[]>(
     "/api/compensation-plans",
   );
-  const ledger = useApi<{ employeeName: string; sourceType: string; amount: number; description?: string; status: string; periodMonth?: number; periodYear?: number }[]>(
+  const ledger = useApi<{ id?: string; employeeId?: string; employeeName: string; sourceType: string; amount: number; description?: string; status: string; periodMonth?: number; periodYear?: number }[]>(
     "/api/commission-ledger",
   );
   const settings = useApi<{ conversionFlat?: number; feePercent?: number; enabled?: boolean }>("/api/actions/compensation/settings");
@@ -1988,7 +1998,7 @@ function CompensationTab() {
       <Card title="Commission ledger">
         <Table
           empty="Commissions accrue when leads convert or fees are collected."
-          columns={["Employee", "Type", "Amount", "Period", "Status", "Note"]}
+          columns={["Employee", "Type", "Amount", "Period", "Status", "Note", ""]}
           rows={(ledger.data ?? []).map((r) => [
             r.employeeName,
             prettyLabel(r.sourceType),
@@ -1996,6 +2006,30 @@ function CompensationTab() {
             `${r.periodMonth}/${r.periodYear}`,
             prettyLabel(r.status),
             r.description || "—",
+            r.status === "APPROVED" && r.employeeId && r.periodYear && r.periodMonth ? (
+              <LinkButton
+                key={`${r.employeeId}-${r.periodYear}-${r.periodMonth}-pay`}
+                onClick={() =>
+                  void (async () => {
+                    setError(null);
+                    try {
+                      await api("/api/actions/compensation/mark-paid", {
+                        method: "POST",
+                        body: JSON.stringify({ employeeId: r.employeeId, year: r.periodYear, month: r.periodMonth }),
+                      });
+                      ledger.reload();
+                      setNotice(`Marked commissions paid for ${r.employeeName} (${r.periodMonth}/${r.periodYear}).`);
+                    } catch (e) {
+                      setError((e as Error).message);
+                    }
+                  })()
+                }
+              >
+                Mark paid
+              </LinkButton>
+            ) : (
+              ""
+            ),
           ])}
         />
       </Card>

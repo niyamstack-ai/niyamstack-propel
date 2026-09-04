@@ -91,6 +91,7 @@ export function CreateCourseWizard() {
 
   const thumbInput = useRef<HTMLInputElement>(null);
   const madePlan = useRef(false);
+  const planIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!courseId || loaded || !courses.data || feePlans.loading) return;
@@ -132,6 +133,7 @@ export function CreateCourseWizard() {
     const plan = (feePlans.data ?? []).find((p) => p.courseId === existing.id);
     if (plan) {
       madePlan.current = true;
+      planIdRef.current = plan.id;
       if (plan.gstRate != null && Number(plan.gstRate) > 0) {
         setIncludeTax(true);
         setTaxPercent(String(plan.gstRate));
@@ -146,6 +148,8 @@ export function CreateCourseWizard() {
       } else {
         setInstallmentsOn(false);
       }
+    } else {
+      planIdRef.current = null;
     }
     setLoaded(true);
   }, [courseId, courses.data, feePlans.data, feePlans.loading, loaded]);
@@ -226,13 +230,29 @@ export function CreateCourseWizard() {
       ? await updateRecord<Draft>(`/api/courses/${draft.id}`, { ...draft, ...body })
       : await createRecord<Draft>("/api/courses", body);
     setDraft(createdOrUpdated);
-    if (installmentsOn && paid && createdOrUpdated.id && !madePlan.current) {
-      madePlan.current = true;
-      await createRecord("/api/fee-plans", {
+    if (paid && createdOrUpdated.id && installmentsOn) {
+      const planBody = {
         name: `${name} installments`,
         totalAmount: Number(fees),
         gstRate: includeTax ? Number(taxPercent) : 0,
         installmentCount: Number(installmentCount) || 3,
+        courseId: createdOrUpdated.id,
+        hsn: "9992",
+        sacCode: "999293",
+      };
+      if (planIdRef.current) {
+        await updateRecord(`/api/fee-plans/${planIdRef.current}`, planBody);
+      } else if (!madePlan.current) {
+        const created = await createRecord<{ id: string }>("/api/fee-plans", planBody);
+        planIdRef.current = created.id;
+        madePlan.current = true;
+      }
+    } else if (planIdRef.current && paid) {
+      await updateRecord(`/api/fee-plans/${planIdRef.current}`, {
+        name: `${name} fee plan`,
+        totalAmount: Number(fees),
+        gstRate: includeTax ? Number(taxPercent) : 0,
+        installmentCount: installmentsOn ? Number(installmentCount) || 3 : 1,
         courseId: createdOrUpdated.id,
         hsn: "9992",
         sacCode: "999293",
@@ -430,6 +450,11 @@ export function CreateCourseWizard() {
                   <span>Course preview</span>
                   <Toggle on={allowPreview} onChange={setAllowPreview} />
                 </li>
+                {allowPreview && (
+                  <li className="text-xs text-slate-500">
+                    In Content, open ⋯ on a lesson and choose <span className="font-medium text-slate-700">Mark as storefront preview</span>. Visitors see those lessons before buying when preview is on.
+                  </li>
+                )}
                 <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
                   <span>Limit access (validity)</span>
                   <span className="text-xs text-slate-500">{validityType === "LIFETIME" ? "Off" : "On in price step"}</span>
