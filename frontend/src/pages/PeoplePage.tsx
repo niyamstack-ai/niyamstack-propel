@@ -41,6 +41,18 @@ export function PeoplePage() {
     return <Navigate to="/people/students" replace />;
   }
   const canEnroll = user?.role === "OWNER" || user?.role === "COUNSELOR" || (user?.capabilities ?? []).includes("STUDENTS");
+  const visibleTabs = tabs.filter((item) => {
+    const role = user?.role;
+    if (!role || role === "OWNER") return true;
+    if (role === "FACULTY" || role === "COUNSELOR" || role === "PLACEMENT_HEAD") {
+      return item.id === "students" || item.id === "alumni";
+    }
+    if (role === "ACCOUNTANT") return item.id === "students" || item.id === "employees";
+    return item.id === "students";
+  });
+  if (!visibleTabs.some((t) => t.id === current)) {
+    return <Navigate to={visibleTabs[0]?.to || "/people/students"} replace />;
+  }
 
   return (
     <div className="space-y-6">
@@ -49,7 +61,7 @@ export function PeoplePage() {
         <p className="text-sm text-slate-500">Students, staff HR records, and alumni of this institute.</p>
       </div>
       <div className="flex flex-wrap gap-2">
-        {tabs.map((item) => (
+        {visibleTabs.map((item) => (
           <NavLink
             key={item.id}
             to={item.to}

@@ -29,13 +29,16 @@ export function StudentsPage() {
 export function MyStudentRecord() {
   const { user, applySession } = useAuth();
   const students = useApi<Student[]>("/api/students");
-  const guardians = useApi<{ fullName: string; relation: string }[]>("/api/guardians");
-  const attendance = useApi<{ sessionDate: string; status: string }[]>("/api/attendance");
-  const certs = useApi<{ id?: string; title: string; issuedOn?: string; certificateNo?: string }[]>("/api/certificates");
+  const guardians = useApi<{ fullName: string; relation: string; studentId?: string }[]>("/api/guardians");
+  const attendance = useApi<{ sessionDate: string; status: string; studentId?: string }[]>("/api/attendance");
+  const certs = useApi<{ id?: string; title: string; issuedOn?: string; certificateNo?: string; studentId?: string }[]>("/api/certificates");
   const kids = students.data ?? [];
   const isParent = user?.role === "PARENT";
   const [childId, setChildId] = useState("");
   const record = (childId ? kids.find((s) => s.id === childId) : undefined) || kids[0];
+  const childGuardians = (guardians.data ?? []).filter((g) => !g.studentId || g.studentId === record?.id);
+  const childAttendance = (attendance.data ?? []).filter((a) => !a.studentId || a.studentId === record?.id);
+  const childCerts = (certs.data ?? []).filter((c) => !c.studentId || c.studentId === record?.id);
   const [name, setName] = useState(user?.name || "");
   const [email, setEmail] = useState(user?.email || "");
   const [phone, setPhone] = useState(user?.phone || record?.phone || "");
@@ -63,8 +66,8 @@ export function MyStudentRecord() {
     setPhone(user?.phone || record?.phone || "");
   }, [isParent, user?.name, user?.email, user?.phone, record?.fullName, record?.email, record?.phone]);
 
-  const present = (attendance.data ?? []).filter((a) => a.status === "PRESENT").length;
-  const attTotal = (attendance.data ?? []).length;
+  const present = childAttendance.filter((a) => a.status === "PRESENT").length;
+  const attTotal = childAttendance.length;
 
   async function saveProfile() {
     setBusy(true);
@@ -163,8 +166,8 @@ export function MyStudentRecord() {
       </Card>
       <Card title="Guardians">
         <ul className="text-sm">
-          {(guardians.data ?? []).length === 0 && <li>No guardian linked.</li>}
-          {(guardians.data ?? []).map((g, i) => (
+          {childGuardians.length === 0 && <li>No guardian linked.</li>}
+          {childGuardians.map((g, i) => (
             <li key={i}>
               {g.fullName} ({g.relation})
             </li>
@@ -195,7 +198,7 @@ export function MyStudentRecord() {
               {present}/{attTotal} present ({Math.round((present * 100) / attTotal)}%)
             </p>
             <ul className="text-sm">
-              {(attendance.data ?? []).slice(0, 20).map((a, i) => (
+              {childAttendance.slice(0, 20).map((a, i) => (
                 <li key={i}>
                   {formatDay(a.sessionDate) || a.sessionDate} — {a.status}
                 </li>
@@ -205,11 +208,11 @@ export function MyStudentRecord() {
         )}
       </Card>
       <Card title="Certificates">
-        {(certs.data ?? []).length === 0 && (
+        {childCerts.length === 0 && (
           <p className="text-sm text-slate-500">Finish the course materials, homework, and tests to receive a certificate automatically.</p>
         )}
         <ul className="text-sm">
-          {(certs.data ?? []).map((c, i) => (
+          {childCerts.map((c, i) => (
             <li key={c.id || i} className="flex items-center justify-between gap-2">
               <span>
                 {c.title}

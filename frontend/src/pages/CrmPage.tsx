@@ -33,6 +33,8 @@ const STAGES = [
 export function CrmPage() {
   const { user } = useAuth();
   const growth = hasGrowthTier(user?.packageTier, user?.modules);
+  const org = useApi<{ slug?: string }>("/api/organization");
+  const siteSlug = org.data?.slug || user?.orgSlug || "your-slug";
   const inquiries = useApi<Inquiry[]>("/api/inquiries");
   const funnel = useApi<{ bySource?: { name: string; leads: number; converted: number; conversionPct: number }[]; byCounselor?: { name: string; leads: number; converted: number; conversionPct: number }[] }>(
     growth ? "/api/actions/analytics/funnel?days=30" : "",
@@ -390,7 +392,9 @@ export function CrmPage() {
         </Card>
       </div>
       <Card title="Referral codes">
-        <p className="mb-3 text-sm text-slate-500">Share `/s/your-slug?ref=CODE` on the website. New enquiries are attributed.</p>
+        <p className="mb-3 text-sm text-slate-500">
+          Share `/s/{siteSlug}?ref=CODE` on the website. New enquiries are attributed.
+        </p>
         <FormGrid>
           <Field label="Referrer name" value={refName} onChange={setRefName} />
           <Select label="Student (optional)" value={refStudent} onChange={setRefStudent} options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))} />

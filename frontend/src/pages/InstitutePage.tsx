@@ -168,8 +168,8 @@ export function InstitutePage() {
       <Card title="Courses">
         <p className="text-sm text-slate-500">Use the course wizard for price, validity, and content. This table is the current catalog.</p>
         <div className="mt-3">
-          <Link to="/courses/new">
-            <PrimaryButton>Create course</PrimaryButton>
+          <Link to="/courses/new" className="inline-flex items-center rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white hover:bg-brand">
+            Create course
           </Link>
         </div>
         <div className="mt-4">

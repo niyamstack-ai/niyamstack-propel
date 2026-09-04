@@ -354,13 +354,15 @@ function TeamTab({ hr }: { hr: boolean }) {
   const [clAnnual, setClAnnual] = useState("12");
   const [slAnnual, setSlAnnual] = useState("6");
   const [elAnnual, setElAnnual] = useState("15");
+  const [excludeHolidays, setExcludeHolidays] = useState(false);
 
   useEffect(() => {
     if (!policy.data) return;
     setClAnnual(String(policy.data.clAnnual ?? 12));
     setSlAnnual(String(policy.data.slAnnual ?? 6));
     setElAnnual(String(policy.data.elAnnual ?? 15));
-  }, [policy.data?.clAnnual, policy.data?.slAnnual, policy.data?.elAnnual]);
+    setExcludeHolidays(Boolean(policy.data.excludeHolidays));
+  }, [policy.data?.clAnnual, policy.data?.slAnnual, policy.data?.elAnnual, policy.data?.excludeHolidays]);
 
   const box = inbox.data;
 
@@ -415,7 +417,10 @@ function TeamTab({ hr }: { hr: boolean }) {
   async function savePolicy() {
     setError(null);
     try {
-      await api("/api/leave-policy", { method: "PUT", body: JSON.stringify({ clAnnual, slAnnual, elAnnual }) });
+      await api("/api/leave-policy", {
+        method: "PUT",
+        body: JSON.stringify({ clAnnual, slAnnual, elAnnual, excludeHolidays }),
+      });
       policy.reload();
       setNotice("Leave policy saved for this year.");
     } catch (e) {
@@ -540,6 +545,10 @@ function TeamTab({ hr }: { hr: boolean }) {
             <Field label="SL days" value={slAnnual} onChange={setSlAnnual} />
             <Field label="EL days" value={elAnnual} onChange={setElAnnual} />
           </FormGrid>
+          <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={excludeHolidays} onChange={(e) => setExcludeHolidays(e.target.checked)} />
+            Count only working days (skip weekends and institute holidays)
+          </label>
           <div className="mt-3">
             <PrimaryButton onClick={() => void savePolicy()}>Save policy</PrimaryButton>
           </div>
@@ -916,15 +925,21 @@ function LeaveTab({ hr, manager }: { hr: boolean; manager: boolean }) {
 
   async function apply() {
     setError(null);
+    setNotice(null);
+    if (hr && !employeeId) {
+      setError("Select an employee before applying leave.");
+      return;
+    }
     try {
       await api("/api/actions/ess/leave", {
         method: "POST",
-        body: JSON.stringify({ employeeId: hr ? employeeId || undefined : undefined, leaveType, fromDate, toDate, reason }),
+        body: JSON.stringify({ employeeId: hr ? employeeId : undefined, leaveType, fromDate, toDate, reason }),
       });
       leaves.reload();
       bals.reload();
       calendar.reload();
       setReason("");
+      setNotice("Leave submitted.");
     } catch (e) {
       setError((e as Error).message);
     }
@@ -1055,7 +1070,9 @@ function LeaveTab({ hr, manager }: { hr: boolean; manager: boolean }) {
           <TextArea label="Reason" value={reason} onChange={setReason} rows={3} />
         </div>
         <div className="mt-3">
-          <PrimaryButton onClick={() => void apply()}>Submit leave</PrimaryButton>
+          <PrimaryButton disabled={hr && !employeeId} onClick={() => void apply()}>
+            Submit leave
+          </PrimaryButton>
         </div>
       </Card>
     </>

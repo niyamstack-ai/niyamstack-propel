@@ -756,7 +756,11 @@ public class SisService {
             rec.setStudentId(s.getId());
             rec.setBatchId(batchId);
             rec.setSessionDate(sessionDay);
-            rec.setStatus(isPresent ? "PRESENT" : "ABSENT");
+            if (isPresent) {
+                rec.setStatus("LATE".equalsIgnoreCase(blank(rec.getStatus(), "")) ? "LATE" : "PRESENT");
+            } else {
+                rec.setStatus("ABSENT");
+            }
             rec.setSource("BATCH_SHEET");
             store.save(rec);
             marked++;
@@ -773,7 +777,7 @@ public class SisService {
         return out;
     }
 
-    public Map<String, Object> attendanceSummary(UUID batchId) {
+    public Map<String, Object> attendanceSummary(UUID batchId, String date) {
         Access.requireTenant(Auth.current());
         Access.requireAnyModule(Auth.current(), Packs.MOD_LMS);
         if (batchId == null) {
@@ -782,6 +786,7 @@ public class SisService {
         store.getOwned(Batch.class, batchId, orgId());
         List<Student> roster = rosterForBatch(batchId);
         LocalDate from = LocalDate.now().minusDays(30);
+        LocalDate focus = date != null && date.length() >= 10 ? LocalDate.parse(date.substring(0, 10)) : LocalDate.now();
         List<AttendanceRecord> marks = store.list(AttendanceRecord.class, orgId()).stream()
                 .filter(a -> batchId.equals(a.getBatchId()) && a.getSessionDate() != null && !a.getSessionDate().isBefore(from))
                 .toList();
@@ -789,7 +794,7 @@ public class SisService {
         long presentMarks = marks.stream().filter(a -> "PRESENT".equalsIgnoreCase(a.getStatus()) || "LATE".equalsIgnoreCase(a.getStatus())).count();
         long totalMarks = marks.size();
         int presentToday = (int) marks.stream()
-                .filter(a -> LocalDate.now().equals(a.getSessionDate()) && ("PRESENT".equalsIgnoreCase(a.getStatus()) || "LATE".equalsIgnoreCase(a.getStatus())))
+                .filter(a -> focus.equals(a.getSessionDate()) && ("PRESENT".equalsIgnoreCase(a.getStatus()) || "LATE".equalsIgnoreCase(a.getStatus())))
                 .count();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("batchId", batchId);
@@ -798,7 +803,12 @@ public class SisService {
         out.put("presentToday", presentToday);
         out.put("absentToday", Math.max(0, roster.size() - presentToday));
         out.put("averagePresentPct", totalMarks == 0 ? 0 : (int) Math.min(100, presentMarks * 100 / totalMarks));
+        out.put("sessionDate", focus.toString());
         return out;
+    }
+
+    public Map<String, Object> attendanceSummary(UUID batchId) {
+        return attendanceSummary(batchId, null);
     }
 
     private List<Student> rosterForBatch(UUID batchId) {
@@ -807,7 +817,7 @@ public class SisService {
         }
         Batch batch = store.getOwned(Batch.class, batchId, orgId());
         return store.list(Student.class, orgId()).stream()
-                .filter(s -> batchId.equals(s.getBatchId()) || (batch.getCourseId() != null && batch.getCourseId().equals(s.getCourseId())))
+                .filter(s -> batchId.equals(s.getBatchId()))
                 .toList();
     }
 

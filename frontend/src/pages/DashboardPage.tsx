@@ -43,7 +43,7 @@ function StudentHome() {
   const progress = useApi<{ syllabusPct?: number; homeworkDone?: number; homeworkTotal?: number; testsDone?: number; testsTotal?: number }>(
     student?.id ? `/api/actions/progress/${student.id}` : "",
   );
-  const due = (invoices.data ?? []).filter((i) => i.status !== "PAID");
+  const due = (invoices.data ?? []).filter((i) => i.status !== "PAID" && i.status !== "CANCELLED" && i.status !== "VOID");
   return (
     <div className="space-y-6">
       <div>
@@ -89,7 +89,7 @@ function ParentHome() {
   const invoices = useApi<Invoice[]>("/api/invoices");
   const att = useApi<{ studentId?: string; sessionDate?: string; status?: string }[]>("/api/attendance");
   const notices = useApi<{ title?: string; body?: string }[]>("/api/announcements");
-  const due = (invoices.data ?? []).filter((i) => i.status !== "PAID");
+  const due = (invoices.data ?? []).filter((i) => i.status !== "PAID" && i.status !== "CANCELLED" && i.status !== "VOID");
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-navy">Parent portal</h1>

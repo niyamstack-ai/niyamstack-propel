@@ -579,7 +579,9 @@ function CoursePage() {
   const slug = useSlug();
   const { courseId } = useParams();
   const { token, user, applySession } = useAuth();
+  const { site } = useSite(slug);
   const navigate = useNavigate();
+  const siteLive = site?.live !== false;
   const [course, setCourse] = useState<PublicCourse | null>(null);
   const [outline, setOutline] = useState<OutlineItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -843,6 +845,10 @@ function CoursePage() {
                 Continue learning
               </Link>
             </>
+          ) : !siteLive ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              This website is not published yet, so enrolment is closed. Ask the institute to publish.
+            </p>
           ) : (
             <>
           {(course.validityOptions?.length ?? 0) > 1 && (
@@ -886,12 +892,14 @@ function CoursePage() {
               </button>
             </form>
           )}
-          <p className="text-center text-xs text-slate-400">
-            Already purchased?{" "}
-            <Link className="text-brand" to={`${sitePath(slug)}/login`}>
-              Login
-            </Link>
-          </p>
+          {!loggedStudent && (
+            <p className="text-center text-xs text-slate-400">
+              Already purchased?{" "}
+              <Link className="text-brand" to={`${sitePath(slug)}/login`}>
+                Login
+              </Link>
+            </p>
+          )}
             </>
           )}
         </div>

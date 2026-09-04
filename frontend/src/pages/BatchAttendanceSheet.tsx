@@ -16,7 +16,9 @@ export function BatchAttendanceSheet() {
   const roster = useApi<RosterRow[]>(
     batchId ? `/api/actions/sis/batch-attendance?batchId=${batchId}&date=${sessionDate}` : "",
   );
-  const summary = useApi<Summary>(batchId ? `/api/actions/sis/attendance-summary?batchId=${batchId}` : "");
+  const summary = useApi<Summary>(
+    batchId ? `/api/actions/sis/attendance-summary?batchId=${batchId}&date=${sessionDate}` : "",
+  );
 
   useEffect(() => {
     const ids = new Set(
@@ -73,7 +75,7 @@ export function BatchAttendanceSheet() {
       </FormGrid>
       {summary.data && batchId && (
         <p className="mt-2 text-xs text-slate-500">
-          {summary.data.students ?? 0} students · today {summary.data.presentToday ?? 0} present · 30-day avg{" "}
+          {summary.data.students ?? 0} students · this date {summary.data.presentToday ?? 0} present · 30-day avg{" "}
           {summary.data.averagePresentPct ?? 0}%
         </p>
       )}

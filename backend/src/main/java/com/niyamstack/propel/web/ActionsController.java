@@ -202,8 +202,9 @@ public class ActionsController {
     }
 
     @GetMapping("/sis/attendance-summary")
-    public Map<String, Object> attendanceSummary(@RequestParam UUID batchId) {
-        return sis.attendanceSummary(batchId);
+    public Map<String, Object> attendanceSummary(@RequestParam UUID batchId,
+                                                 @RequestParam(required = false) String date) {
+        return sis.attendanceSummary(batchId, date);
     }
 
     @PostMapping("/pushes/send")

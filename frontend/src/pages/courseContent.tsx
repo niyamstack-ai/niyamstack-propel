@@ -1221,12 +1221,22 @@ export function QuizBuilder({
               const type = ((src.questionType || "MCQ").toUpperCase() as QType) || "MCQ";
               const options = parseOptions(src.optionsJson);
               const match = parseMatchSides(src.optionsJson);
+              const key = (src.answerKey || "").trim();
+              let correctIdx = 0;
+              if (/^\d+$/.test(key)) correctIdx = Math.max(0, Number(key));
+              else if (/^[A-Da-d]$/.test(key)) correctIdx = key.toUpperCase().charCodeAt(0) - 65;
+              else {
+                const found = options.findIndex((o) => o === key);
+                if (found >= 0) correctIdx = found;
+              }
               setQuestions((rows) => [
                 ...rows,
                 {
                   ...blankQuestion(type, src.language || suggested, src.starterCode || ""),
                   prompt: src.prompt,
                   options: options.length ? options : ["", "", "", ""],
+                  correct: correctIdx,
+                  selected: (options.length ? options : ["", "", "", ""]).map((_, i) => i === correctIdx),
                   textAnswer: src.answerKey || "",
                   explanation: src.explanation || "",
                   language: src.language || suggested,

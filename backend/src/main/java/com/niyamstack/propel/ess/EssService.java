@@ -31,8 +31,10 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class EssService {
@@ -707,10 +709,17 @@ public class EssService {
         if (!Set.of("CL", "SL", "EL").contains(type)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Leave type must be CL, SL, or EL");
         }
-        BigDecimal days = BigDecimal.valueOf(ChronoUnit.DAYS.between(from, to) + 1);
+        BigDecimal days = countLeaveDays(from, to);
+        if (days.signum() <= 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "No working days in this leave range");
+        }
         LeaveBalance bal = balanceFor(e, from.getYear());
-        if (remaining(bal, type).compareTo(days) < 0) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Not enough " + type + " balance");
+        BigDecimal pendingSame = store.listBy(LeaveRequest.class, orgId(), "employeeId", e.getId()).stream()
+                .filter(r -> "PENDING".equals(r.getStatus()) && type.equals(r.getLeaveType()))
+                .map(r -> r.getDays() == null ? BigDecimal.ZERO : r.getDays())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (remaining(bal, type).subtract(pendingSame).compareTo(days) < 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Not enough " + type + " balance (including pending requests)");
         }
         LeaveRequest req = new LeaveRequest();
         req.setOrganizationId(orgId());
@@ -1731,6 +1740,29 @@ public class EssService {
             }
         }
         return new AttendanceSummary(present, lop);
+    }
+
+    private BigDecimal countLeaveDays(LocalDate from, LocalDate to) {
+        LeavePolicy policy = policyFor(from.getYear());
+        boolean excludeHolidays = policy != null && Boolean.TRUE.equals(policy.getExcludeHolidays());
+        // Always skip weekends; optionally also skip institute holidays
+        Set<LocalDate> holidays = excludeHolidays
+                ? store.list(InstituteHoliday.class, orgId()).stream()
+                    .map(InstituteHoliday::getHolidayDate)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet())
+                : Set.of();
+        BigDecimal days = BigDecimal.ZERO;
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
+            if (!isWeekday(d)) {
+                continue;
+            }
+            if (holidays.contains(d)) {
+                continue;
+            }
+            days = days.add(BigDecimal.ONE);
+        }
+        return days;
     }
 
     private static int weekdaysInMonth(YearMonth ym) {

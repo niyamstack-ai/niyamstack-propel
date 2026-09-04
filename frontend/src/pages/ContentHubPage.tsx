@@ -92,8 +92,8 @@ export function ContentHubPage() {
           action={
             <div className="flex flex-wrap gap-2">
               <PrimaryButton onClick={() => setCreating(true)}>Create test</PrimaryButton>
-              <Link to="/courses">
-                <PrimaryButton>Go to course learning</PrimaryButton>
+              <Link to="/courses" className="inline-flex items-center rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white hover:bg-brand">
+                Go to course learning
               </Link>
             </div>
           }

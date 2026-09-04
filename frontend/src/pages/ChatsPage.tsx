@@ -10,9 +10,10 @@ type Student = { id: string; fullName: string };
 
 export function ChatsPage() {
   const { user } = useAuth();
+  const isStudent = user?.role === "STUDENT";
   const threads = useApi<Thread[]>("/api/chat-threads");
   const messages = useApi<Message[]>("/api/chat-messages");
-  const students = useApi<Student[]>("/api/students");
+  const students = useApi<Student[]>(isStudent ? "" : "/api/students");
   const [error, setError] = useState<string | null>(null);
   const [active, setActive] = useState<string>("");
   const [subject, setSubject] = useState("");
@@ -65,26 +66,33 @@ export function ChatsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-navy">Chats</h1>
-        <p className="text-sm text-slate-500">Send messages to your students on a daily basis.</p>
+        <p className="text-sm text-slate-500">
+          {isStudent ? "Message your institute from here." : "Send messages to your students on a daily basis."}
+        </p>
       </div>
       <ErrorText error={error} />
       <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
         <Card title="Threads">
-          <FormGrid>
-            <Select
-              label="Student"
-              value={studentId}
-              onChange={setStudentId}
-              options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))}
-            />
-            <Field label="Subject" value={subject} onChange={setSubject} />
-          </FormGrid>
-          <div className="mt-3">
-            <PrimaryButton disabled={!studentId || !subject.trim()} onClick={startThread}>
-              New chat
-            </PrimaryButton>
-          </div>
-          <ul className="mt-4 space-y-2 text-sm">
+          {!isStudent && (
+            <>
+              <FormGrid>
+                <Select
+                  label="Student"
+                  value={studentId}
+                  onChange={setStudentId}
+                  options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))}
+                />
+                <Field label="Subject" value={subject} onChange={setSubject} />
+              </FormGrid>
+              <div className="mt-3">
+                <PrimaryButton disabled={!studentId || !subject.trim()} onClick={() => void startThread()}>
+                  New chat
+                </PrimaryButton>
+              </div>
+            </>
+          )}
+          <ul className={`space-y-2 text-sm ${isStudent ? "" : "mt-4"}`}>
+            {(threads.data ?? []).length === 0 && <li className="text-slate-500">No threads yet.</li>}
             {(threads.data ?? []).map((t) => (
               <li key={t.id}>
                 <button
@@ -92,8 +100,8 @@ export function ChatsPage() {
                   className={`w-full rounded-lg px-3 py-2 text-left ${active === t.id ? "bg-navy text-white" : "bg-mist"}`}
                   onClick={() => setActive(t.id)}
                 >
-                  <span className="font-medium">{t.studentName || "User"}</span>
-                  <span className="block text-xs opacity-80">{t.subject}</span>
+                  <span className="font-medium">{isStudent ? t.subject || "Chat" : t.studentName || "User"}</span>
+                  <span className="block text-xs opacity-80">{isStudent ? prettyLabel(t.status) : t.subject}</span>
                 </button>
               </li>
             ))}
@@ -118,7 +126,7 @@ export function ChatsPage() {
                 <Field label="Message" value={body} onChange={setBody} />
               </FormGrid>
               <div className="mt-3">
-                <PrimaryButton disabled={!body} onClick={send}>
+                <PrimaryButton disabled={!body} onClick={() => void send()}>
                   Send
                 </PrimaryButton>
               </div>
@@ -126,24 +134,26 @@ export function ChatsPage() {
           )}
         </Card>
       </div>
-      <Card title="All threads">
-        <Table
-          columns={["Student", "Subject", "Status", ""]}
-          rows={(threads.data ?? []).map((t) => [
-            t.studentName || "—",
-            t.subject || "—",
-            prettyLabel(t.status),
-            <button
-              key={t.id}
-              type="button"
-              className="text-sm font-medium text-brand hover:underline"
-              onClick={() => setActive(t.id)}
-            >
-              Open
-            </button>,
-          ])}
-        />
-      </Card>
+      {!isStudent && (
+        <Card title="All threads">
+          <Table
+            columns={["Student", "Subject", "Status", ""]}
+            rows={(threads.data ?? []).map((t) => [
+              t.studentName || "—",
+              t.subject || "—",
+              prettyLabel(t.status),
+              <button
+                key={t.id}
+                type="button"
+                className="text-sm font-medium text-brand hover:underline"
+                onClick={() => setActive(t.id)}
+              >
+                Open
+              </button>,
+            ])}
+          />
+        </Card>
+      )}
     </div>
   );
 }

@@ -183,6 +183,8 @@ function StudentToday({ data }: { data?: Home }) {
 }
 
 function StudentLearn({ data }: { data?: Home }) {
+  const { user } = useAuth();
+  const learnTo = user?.orgSlug ? `/s/${user.orgSlug}/learn` : "/";
   return (
     <Card title="Content">
       <ul className="text-sm">
@@ -193,14 +195,16 @@ function StudentLearn({ data }: { data?: Home }) {
         ))}
         {(data?.content ?? []).length === 0 && <li className="text-slate-500">No published content yet.</li>}
       </ul>
-      <Link className="mt-3 inline-block text-sm text-brand" to="/courses">
-        Open courses
+      <Link className="mt-3 inline-block text-sm text-brand" to={learnTo}>
+        Open my learning
       </Link>
     </Card>
   );
 }
 
 function StudentFees({ data }: { data?: Home }) {
+  const { user } = useAuth();
+  const feesTo = user?.orgSlug ? `/s/${user.orgSlug}/fees` : "/fees";
   return (
     <Card title="Due fees">
       <ul className="text-sm">
@@ -211,7 +215,7 @@ function StudentFees({ data }: { data?: Home }) {
         ))}
         {(data?.invoices ?? []).length === 0 && <li className="text-slate-500">No dues.</li>}
       </ul>
-      <Link className="mt-3 inline-block text-sm text-brand" to="/fees">
+      <Link className="mt-3 inline-block text-sm text-brand" to={feesTo}>
         Pay fees
       </Link>
     </Card>
@@ -219,6 +223,8 @@ function StudentFees({ data }: { data?: Home }) {
 }
 
 function StudentJobs({ data }: { data?: Home }) {
+  const { user } = useAuth();
+  const jobsTo = user?.orgSlug ? `/s/${user.orgSlug}/jobs` : "/placement";
   return (
     <Card title="Open drives">
       <ul className="text-sm">
@@ -229,8 +235,8 @@ function StudentJobs({ data }: { data?: Home }) {
         ))}
         {(data?.drives ?? []).length === 0 && <li className="text-slate-500">No open drives.</li>}
       </ul>
-      <Link className="mt-3 inline-block text-sm text-brand" to="/placement">
-        Apply
+      <Link className="mt-3 inline-block text-sm text-brand" to={jobsTo}>
+        Open jobs
       </Link>
     </Card>
   );
@@ -370,6 +376,7 @@ function FacultyGrade({
   onNotice: (m: string | null) => void;
   reload: () => void;
 }) {
+  const [grades, setGrades] = useState<Record<string, string>>({});
   return (
     <Card title="Pending submissions">
       <ul className="space-y-3 text-sm">
@@ -382,25 +389,39 @@ function FacultyGrade({
               {" · "}
               {prettyLabel(s.status) || "Submitted"}
             </span>
-            <PrimaryButton
-              onClick={() =>
-                void (async () => {
-                  onError(null);
-                  try {
-                    await api(`/api/actions/submissions/${s.id}/grade`, {
-                      method: "POST",
-                      body: JSON.stringify({ grade: "A", feedback: "Meets outcomes." }),
-                    });
-                    onNotice("Graded.");
-                    reload();
-                  } catch (e) {
-                    onError((e as Error).message);
-                  }
-                })()
-              }
-            >
-              Grade A
-            </PrimaryButton>
+            <span className="flex items-center gap-2">
+              <select
+                className="rounded border border-line px-2 py-1 text-sm"
+                value={grades[s.id] || "A"}
+                onChange={(e) => setGrades((prev) => ({ ...prev, [s.id]: e.target.value }))}
+              >
+                {["A", "B", "C", "D", "F"].map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+              <PrimaryButton
+                onClick={() =>
+                  void (async () => {
+                    onError(null);
+                    try {
+                      const grade = grades[s.id] || "A";
+                      await api(`/api/actions/submissions/${s.id}/grade`, {
+                        method: "POST",
+                        body: JSON.stringify({ grade, feedback: `Graded ${grade}.` }),
+                      });
+                      onNotice(`Graded ${grade}.`);
+                      reload();
+                    } catch (e) {
+                      onError((e as Error).message);
+                    }
+                  })()
+                }
+              >
+                Grade
+              </PrimaryButton>
+            </span>
           </li>
         ))}
         {(data?.submissions ?? []).length === 0 && <li className="text-slate-500">Nothing to grade.</li>}
