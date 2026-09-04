@@ -443,22 +443,32 @@ export function WebsitePage() {
             <p className="mt-3 break-all rounded-lg bg-mist px-3 py-2 font-mono text-sm">{liveUrl}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <PrimaryButton onClick={() => void copyLiveUrl()}>{copied ? "Copied" : "Copy link"}</PrimaryButton>
-              <Link className="rounded-full border border-line px-4 py-2 text-sm" to={previewPath} target="_blank" rel="noreferrer">
+              <button
+                type="button"
+                className="rounded-full border border-line px-4 py-2 text-sm"
+                onClick={() => window.open(liveUrl, "_blank", "noopener,noreferrer")}
+              >
                 {siteLive ? "Open website" : "Open draft"}
-              </Link>
+              </button>
             </div>
             <p className="mt-5 text-sm font-medium text-navy">Already have a domain?</p>
             <p className="mt-1 text-sm text-slate-600">
-              On GoDaddy or Hostinger, point it here. CNAME to <span className="font-mono">{HOST_TARGET}</span>. We do not buy the domain for you.
+              On GoDaddy or Hostinger, point it here. We do not buy the domain for you.
             </p>
             <div className="mt-3">
-              <Field label="Your domain" value={customDomain} onChange={setCustomDomain} placeholder="demoweb.com" />
+              <Field label="Your domain" value={customDomain} onChange={setCustomDomain} placeholder="yourdomain.com" />
             </div>
             {host && (
               <p className="mt-2 text-xs text-slate-500">
-                CNAME www → {HOST_TARGET}
-                <br />
-                CNAME {host} → {HOST_TARGET}
+                {host.startsWith("www.") ? (
+                  <>CNAME {host} → {HOST_TARGET}</>
+                ) : (
+                  <>
+                    CNAME www → {HOST_TARGET}
+                    <br />
+                    CNAME {host} → {HOST_TARGET} (or ALIAS/ANAME at apex)
+                  </>
+                )}
               </p>
             )}
             <div className="mt-4 flex justify-end gap-2">

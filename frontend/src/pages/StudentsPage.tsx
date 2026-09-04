@@ -227,7 +227,10 @@ export function MyStudentRecord() {
                       `/api/actions/certificates/${c.id}`,
                     ).then((rec) => {
                       const win = window.open("", "_blank");
-                      if (!win) return;
+                      if (!win) {
+                        setError("Allow pop-ups to print the certificate.");
+                        return;
+                      }
                       win.document.write(`<!doctype html><html><head><title>${rec.certificateNo || "Certificate"}</title>
                         <style>body{font-family:Georgia,serif;padding:48px;text-align:center;color:#071a33}h1{margin:24px 0 8px;font-size:28px}p{margin:8px 0}</style></head>
                         <body>

@@ -556,7 +556,7 @@ function OwnerCourses() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <SearchBar value={q} onChange={setQ} className="min-w-[220px] flex-1" />
+        <SearchBar value={q} onChange={setQ} className="min-w-0 flex-1" />
         <label className="flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-slate-600">
           Sort by
           <select className="bg-transparent font-medium text-navy outline-none" value={sort} onChange={(e) => setSort(e.target.value)}>

@@ -8,6 +8,16 @@ import { FormFieldsEditor, parseFormFields, serializeFormFields } from "./formFi
 import { Link } from "react-router-dom";
 import { isProductHost } from "./siteHost";
 
+function resolveSectionHref(slug: string | undefined, url: string | undefined, fallback: string) {
+  const raw = (url || fallback || "/").trim() || fallback;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const path = raw.startsWith("/") ? raw : `/${raw}`;
+  if (slug && isProductHost() && !path.startsWith(`/s/${slug}`)) {
+    return `/s/${slug}${path}`;
+  }
+  return path;
+}
+
 export function PageSections({ body, catalog, slug }: { body?: string; catalog?: ReactNode; slug?: string }) {
   const sections = parseSections(body);
   if (sections.length === 0) return catalog ? <>{catalog}</> : null;
@@ -255,15 +265,11 @@ export function SectionView({
             <a className="mt-5 inline-block rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white" href={section.buttonUrl} target="_blank" rel="noreferrer">
               {section.buttonLabel || "View courses"}
             </a>
-          ) : slug ? (
+          ) : (
             <Link
               className="mt-5 inline-block rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white"
-              to={section.buttonUrl || (isProductHost() ? `/s/${slug}` : "/")}
+              to={resolveSectionHref(slug, section.buttonUrl, isProductHost() && slug ? `/s/${slug}` : "/")}
             >
-              {section.buttonLabel || "View courses"}
-            </Link>
-          ) : (
-            <Link className="mt-5 inline-block rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white" to={section.buttonUrl || "/"}>
               {section.buttonLabel || "View courses"}
             </Link>
           )
@@ -434,15 +440,11 @@ export function SectionView({
           <a className="mt-5 inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand" href={section.buttonUrl} target="_blank" rel="noreferrer">
             {section.buttonLabel || "Get started"}
           </a>
-        ) : slug ? (
+        ) : (
           <Link
             className="mt-5 inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand"
-            to={section.buttonUrl || (isProductHost() ? `/s/${slug}/register` : "/register")}
+            to={resolveSectionHref(slug, section.buttonUrl, isProductHost() && slug ? `/s/${slug}/register` : "/register")}
           >
-            {section.buttonLabel || "Get started"}
-          </Link>
-        ) : (
-          <Link className="mt-5 inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand" to={section.buttonUrl || "/register"}>
             {section.buttonLabel || "Get started"}
           </Link>
         )}

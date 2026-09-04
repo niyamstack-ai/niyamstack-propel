@@ -488,7 +488,7 @@ function TeamTab({ hr }: { hr: boolean }) {
               ""
             ),
             r.employeeName || "—",
-            r.leaveType || "—",
+            prettyLabel(r.leaveType) || "—",
             formatDay(r.fromDate) || "—",
             formatDay(r.toDate) || "—",
             String(r.days ?? ""),
@@ -1229,7 +1229,7 @@ function LeaveTab({ hr, manager }: { hr: boolean; manager: boolean }) {
           columns={["Employee", "Type", "From", "To", "Days", "Status", ""]}
           rows={(leaves.data ?? []).map((r) => [
             r.employeeName || "—",
-            r.leaveType || "—",
+            prettyLabel(r.leaveType) || "—",
             formatDay(r.fromDate) || "—",
             formatDay(r.toDate) || "—",
             String(r.days ?? ""),
@@ -1251,7 +1251,7 @@ function LeaveTab({ hr, manager }: { hr: boolean; manager: boolean }) {
         <Table
           empty="Nobody is on approved leave this month."
           columns={["Employee", "Type", "From", "To"]}
-          rows={(calendar.data ?? []).map((r) => [r.employeeName || "—", r.leaveType || "—", formatDay(r.fromDate) || "—", formatDay(r.toDate) || "—"])}
+          rows={(calendar.data ?? []).map((r) => [r.employeeName || "—", prettyLabel(r.leaveType) || "—", formatDay(r.fromDate) || "—", formatDay(r.toDate) || "—"])}
         />
       </Card>
       <Card title="Apply for leave">

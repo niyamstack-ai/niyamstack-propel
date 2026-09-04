@@ -26,7 +26,7 @@ function matches(org: InstituteRow, filter: string) {
     case "unpaid":
       return pay === "UNPAID";
     case "pending":
-      return pay === "PAID" && (access === "PENDING_APPROVAL" || access === "DEMO");
+      return pay === "PAID" && access === "PENDING_APPROVAL";
     case "active":
       return access === "ACTIVE";
     case "failed":

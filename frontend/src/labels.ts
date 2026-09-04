@@ -95,6 +95,10 @@ const STATUS_LABELS: Record<string, string> = {
   ROUTED: "Routed to drive",
   DEADLINE: "Apply by",
   JOINING: "Joining",
+  ON_NOTICE: "On notice",
+  CONVERSION: "Conversion",
+  INCOMPLETE: "Incomplete",
+  INACTIVE: "Inactive",
 };
 
 export function prettyLabel(value?: string | null) {

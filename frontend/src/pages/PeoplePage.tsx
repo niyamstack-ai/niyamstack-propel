@@ -307,7 +307,7 @@ function InstituteStaff() {
       <Card title="Add staff login">
         <FormGrid>
           <Field label="Name" value={memberName} onChange={setMemberName} placeholder="Full name" />
-          <Field label="Phone" value={memberPhone} onChange={setMemberPhone} placeholder="10-digit mobile" />
+          <Field label="Phone" value={memberPhone} onChange={setMemberPhone} placeholder="10-digit mobile (needed for WhatsApp/OTP)" />
           <Field label="Email" value={memberEmail} onChange={setMemberEmail} placeholder="They will log in with this" />
           <Select
             label="Role"

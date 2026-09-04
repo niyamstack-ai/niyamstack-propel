@@ -157,6 +157,7 @@ export function Select({
   options: { value: string; label: string }[];
   allowEmpty?: boolean;
 }) {
+  const empty = options.length === 0;
   return (
     <label className="block text-sm">
       <span className="text-slate-600">{label}</span>
@@ -165,13 +166,15 @@ export function Select({
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
-        {allowEmpty && <option value="">Select…</option>}
+        {allowEmpty && <option value="">{empty ? "None yet — add first" : "Select…"}</option>}
+        {!allowEmpty && empty && <option value="">None yet — add first</option>}
         {options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
       </select>
+      {empty && <span className="mt-1 block text-xs text-slate-400">Nothing to choose yet.</span>}
     </label>
   );
 }

@@ -10,6 +10,7 @@ import { FeesPage } from "./FeesPage";
 import { PlacementPage } from "./PlacementPage";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, formatDay, formatInr, formatWhen, useApi } from "../ui";
 import { createRecord } from "../ops";
+import { prettyLabel } from "../labels";
 import { PageSections } from "../PageSections";
 import { EnquireForm } from "../EnquireForm";
 import { parseFormFields } from "../formFields";
@@ -264,7 +265,19 @@ function StudentGate({ children }: { children: React.ReactNode }) {
     return <Navigate to={`${sitePath(slug)}/login?next=${encodeURIComponent(location.pathname)}`} replace />;
   }
   if (user?.role !== "STUDENT") {
-    return <Navigate to={`${sitePath(slug)}`} replace />;
+    return (
+      <div className="mx-auto max-w-md rounded-2xl border border-line bg-white p-6">
+        <h1 className="text-xl font-bold text-navy">Student account required</h1>
+        <p className="mt-2 text-sm text-slate-500">
+          You’re signed in as {prettyLabel(user?.role) || "staff"}. Open the student site in a private window, or sign out and log in with a student account.
+        </p>
+        <p className="mt-4">
+          <Link className="text-sm font-medium text-brand" to={sitePath(slug)}>
+            Back to catalog
+          </Link>
+        </p>
+      </div>
+    );
   }
   return children;
 }
@@ -366,8 +379,8 @@ function StorefrontShell() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind: "SESSION", path: location.pathname }),
-    }).catch(() => undefined);
-  }, [slug]);
+    }).catch(() => undefined); // intentional: session hit must not surface UI errors
+  }, [slug, location.pathname]);
 
   if (error) {
     return (
@@ -565,7 +578,14 @@ function CatalogPage() {
         <div className="grid gap-3 sm:grid-cols-2">
           {banners.map((b) =>
             b.linkUrl ? (
-              <a key={b.id} href={b.linkUrl} className="overflow-hidden rounded-2xl border border-line bg-white">
+              <a
+                key={b.id}
+                href={b.linkUrl}
+                className="overflow-hidden rounded-2xl border border-line bg-white"
+                {...(/^https?:\/\//i.test(b.linkUrl)
+                  ? { target: "_blank", rel: "noreferrer", title: "Opens an external site" }
+                  : {})}
+              >
                 {b.imageUrl && <img src={b.imageUrl} alt="" className="h-28 w-full object-cover" />}
                 <p className="p-3 text-sm font-medium text-navy">{b.title}</p>
               </a>
@@ -799,11 +819,14 @@ function CoursePage() {
                 </p>
               </div>
             </section>
+            {!owned && (
             <section>
               <p className="text-sm text-slate-500">You pay</p>
               <p className="text-2xl font-bold text-navy">{pay === 0 ? "Free" : formatInr(pay)}</p>
               {Number(course.discount || 0) > 0 && <p className="text-xs text-slate-400">List price ₹{course.fees}</p>}
             </section>
+            )}
+            {!owned && (
             <section className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-sky-50 px-4 py-3 text-sm">
               <span>Have a coupon code</span>
               <div className="flex gap-2">
@@ -813,8 +836,9 @@ function CoursePage() {
                 </button>
               </div>
             </section>
+            )}
             {couponOk && <p className="text-sm text-emerald-700">Coupon {couponOk} applied.</p>}
-            <p className="text-xs text-slate-400">By purchasing you agree to the institute terms and refund policy.</p>
+            {!owned && <p className="text-xs text-slate-400">By purchasing you agree to the institute terms and refund policy.</p>}
             <section>
               <h3 className="font-semibold text-navy">About course creator</h3>
               <p className="mt-2 text-sm text-slate-600">{course.instituteName || "Institute"}</p>
@@ -1020,6 +1044,11 @@ function StudentLoginPage() {
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
             {busy ? "Sending…" : "Send OTP"}
           </button>
+          <p className="text-center text-xs">
+            <Link className="text-brand" to={`${sitePath(slug)}/forgot`}>
+              Forgot password / reset access
+            </Link>
+          </p>
         </form>
       )}
       {mode === "otp" && sent && (
@@ -1507,8 +1536,8 @@ function PracticeLab({ courseId }: { courseId: string }) {
           onChange={(e) => {
             const next = e.target.value;
             setLanguage(next);
-            const starter = lab.languages?.find((l) => l.id === next);
-            if (starter) setSource(lab.starter && next === lab.language ? lab.starter : source);
+            if (next === lab.language) setSource(lab.starter || "");
+            else setSource(`// Switch language: write ${next} code here\n`);
           }}
         >
           {(lab.languages ?? []).map((l) => (
@@ -1612,7 +1641,7 @@ function StudentChats() {
     setError(null);
     try {
       const thread = await createRecord<{ id: string }>("/api/chat-threads", {
-        subject: subject || "Help",
+        subject: subject.trim(),
         status: "OPEN",
       });
       setActive(thread.id);
@@ -1654,7 +1683,7 @@ function StudentChats() {
             <Field label="New topic" value={subject} onChange={setSubject} />
           </FormGrid>
           <div className="mt-3">
-            <PrimaryButton onClick={() => void startThread()}>Start chat</PrimaryButton>
+            <PrimaryButton disabled={!subject.trim()} onClick={() => void startThread()}>Start chat</PrimaryButton>
           </div>
           <ul className="mt-4 space-y-2 text-sm">
             {(threads.data ?? []).length === 0 && <li className="text-slate-500">No chats yet.</li>}
@@ -1797,8 +1826,11 @@ function StudentForgotPage() {
               {method === "otp" && (
                 <input className="w-full rounded-lg border border-line px-3 py-2 tracking-[0.3em]" maxLength={6} placeholder="OTP" value={otp} onChange={(e) => setOtp(e.target.value)} />
               )}
-              {method === "email" && !token && (
-                <input className="w-full rounded-lg border border-line px-3 py-2" placeholder="Reset token from email" value={token} onChange={(e) => setToken(e.target.value)} />
+              {method === "email" && (
+                <>
+                  <p className="text-xs text-slate-500">Paste the reset token from your email (auto-filled in local/dev when shown).</p>
+                  <input className="w-full rounded-lg border border-line px-3 py-2" placeholder="Reset token from email" value={token} onChange={(e) => setToken(e.target.value)} />
+                </>
               )}
               <PasswordInput placeholder="New password" value={password} onChange={setPassword} autoComplete="new-password" />
               <PasswordInput placeholder="Confirm password" value={confirm} onChange={setConfirm} autoComplete="new-password" />

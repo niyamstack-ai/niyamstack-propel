@@ -73,12 +73,12 @@ export function PlatformLoginPage() {
             </button>
           </form>
           <p className="mt-4 text-center text-sm text-slate-500">
-            Forgot password?{" "}
+            No self-serve reset here.{" "}
             <a className="font-medium text-brand" href="mailto:support@niyamstack.com?subject=Platform%20password%20reset">
               Email support@niyamstack.com
             </a>
+            , or change the password under Settings after you sign in.
           </p>
-          <p className="mt-4 text-center text-xs text-slate-400">Change this password under Settings after you sign in.</p>
           {import.meta.env.DEV && (
             <p className="mt-6 text-center text-[11px] text-slate-400">Developer: id admin, password admin</p>
           )}

@@ -139,9 +139,10 @@ export function IntelligencePage() {
             ]}
           />
           {pnl.data && (
+            <div id="pnl">
             <ModuleCard
               title="Institute P&L"
-              to="/analytics"
+              to="/intelligence#pnl"
               rows={[
                 ["Revenue", formatInr(pnl.data.revenue)],
                 ["Payroll + commission", formatInr(pnl.data.totalCost)],
@@ -149,6 +150,7 @@ export function IntelligencePage() {
                 ["Margin %", `${pnl.data.marginPct}%`],
               ]}
             />
+            </div>
           )}
         </div>
       )}

@@ -400,7 +400,15 @@ export function CrmPage() {
         </p>
         <FormGrid>
           <Field label="Referrer name" value={refName} onChange={setRefName} />
-          <Select label="Student (optional)" value={refStudent} onChange={setRefStudent} options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))} />
+          <Select
+            label="Student (optional)"
+            value={refStudent}
+            onChange={setRefStudent}
+            options={(students.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))}
+          />
+          {(students.data ?? []).length === 0 && (
+            <p className="text-xs text-slate-500">Enrol a student first to attach a referral to their account.</p>
+          )}
         </FormGrid>
         <div className="mt-3">
           <PrimaryButton

@@ -62,7 +62,7 @@ export function AuditPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-navy">Activity log</h1>
-        <p className="text-sm text-slate-500">Who changed fees, staff, HR, and institute settings — newest first.</p>
+        <p className="text-sm text-slate-500">Who changed fees, staff, HR, and institute settings — newest first. Showing the latest 150 events.</p>
       </div>
       {feed.error && <p className="text-sm text-red-600">{feed.error}</p>}
       <Card title="Filter">
