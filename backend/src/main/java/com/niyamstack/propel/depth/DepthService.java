@@ -370,6 +370,32 @@ public class DepthService {
         return Map.of("id", goal.getId(), "title", goal.getTitle(), "progressValue", goal.getProgressValue());
     }
 
+    @Transactional
+    public Map<String, Object> updateStaffGoal(UUID id, Map<String, Object> body) {
+        requireOwnerOps();
+        StaffGoal goal = store.getOwned(StaffGoal.class, id, orgId());
+        if (body.containsKey("title") && !str(body, "title").isBlank()) {
+            goal.setTitle(str(body, "title"));
+        }
+        if (body.containsKey("progressValue")) {
+            goal.setProgressValue(bd(body, "progressValue", goal.getProgressValue() == null ? BigDecimal.ZERO : goal.getProgressValue()));
+        }
+        if (body.containsKey("targetValue")) {
+            goal.setTargetValue(bd(body, "targetValue", goal.getTargetValue() == null ? BigDecimal.valueOf(100) : goal.getTargetValue()));
+        }
+        if (body.containsKey("status") && !str(body, "status").isBlank()) {
+            goal.setStatus(str(body, "status").toUpperCase());
+        }
+        goal = store.save(goal);
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", goal.getId());
+        row.put("title", goal.getTitle());
+        row.put("progressValue", goal.getProgressValue());
+        row.put("targetValue", goal.getTargetValue());
+        row.put("status", goal.getStatus());
+        return row;
+    }
+
     public List<Map<String, Object>> staffGoals() {
         requireOwnerOps();
         return store.list(StaffGoal.class, orgId()).stream().map(g -> {
@@ -444,6 +470,34 @@ public class DepthService {
             row.put("closedAt", c.getClosedAt());
             return row;
         }).toList();
+    }
+
+    @Transactional
+    public Map<String, Object> updatePoshCase(UUID id, Map<String, Object> body) {
+        Access.requireAny(Auth.current(), Roles.OWNER);
+        PoshCase c = store.getOwned(PoshCase.class, id, orgId());
+        if (body.containsKey("severity") && !str(body, "severity").isBlank()) {
+            c.setSeverity(str(body, "severity").toUpperCase());
+        }
+        if (body.containsKey("summary") && !str(body, "summary").isBlank()) {
+            c.setSummary(str(body, "summary"));
+        }
+        if (body.containsKey("status") && !str(body, "status").isBlank()) {
+            String status = str(body, "status").toUpperCase();
+            c.setStatus(status);
+            if ("CLOSED".equals(status) || "RESOLVED".equals(status)) {
+                c.setClosedAt(Instant.now());
+            }
+        }
+        c = store.save(c);
+        audit.log("POSH_CASE_UPDATE", "PoshCase", c.getId(), c.getCaseCode() + " → " + c.getStatus());
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", c.getId());
+        row.put("caseCode", c.getCaseCode());
+        row.put("severity", c.getSeverity());
+        row.put("status", c.getStatus());
+        row.put("closedAt", c.getClosedAt());
+        return row;
     }
 
     @Transactional

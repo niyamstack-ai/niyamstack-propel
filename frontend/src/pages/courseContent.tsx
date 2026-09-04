@@ -349,11 +349,20 @@ export function CourseContentPanel({ courseId }: { courseId: string }) {
   }
 
   function counts(folder: ContentRow) {
-    const nested = courseContent.filter((row) => row.parentFolderId === folder.id);
-    const nestedTests = courseExams.filter((row) => row.parentFolderId === folder.id);
-    const videos = nested.filter((row) => row.contentType === "VIDEO").length;
-    const files = nested.filter((row) => row.contentType !== "VIDEO" && row.contentType !== "FOLDER").length + nestedTests.length;
-    return `${videos} video(s), ${files} file(s)`;
+    const walk = (folderId: string): { videos: number; files: number } => {
+      const nested = courseContent.filter((row) => row.parentFolderId === folderId);
+      const nestedTests = courseExams.filter((row) => row.parentFolderId === folderId);
+      let videos = nested.filter((row) => row.contentType === "VIDEO").length;
+      let files = nested.filter((row) => row.contentType !== "VIDEO" && row.contentType !== "FOLDER").length + nestedTests.length;
+      nested.filter((row) => row.contentType === "FOLDER").forEach((sub) => {
+        const inner = walk(sub.id);
+        videos += inner.videos;
+        files += inner.files;
+      });
+      return { videos, files };
+    };
+    const { videos, files } = walk(folder.id);
+    return `${videos} video(s), ${files} file(s) (incl. nested)`;
   }
 
   async function arrange(parentId: string | null, list: LibraryItem[]) {
@@ -1940,6 +1949,11 @@ function TakeQuiz({
   }, [attemptId, result]);
 
   async function saveAndClose() {
+    if (tabLock && !result) {
+      if (!window.confirm("Leave without submitting? Your draft answers will be saved, but the attempt stays open.")) {
+        return;
+      }
+    }
     if (attemptId && !result) {
       try {
         await api(`/api/actions/attempts/${attemptId}/draft`, { method: "POST", body: JSON.stringify(answersRef.current) });

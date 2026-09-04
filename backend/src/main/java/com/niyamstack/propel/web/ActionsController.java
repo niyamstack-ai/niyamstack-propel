@@ -1240,6 +1240,11 @@ public class ActionsController {
         return depth.saveStaffGoal(body);
     }
 
+    @PutMapping("/hr/goals/{id}")
+    public Map<String, Object> updateStaffGoal(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return depth.updateStaffGoal(id, body);
+    }
+
     @GetMapping("/hr/succession")
     public List<Map<String, Object>> successionPlans() {
         return depth.successionPlans();
@@ -1258,6 +1263,11 @@ public class ActionsController {
     @PostMapping("/hr/posh")
     public Map<String, Object> openPosh(@RequestBody Map<String, Object> body) {
         return depth.openPoshCase(body);
+    }
+
+    @PutMapping("/hr/posh/{id}")
+    public Map<String, Object> updatePosh(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return depth.updatePoshCase(id, body);
     }
 
     @PostMapping("/ai/study-plan")

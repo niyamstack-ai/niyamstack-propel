@@ -157,24 +157,27 @@ function FramedPhoto({
 }) {
   const y = Number.isFinite(focus) ? Math.min(100, Math.max(0, Number(focus))) : 50;
   const [cropping, setCropping] = useState(false);
+  const [cropError, setCropError] = useState<string | null>(null);
   async function saveCrop(e: ReactMouseEvent) {
     e.preventDefault();
     e.stopPropagation();
     if (!onChange) return;
     setCropping(true);
+    setCropError(null);
     try {
       const cropped = await cropCover(fileSrc(src), aspect, y);
       const stored = await uploadMedia(cropped);
       onChange(stored.url);
       onFocus?.(50);
     } catch (err) {
-      window.alert((err as Error).message);
+      setCropError((err as Error).message || "Could not crop image");
     } finally {
       setCropping(false);
     }
   }
   return (
     <div className="relative">
+      {cropError && <p className="mb-2 text-xs text-red-600">{cropError}</p>}
       <img
         src={fileSrc(src)}
         alt=""

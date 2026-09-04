@@ -317,10 +317,111 @@ export function DepthPage() {
               </PrimaryButton>
             )}
           </div>
-          <Table empty="No goals." columns={["Goal", "Progress", "Status"]} rows={(goals.data ?? []).map((g) => [g.title, `${g.progressValue ?? 0}/${g.targetValue ?? 100}`, g.status ?? "—"])} />
+          <Table
+            empty="No goals."
+            columns={["Goal", "Progress", "Status", ""]}
+            rows={(goals.data ?? []).map((g) => [
+              g.title,
+              `${g.progressValue ?? 0}/${g.targetValue ?? 100}`,
+              g.status ?? "—",
+              <span key={g.id} className="flex flex-wrap gap-2">
+                {(g.status || "OPEN") !== "CLOSED" && (
+                  <>
+                    <LinkButton
+                      onClick={() =>
+                        void (async () => {
+                          setError(null);
+                          try {
+                            const next = Number(g.progressValue ?? 0) + 10;
+                            await api(`/api/actions/hr/goals/${g.id}`, {
+                              method: "PUT",
+                              body: JSON.stringify({ progressValue: Math.min(next, Number(g.targetValue ?? 100)) }),
+                            });
+                            goals.reload();
+                          } catch (e) {
+                            setError((e as Error).message);
+                          }
+                        })()
+                      }
+                    >
+                      +10 progress
+                    </LinkButton>
+                    <LinkButton
+                      onClick={() =>
+                        void (async () => {
+                          setError(null);
+                          try {
+                            await api(`/api/actions/hr/goals/${g.id}`, {
+                              method: "PUT",
+                              body: JSON.stringify({ status: "CLOSED", progressValue: g.targetValue ?? 100 }),
+                            });
+                            goals.reload();
+                          } catch (e) {
+                            setError((e as Error).message);
+                          }
+                        })()
+                      }
+                    >
+                      Close
+                    </LinkButton>
+                  </>
+                )}
+              </span>,
+            ])}
+          />
           <Table empty="No succession plans." columns={["Role", "Readiness"]} rows={(succession.data ?? []).map((s) => [s.roleTitle, s.readiness ?? "—"])} />
           {user?.role === "OWNER" && (
-            <Table empty="No POSH cases." columns={["Code", "Severity", "Status"]} rows={(posh.data ?? []).map((p) => [p.caseCode, p.severity ?? "—", p.status ?? "—"])} />
+            <Table
+              empty="No POSH cases."
+              columns={["Code", "Severity", "Status", ""]}
+              rows={(posh.data ?? []).map((p) => [
+                p.caseCode,
+                p.severity ?? "—",
+                p.status ?? "—",
+                p.status === "OPEN" || p.status === "INVESTIGATING" ? (
+                  <span key={p.id} className="flex flex-wrap gap-2">
+                    <LinkButton
+                      onClick={() =>
+                        void (async () => {
+                          setError(null);
+                          try {
+                            await api(`/api/actions/hr/posh/${p.id}`, {
+                              method: "PUT",
+                              body: JSON.stringify({ status: "INVESTIGATING" }),
+                            });
+                            posh.reload();
+                          } catch (e) {
+                            setError((e as Error).message);
+                          }
+                        })()
+                      }
+                    >
+                      Investigate
+                    </LinkButton>
+                    <LinkButton
+                      onClick={() =>
+                        void (async () => {
+                          setError(null);
+                          try {
+                            await api(`/api/actions/hr/posh/${p.id}`, {
+                              method: "PUT",
+                              body: JSON.stringify({ status: "CLOSED" }),
+                            });
+                            posh.reload();
+                          } catch (e) {
+                            setError((e as Error).message);
+                          }
+                        })()
+                      }
+                    >
+                      Close
+                    </LinkButton>
+                  </span>
+                ) : (
+                  ""
+                ),
+              ])}
+            />
           )}
         </Card>
       </div>

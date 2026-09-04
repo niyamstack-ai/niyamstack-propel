@@ -9,6 +9,8 @@ type LocaleContextValue = {
   setLocale: (next: string) => Promise<void>;
   t: (key: string, fallback?: string) => string;
   loading: boolean;
+  error: string | null;
+  clearError: () => void;
 };
 
 const LocaleContext = createContext<LocaleContextValue>({
@@ -16,6 +18,8 @@ const LocaleContext = createContext<LocaleContextValue>({
   setLocale: async () => undefined,
   t: (_key, fallback = "") => fallback,
   loading: false,
+  error: null,
+  clearError: () => undefined,
 });
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
@@ -23,11 +27,13 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState("en");
   const [dictionary, setDictionary] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token || !user) {
       setLocaleState("en");
       setDictionary({});
+      setError(null);
       return;
     }
     setLoading(true);
@@ -35,11 +41,12 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
       .then((r) => {
         setLocaleState(r.locale ?? "en");
         setDictionary(r.dictionary ?? {});
+        setError(null);
       })
       .catch(() => {
         setLocaleState("en");
         setDictionary({});
-        window.alert("Could not load language pack — showing English.");
+        setError("Could not load language pack — showing English.");
       })
       .finally(() => setLoading(false));
   }, [token, user?.id]);
@@ -47,6 +54,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   const setLocale = useCallback(async (next: string) => {
     const prev = locale;
     setLocaleState(next);
+    setError(null);
     try {
       const r = await api<LocaleBundle>("/api/actions/locale", {
         method: "POST",
@@ -56,9 +64,11 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
       setDictionary(r.dictionary ?? {});
     } catch (e) {
       setLocaleState(prev);
-      window.alert((e as Error).message || "Could not save language preference");
+      setError((e as Error).message || "Could not save language preference");
     }
   }, [locale]);
+
+  const clearError = useCallback(() => setError(null), []);
 
   const t = useCallback(
     (key: string, fallback?: string) => {
@@ -69,7 +79,10 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     [dictionary],
   );
 
-  const value = useMemo(() => ({ locale, setLocale, t, loading }), [locale, setLocale, t, loading]);
+  const value = useMemo(
+    () => ({ locale, setLocale, t, loading, error, clearError }),
+    [locale, setLocale, t, loading, error, clearError],
+  );
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
 }
 

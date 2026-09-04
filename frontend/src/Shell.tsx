@@ -8,18 +8,28 @@ import { UserMenu } from "./UserMenu";
 import { UnifiedSearch } from "./UnifiedSearch";
 
 function LocaleToggle() {
-  const { locale, setLocale } = useLocale();
+  const { locale, setLocale, error, clearError } = useLocale();
   return (
-    <select
-      className="w-full rounded-lg border border-white/15 bg-transparent px-3 py-2 text-sm text-slate-300"
-      value={locale}
-      onChange={(e) => {
-        void setLocale(e.target.value);
-      }}
-    >
-      <option value="en">English</option>
-      <option value="hi">हिन्दी</option>
-    </select>
+    <div className="space-y-1">
+      <select
+        className="w-full rounded-lg border border-white/15 bg-transparent px-3 py-2 text-sm text-slate-300"
+        value={locale}
+        onChange={(e) => {
+          void setLocale(e.target.value);
+        }}
+      >
+        <option value="en">English</option>
+        <option value="hi">हिन्दी</option>
+      </select>
+      {error && (
+        <p className="px-1 text-[11px] text-amber-300">
+          {error}{" "}
+          <button type="button" className="underline" onClick={clearError}>
+            Dismiss
+          </button>
+        </p>
+      )}
+    </div>
   );
 }
 
