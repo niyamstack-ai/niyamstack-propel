@@ -135,6 +135,7 @@ export function CampaignsPage() {
             <Field label="Message body" value={body} onChange={setBody} />
           </FormGrid>
           <div className="mt-3">
+            {!name.trim() && <p className="mb-2 text-xs text-slate-500">Enter a campaign name to enable Save.</p>}
             <PrimaryButton disabled={!name} onClick={create}>
               Save campaign
             </PrimaryButton>

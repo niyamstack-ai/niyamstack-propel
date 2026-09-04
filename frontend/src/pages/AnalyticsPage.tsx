@@ -444,8 +444,10 @@ export function AnalyticsPage() {
               <PrimaryButton
                 onClick={async () => {
                   setError(null);
+                  setExportStatus(null);
                   try {
                     await api(`/api/actions/reports/${r.id}/send`, { method: "POST", body: "{}" });
+                    setExportStatus(`Email queued for “${r.name}”.`);
                   } catch (e) {
                     setError((e as Error).message);
                   }
@@ -466,7 +468,7 @@ export function AnalyticsPage() {
       </Card>
 
       <Card title="Faculty performance">
-        {faculty.error ? <p className="text-sm text-slate-500">Not in this pack.</p> : null}
+        {faculty.error ? <ErrorText error={faculty.error} /> : null}
         <Table
           empty="No faculty rows yet."
           columns={["Faculty", "Batches", "Content", "Present %", "Graded"]}

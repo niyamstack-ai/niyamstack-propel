@@ -410,16 +410,16 @@ function StorefrontShell() {
                 <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/learn`} tabIndex={examLock ? -1 : 0}>
                   My learning
                 </Link>
-                <Link className="hidden rounded-full px-3 py-1.5 hover:bg-mist sm:inline" to={`${sitePath(slug)}/fees`} tabIndex={examLock ? -1 : 0}>
+                <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/fees`} tabIndex={examLock ? -1 : 0}>
                   Fees
                 </Link>
-                <Link className="hidden rounded-full px-3 py-1.5 hover:bg-mist sm:inline" to={`${sitePath(slug)}/jobs`} tabIndex={examLock ? -1 : 0}>
+                <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/jobs`} tabIndex={examLock ? -1 : 0}>
                   Jobs
                 </Link>
-                <Link className="hidden rounded-full px-3 py-1.5 hover:bg-mist md:inline" to={`${sitePath(slug)}/notices`} tabIndex={examLock ? -1 : 0}>
+                <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/notices`} tabIndex={examLock ? -1 : 0}>
                   Notices
                 </Link>
-                <Link className="hidden rounded-full px-3 py-1.5 hover:bg-mist md:inline" to={`${sitePath(slug)}/chats`} tabIndex={examLock ? -1 : 0}>
+                <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/chats`} tabIndex={examLock ? -1 : 0}>
                   Chat
                 </Link>
                 <span className={examLock ? "pointer-events-none opacity-40" : ""}>
@@ -1246,17 +1246,20 @@ function StudyPage() {
   const purchaseNotice = (location.state as { purchaseNotice?: string } | null)?.purchaseNotice;
   const [course, setCourse] = useState<PublicCourse | null>(null);
   const [enrolled, setEnrolled] = useState<boolean | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState<StudySection>("contents");
 
   useEffect(() => {
+    setLoadError(null);
     api<MyCourse[]>("/api/actions/my-courses")
       .then((rows) => {
         const match = rows.find((r) => r.course.id === courseId);
         setCourse(match?.course || null);
         setEnrolled(!!match);
       })
-      .catch(() => {
-        setEnrolled(false);
+      .catch((e) => {
+        setEnrolled(null);
+        setLoadError((e as Error).message || "Could not load your courses");
       });
   }, [courseId]);
 
@@ -1276,6 +1279,19 @@ function StudyPage() {
     { id: "assignments", label: "Assignments" },
     { id: "doubts", label: "Doubts" },
   ];
+
+  if (loadError) {
+    return (
+      <div className="space-y-3">
+        <Link to={`${sitePath(slug)}/learn`} className="text-sm text-brand hover:underline">
+          ← My learning
+        </Link>
+        <h1 className="text-2xl font-bold text-navy">Could not open course</h1>
+        <p className="text-sm text-red-600">{loadError}</p>
+        <p className="text-sm text-slate-500">Try again, or go back to My learning.</p>
+      </div>
+    );
+  }
 
   if (enrolled === false) {
     return (

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
 import { hasGrowthTier } from "../packs";
 import { api } from "../api";
-import { createRecord } from "../ops";
+import { createRecord, updateRecord } from "../ops";
 import { prettyLabel } from "../labels";
 import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, formatInr, useApi } from "../ui";
 
@@ -43,7 +43,7 @@ export function CrmPage() {
   const courses = useApi<{ id: string; name: string }[]>("/api/courses");
   const batches = useApi<{ id: string; name: string }[]>("/api/batches");
   const notes = useApi<CounselingNoteRow[]>("/api/counseling-notes");
-  const forms = useApi<{ applicantName: string; status: string }[]>("/api/admission-forms");
+  const forms = useApi<{ id: string; applicantName: string; email?: string; phone?: string; status: string; courseId?: string }[]>("/api/admission-forms");
   const students = useApi<{ id: string; fullName: string }[]>("/api/students");
   const staff = useApi<StaffMember[]>("/api/staff");
   const feePlans = useApi<FeePlan[]>("/api/fee-plans");
@@ -311,10 +311,58 @@ export function CrmPage() {
           </ul>
         </Card>
         <Card title="Online admission forms">
-          <ul className="space-y-2 text-sm">
-            {(forms.data ?? []).map((f, i) => (
-              <li key={i}>
-                {f.applicantName} — {prettyLabel(f.status)}
+          <ul className="space-y-3 text-sm">
+            {(forms.data ?? []).length === 0 && <li className="text-slate-500">No online forms yet.</li>}
+            {(forms.data ?? []).map((f) => (
+              <li key={f.id} className="rounded-lg border border-line px-3 py-2">
+                <p className="font-medium text-navy">
+                  {f.applicantName} — {prettyLabel(f.status)}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {[f.email, f.phone].filter(Boolean).join(" · ") || "No contact"}
+                </p>
+                <span className="mt-2 flex flex-wrap gap-3">
+                  <LinkButton
+                    onClick={() =>
+                      void run(async () => {
+                        await createRecord("/api/inquiries", {
+                          fullName: f.applicantName,
+                          phone: f.phone || "",
+                          email: f.email || undefined,
+                          source: "ADMISSION_FORM",
+                          stage: "NEW",
+                          notes: `From online form ${f.id}`,
+                        });
+                        await updateRecord(`/api/admission-forms/${f.id}`, { ...f, status: "CONVERTED" });
+                        setNotice(`${f.applicantName} added to leads.`);
+                        forms.reload();
+                        inquiries.reload();
+                      })
+                    }
+                  >
+                    Convert to lead
+                  </LinkButton>
+                  <LinkButton
+                    onClick={() =>
+                      void run(async () => {
+                        await updateRecord(`/api/admission-forms/${f.id}`, { ...f, status: "REVIEWED" });
+                        forms.reload();
+                      })
+                    }
+                  >
+                    Mark reviewed
+                  </LinkButton>
+                  <LinkButton
+                    onClick={() =>
+                      void run(async () => {
+                        await updateRecord(`/api/admission-forms/${f.id}`, { ...f, status: "REJECTED" });
+                        forms.reload();
+                      })
+                    }
+                  >
+                    Reject
+                  </LinkButton>
+                </span>
               </li>
             ))}
           </ul>

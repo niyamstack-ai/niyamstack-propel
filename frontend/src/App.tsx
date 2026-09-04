@@ -61,8 +61,9 @@ function Guard({ children }: { children: React.ReactNode }) {
 
 function HomePage() {
   const { user } = useAuth();
-  if (user?.role === "STUDENT" && user.orgSlug) {
-    return <Navigate to={`/s/${user.orgSlug}/learn`} replace />;
+  if (user?.role === "STUDENT") {
+    if (user.orgSlug) return <Navigate to={`/s/${user.orgSlug}/learn`} replace />;
+    return <Navigate to="/m" replace />;
   }
   return <DashboardPage />;
 }

@@ -185,6 +185,7 @@ public class ResourceController {
 
     @GetMapping("/admission-forms") public List<AdmissionForm> forms() { return list(AdmissionForm.class); }
     @PostMapping("/admission-forms") public AdmissionForm createForm(@RequestBody AdmissionForm body) { return create(body, "CRM"); }
+    @PutMapping("/admission-forms/{id}") public AdmissionForm updateForm(@PathVariable UUID id, @RequestBody AdmissionForm body) { return update(AdmissionForm.class, id, body, "CRM"); }
 
     @GetMapping("/eligibility-rules") public List<EligibilityRule> rules() { return list(EligibilityRule.class); }
     @PostMapping("/eligibility-rules") public EligibilityRule createRule(@RequestBody EligibilityRule body) { return create(body, "PLACEMENT"); }
@@ -344,6 +345,7 @@ public class ResourceController {
 
     @GetMapping("/inbox") public List<InboxMessage> inbox() { return list(InboxMessage.class); }
     @PostMapping("/inbox") public InboxMessage createInbox(@RequestBody InboxMessage body) { return create(body, "COMMS"); }
+    @PutMapping("/inbox/{id}") public InboxMessage updateInbox(@PathVariable UUID id, @RequestBody InboxMessage body) { return update(InboxMessage.class, id, body, "COMMS"); }
 
     @GetMapping("/report-definitions") public List<ReportDefinition> reportDefinitions() { return list(ReportDefinition.class); }
     @GetMapping("/scheduled-reports") public List<ScheduledReport> scheduledReports() { return list(ScheduledReport.class); }

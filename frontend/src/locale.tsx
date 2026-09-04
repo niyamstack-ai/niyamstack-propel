@@ -41,6 +41,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   }, [token, user?.id]);
 
   const setLocale = useCallback(async (next: string) => {
+    const prev = locale;
     setLocaleState(next);
     try {
       const r = await api<LocaleBundle>("/api/actions/locale", {
@@ -50,9 +51,9 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
       setLocaleState(r.locale ?? next);
       setDictionary(r.dictionary ?? {});
     } catch {
-      /* keep optimistic locale */
+      setLocaleState(prev);
     }
-  }, []);
+  }, [locale]);
 
   const t = useCallback(
     (key: string, fallback?: string) => {

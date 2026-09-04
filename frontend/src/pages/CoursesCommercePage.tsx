@@ -246,7 +246,11 @@ function OwnerCourses() {
       }
       await updateRecord(`/api/courses/${c.id}`, { ...c, published: c.published === false });
       if (!willUnpublish) {
-        await ensureWebsitePublished().catch(() => undefined);
+        try {
+          await ensureWebsitePublished();
+        } catch (pubErr) {
+          setError(`Course published, but website publish failed: ${(pubErr as Error).message}`);
+        }
       }
       courses.reload();
       setListTab(willUnpublish ? "unpublished" : "published");

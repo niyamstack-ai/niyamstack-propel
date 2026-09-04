@@ -419,7 +419,9 @@ export function SectionView({
             {section.buttonLabel || "Get started"}
           </Link>
         ) : (
-          <span className="mt-5 inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand">{section.buttonLabel || "Get started"}</span>
+          <Link className="mt-5 inline-block rounded-full bg-white px-5 py-2 text-sm font-semibold text-brand" to="/register">
+            {section.buttonLabel || "Get started"}
+          </Link>
         )}
       </div>
     );

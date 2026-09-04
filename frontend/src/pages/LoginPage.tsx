@@ -31,8 +31,8 @@ function AuthGate({ children }: { children: ReactNode }) {
     window.dispatchEvent(new Event("propel:platform-unauthorized"));
   }, []);
   if (!ready) return <p className="p-6 text-sm text-slate-500">Loading…</p>;
-  if (token && user?.role === "STUDENT" && user.orgSlug) {
-    return <Navigate to={`/s/${user.orgSlug}/learn`} replace />;
+  if (token && user?.role === "STUDENT") {
+    return <Navigate to={user.orgSlug ? `/s/${user.orgSlug}/learn` : "/m"} replace />;
   }
   if (token) return <Navigate to="/" replace />;
   return <AuthShell>{children}</AuthShell>;
@@ -325,7 +325,7 @@ function SignupView() {
           <input className="mt-1 w-full rounded-lg border border-line px-3 py-2.5 tracking-[0.4em]" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value)} />
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
           <button className="mt-6 w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
-            {busy ? "Opening…" : "Create institute"}
+            {busy ? "Opening…" : "Verify OTP & open"}
           </button>
         </form>
       )}

@@ -294,6 +294,9 @@ function StaffFees() {
           <Select label="Course" value={courseId} onChange={setCourseId} options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
           <Select label="Term" value={planTerm} onChange={setPlanTerm} options={(terms.data ?? []).map((t) => ({ value: t.id, label: t.name }))} />
         </FormGrid>
+        {!(planTerm || terms.data?.[0]?.id) && (
+          <p className="mt-2 text-xs text-amber-700">Add a term under Academics first, or leave Term blank only if you have none yet.</p>
+        )}
         <div className="mt-3">
           <PrimaryButton
             disabled={!planName}
@@ -310,6 +313,7 @@ function StaffFees() {
                   sacCode: "999293",
                 });
                 setPlanName("");
+                setNotice("Fee plan saved.");
                 plans.reload();
               })
             }
@@ -341,6 +345,7 @@ function StaffFees() {
               onClick={() =>
                 run(async () => {
                   await api(`/api/actions/fee-plans/${schedPlan}/schedule/${schedStudent}`, { method: "POST", body: "{}" });
+                  setNotice("Invoices and installments generated.");
                   invoices.reload();
                   installments.reload();
                 })

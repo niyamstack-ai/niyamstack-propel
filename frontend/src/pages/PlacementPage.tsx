@@ -27,6 +27,7 @@ function StudentJobs() {
   const [error, setError] = useState<string | null>(null);
   const [letter, setLetter] = useState<string | null>(null);
   const studentId = me.data?.[0]?.id;
+  const studentMissing = !me.loading && (me.data?.length ?? 0) === 0;
 
   async function run(fn: () => Promise<void>) {
     setError(null);
@@ -41,7 +42,12 @@ function StudentJobs() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-navy">Jobs & drives</h1>
       <p className="text-sm text-slate-500">Campus drives open to you. Apply from this list.</p>
-      <ErrorText error={error} />
+      <ErrorText error={error || me.error} />
+      {studentMissing && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Your student profile is missing, so Apply stays unavailable. Ask the institute to link your login to a student record.
+        </p>
+      )}
       {letter && <pre className="whitespace-pre-wrap rounded-lg border border-line bg-slate-50 p-3 text-sm">{letter}</pre>}
       <Card title="Open drives">
         {(drives.data ?? []).length === 0 && <p className="mb-3 text-sm text-slate-500">No open drives right now.</p>}
@@ -59,12 +65,13 @@ function StudentJobs() {
               disabled={!studentId || applied}
               onClick={() =>
                 run(async () => {
+                  if (!studentId) throw new Error("Student profile not linked");
                   await api(`/api/actions/drives/${d.id}/apply/${studentId}`, { method: "POST", body: "{}" });
                   apps.reload();
                 })
               }
             >
-              {applied ? "Applied" : "Apply"}
+              {applied ? "Applied" : studentMissing ? "Unavailable" : "Apply"}
             </PrimaryButton>
             </div>,
           ];
@@ -264,9 +271,10 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
             </FormGrid>
             <div className="mt-3">
               <PrimaryButton
-                disabled={!recName || !recEmail}
+                disabled={!recName || !recEmail || !recCompany}
                 onClick={() =>
                   run(async () => {
+                    if (!recCompany) throw new Error("Select a company for the recruiter invite");
                     const row = await api<{ email: string; tempPassword: string }>("/api/actions/placement/recruiters", {
                       method: "POST",
                       body: JSON.stringify({ fullName: recName, email: recEmail, phone: recPhone, companyId: recCompany }),
@@ -275,6 +283,7 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
                     setRecName("");
                     setRecEmail("");
                     setRecPhone("");
+                    setRecCompany("");
                   })
                 }
               >
@@ -477,9 +486,10 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
               <Field label="Stipend" value={internStipend} onChange={setInternStipend} />
               <div className="flex items-end">
                 <PrimaryButton
-                  disabled={!internStudent}
+                  disabled={!internStudent || !internCompany}
                   onClick={() =>
                     run(async () => {
+                      if (!internCompany) throw new Error("Select a company");
                       await api("/api/actions/placement/internships", {
                         method: "POST",
                         body: JSON.stringify({
@@ -491,6 +501,7 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
                           status: "APPLIED",
                         }),
                       });
+                      setNotice("Internship recorded.");
                       internships.reload();
                     })
                   }

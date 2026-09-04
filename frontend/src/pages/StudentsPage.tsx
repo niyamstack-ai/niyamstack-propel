@@ -258,7 +258,7 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
   const batches = useApi<Named[]>("/api/batches");
   const centers = useApi<Named[]>("/api/centers");
   const docs = useApi<{ fileName: string; docType: string }[]>("/api/student-documents");
-  const guardians = useApi<{ fullName: string; relation: string }[]>("/api/guardians");
+  const guardians = useApi<{ fullName: string; relation: string; studentId?: string; phone?: string }[]>("/api/guardians");
   const risk = useApi<{ student: Student; reason: string; taskOpen?: boolean }[]>("/api/actions/at-risk");
 
   const [code, setCode] = useState("");
@@ -376,8 +376,11 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
       ACTIVE: `Mark ${s.fullName} as active?`,
     };
     if (!window.confirm(labels[status] || `Change status for ${s.fullName}?`)) return;
+    setError(null);
+    setNotice(null);
     try {
       await updateRecord(`/api/students/${s.id}`, { ...s, status });
+      setNotice(`${s.fullName} marked ${prettyLabel(status)}.`);
       students.reload();
     } catch (e) {
       setError((e as Error).message);
@@ -515,9 +518,16 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
               <PrimaryButton
                 disabled={!docStudent || !docFile}
                 onClick={async () => {
-                  await createRecord("/api/student-documents", { studentId: docStudent, docType, fileName: docType || "document", storageUrl: docFile });
-                  setDocFile("");
-                  docs.reload();
+                  setError(null);
+                  setNotice(null);
+                  try {
+                    await createRecord("/api/student-documents", { studentId: docStudent, docType, fileName: docType || "document", storageUrl: docFile });
+                    setDocFile("");
+                    setNotice("Document saved.");
+                    docs.reload();
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
                 }}
               >
                 Save document
@@ -534,11 +544,16 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
         </Card>
         <Card title="Guardians">
           <ul className="text-sm">
-            {(guardians.data ?? []).map((g, i) => (
-              <li key={i}>
-                {g.fullName} ({g.relation})
-              </li>
-            ))}
+            {(guardians.data ?? []).map((g, i) => {
+              const st = (students.data ?? []).find((s) => s.id === g.studentId);
+              return (
+                <li key={i}>
+                  {g.fullName} ({g.relation}
+                  {g.phone ? ` · ${g.phone}` : ""})
+                  {st ? ` · ${st.fullName}` : ""}
+                </li>
+              );
+            })}
           </ul>
         </Card>
         <Card title="Needs follow-up">

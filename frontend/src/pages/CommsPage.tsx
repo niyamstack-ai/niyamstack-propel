@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { api } from "../api";
-import { createRecord } from "../ops";
+import { createRecord, updateRecord } from "../ops";
 import { useAuth } from "../auth";
 import { prettyLabel } from "../labels";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
+import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, useApi } from "../ui";
 
 type Template = { id: string; eventType: string; channel: string; body?: string };
+type InboxRow = { id: string; fromName: string; subject: string; body?: string; status: string };
 
 export function CommsPage() {
   const { user } = useAuth();
@@ -13,13 +14,15 @@ export function CommsPage() {
   const anns = useApi<{ title: string; body: string }[]>("/api/announcements");
   const tpls = useApi<Template[]>("/api/message-templates");
   const batches = useApi<{ id: string; name: string }[]>("/api/batches");
-  const inbox = useApi<{ fromName: string; subject: string; status: string }[]>("/api/inbox");
+  const inbox = useApi<InboxRow[]>("/api/inbox");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [channel, setChannel] = useState("IN_APP");
   const [batchId, setBatchId] = useState("");
   const [editTpl, setEditTpl] = useState("");
   const [editBody, setEditBody] = useState("");
+  const [activeInbox, setActiveInbox] = useState<InboxRow | null>(null);
+  const [replyBody, setReplyBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sendStatus, setSendStatus] = useState<string | null>(null);
   const canSend = user?.role === "OWNER" || user?.role === "FACULTY" || user?.role === "COUNSELOR" || user?.role === "PLACEMENT_HEAD";
@@ -131,13 +134,63 @@ export function CommsPage() {
           )}
         </Card>
         <Card title="Inbox">
-          <ul className="text-sm">
-            {(inbox.data ?? []).map((m, i) => (
-              <li key={i}>
-                {m.fromName}: {m.subject} ({m.status})
+          <ul className="space-y-2 text-sm">
+            {(inbox.data ?? []).length === 0 && <li className="text-slate-500">No inbox messages.</li>}
+            {(inbox.data ?? []).map((m) => (
+              <li key={m.id}>
+                <button
+                  type="button"
+                  className={`w-full rounded-lg px-3 py-2 text-left ${activeInbox?.id === m.id ? "bg-navy text-white" : "bg-mist"}`}
+                  onClick={() => {
+                    setActiveInbox(m);
+                    setReplyBody("");
+                    if (m.status === "UNREAD" || m.status === "NEW") {
+                      void updateRecord(`/api/inbox/${m.id}`, { ...m, status: "READ" }).then(() => inbox.reload()).catch(() => undefined);
+                    }
+                  }}
+                >
+                  <span className="font-medium">{m.fromName}</span>
+                  <span className="block text-xs opacity-80">
+                    {m.subject} · {prettyLabel(m.status)}
+                  </span>
+                </button>
               </li>
             ))}
           </ul>
+          {activeInbox && (
+            <div className="mt-4 space-y-3 border-t border-line pt-3">
+              <p className="text-sm font-medium text-navy">{activeInbox.subject}</p>
+              <p className="whitespace-pre-wrap text-sm text-slate-600">{activeInbox.body || "No message body."}</p>
+              <Field label="Reply" value={replyBody} onChange={setReplyBody} />
+              <div className="flex flex-wrap gap-2">
+                <PrimaryButton
+                  disabled={!replyBody.trim()}
+                  onClick={() =>
+                    void (async () => {
+                      setError(null);
+                      try {
+                        await createRecord("/api/inbox", {
+                          fromName: user?.name || "Staff",
+                          subject: `Re: ${activeInbox.subject}`,
+                          body: replyBody,
+                          status: "SENT",
+                        });
+                        await updateRecord(`/api/inbox/${activeInbox.id}`, { ...activeInbox, status: "REPLIED" });
+                        setReplyBody("");
+                        setSendStatus("Reply saved in inbox.");
+                        inbox.reload();
+                      } catch (e) {
+                        setError((e as Error).message);
+                      }
+                    })()
+                  }
+                >
+                  Send reply
+                </PrimaryButton>
+                <LinkButton onClick={() => setActiveInbox(null)}>Close</LinkButton>
+              </div>
+            </div>
+          )}
         </Card>
       </div>
     </div>

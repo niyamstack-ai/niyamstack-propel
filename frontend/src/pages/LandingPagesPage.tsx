@@ -152,6 +152,7 @@ export function LandingPagesPage() {
           </FormGrid>
           <FormFieldsEditor value={fields} onChange={setFields} />
           <div className="mt-3">
+            {!name.trim() && <p className="mb-2 text-xs text-slate-500">Enter a page name to enable Save.</p>}
             <PrimaryButton disabled={!name} onClick={() => void save()}>
               {editing ? "Save changes" : "Save landing page"}
             </PrimaryButton>

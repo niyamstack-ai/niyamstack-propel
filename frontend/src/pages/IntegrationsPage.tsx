@@ -118,6 +118,27 @@ export function IntegrationsPage() {
             />
             <p className="text-xs text-slate-500">Webhook URL: /api/public/payments/razorpay</p>
           </div>
+          <div className="mt-3">
+            <PrimaryButton
+              onClick={() =>
+                void (async () => {
+                  setError(null);
+                  try {
+                    const saved = await api<typeof keyStatus>("/api/actions/live-keys", {
+                      method: "PUT",
+                      body: JSON.stringify(keys),
+                    });
+                    setKeyStatus(saved);
+                    gateway.reload();
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
+                })()
+              }
+            >
+              Save payment keys
+            </PrimaryButton>
+          </div>
         </Card>
         <Card title="WhatsApp">
           <p className="text-sm text-slate-500">
@@ -126,6 +147,27 @@ export function IntegrationsPage() {
           <div className="mt-3 space-y-3">
             <Field label="Token" value={keys.whatsappToken} onChange={(v) => setKeys((p) => ({ ...p, whatsappToken: v }))} type="password" />
             <Field label="Phone number ID" value={keys.whatsappPhoneId} onChange={(v) => setKeys((p) => ({ ...p, whatsappPhoneId: v }))} />
+          </div>
+          <div className="mt-3">
+            <PrimaryButton
+              onClick={() =>
+                void (async () => {
+                  setError(null);
+                  try {
+                    const saved = await api<typeof keyStatus>("/api/actions/live-keys", {
+                      method: "PUT",
+                      body: JSON.stringify(keys),
+                    });
+                    setKeyStatus(saved);
+                    gateway.reload();
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
+                })()
+              }
+            >
+              Save WhatsApp keys
+            </PrimaryButton>
           </div>
         </Card>
         <Card title="Email (SMTP)">
@@ -138,6 +180,27 @@ export function IntegrationsPage() {
             <Field label="Username" value={keys.smtpUser} onChange={(v) => setKeys((p) => ({ ...p, smtpUser: v }))} />
             <Field label="Password" value={keys.smtpPass} onChange={(v) => setKeys((p) => ({ ...p, smtpPass: v }))} type="password" />
             <Field label="From address" value={keys.smtpFrom} onChange={(v) => setKeys((p) => ({ ...p, smtpFrom: v }))} />
+          </div>
+          <div className="mt-3">
+            <PrimaryButton
+              onClick={() =>
+                void (async () => {
+                  setError(null);
+                  try {
+                    const saved = await api<typeof keyStatus>("/api/actions/live-keys", {
+                      method: "PUT",
+                      body: JSON.stringify(keys),
+                    });
+                    setKeyStatus(saved);
+                    gateway.reload();
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
+                })()
+              }
+            >
+              Save email (SMTP)
+            </PrimaryButton>
           </div>
         </Card>
         <Card title="GST on invoices">

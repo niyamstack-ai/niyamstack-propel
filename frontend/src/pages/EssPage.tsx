@@ -610,9 +610,12 @@ function EmployeesTab() {
     setError(null);
     setNotice(null);
     try {
+      const emp = (people.data ?? []).find((e) => e.id === id);
+      const roleFromType =
+        emp?.employmentType === "FACULTY" ? "FACULTY" : emp?.employmentType === "ADMIN" ? "COUNSELOR" : loginRole;
       const out = await api<{ loginEmail?: string; tempPassword?: string }>(`/api/actions/ess/employees/${id}/login`, {
         method: "POST",
-        body: JSON.stringify({ loginRole }),
+        body: JSON.stringify({ loginRole: roleFromType }),
       });
       people.reload();
       setNotice(out.tempPassword ? `Login ${out.loginEmail}. Temporary password: ${out.tempPassword}` : `Already has login ${out.loginEmail}`);

@@ -66,10 +66,15 @@ function StudentHome() {
       )}
       <Card title="Due fees">
         {(due.length === 0 && <p className="text-sm text-slate-500">No dues right now.</p>) || (
-          <ul className="text-sm">
+          <ul className="space-y-2 text-sm">
             {due.map((i) => (
-              <li key={i.id}>
-                {i.invoiceNo} — {formatInr(i.amount)}
+              <li key={i.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  {i.invoiceNo} — {formatInr(i.amount)}
+                </span>
+                <Link className="font-medium text-brand hover:underline" to="/fees">
+                  Pay
+                </Link>
               </li>
             ))}
           </ul>
@@ -259,7 +264,7 @@ function OwnerHome() {
     (data.coursesPublished ?? 0) === 0 && unpublished > 0
       ? `${unpublished} unpublished — publish to sell`
       : `${data.coursesPublished ?? 0} published${unpublished ? ` · ${unpublished} draft` : " — create and sell"}`;
-  const testCopy = `${data.testsCreated ?? 0} published tests${(data.testsTotal ?? 0) > (data.testsCreated ?? 0) ? ` · ${data.testsTotal} total` : ""}`;
+  const testCopy = `${data.testsCreated ?? 0} published test${(data.testsCreated ?? 0) === 1 ? "" : "s"}${(data.testsTotal ?? 0) > (data.testsCreated ?? 0) ? ` · ${data.testsTotal} total` : ""}`;
   const kpis = (
     [
       ["Inquiries", data.inquiries, "/crm"],

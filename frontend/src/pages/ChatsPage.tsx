@@ -128,8 +128,20 @@ export function ChatsPage() {
       </div>
       <Card title="All threads">
         <Table
-          columns={["Student", "Subject", "Status"]}
-          rows={(threads.data ?? []).map((t) => [t.studentName || "—", t.subject || "—", prettyLabel(t.status)])}
+          columns={["Student", "Subject", "Status", ""]}
+          rows={(threads.data ?? []).map((t) => [
+            t.studentName || "—",
+            t.subject || "—",
+            prettyLabel(t.status),
+            <button
+              key={t.id}
+              type="button"
+              className="text-sm font-medium text-brand hover:underline"
+              onClick={() => setActive(t.id)}
+            >
+              Open
+            </button>,
+          ])}
         />
       </Card>
     </div>

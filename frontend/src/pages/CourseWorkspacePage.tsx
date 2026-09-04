@@ -57,7 +57,11 @@ export function CourseWorkspacePage() {
     setBusy(true);
     try {
       await updateRecord(`/api/courses/${selected.id}`, { ...selected, published: true });
-      await ensureWebsitePublished().catch(() => undefined);
+      try {
+        await ensureWebsitePublished();
+      } catch (pubErr) {
+        setError(`Course published, but website publish failed: ${(pubErr as Error).message}`);
+      }
       courses.reload();
     } catch (e) {
       setError((e as Error).message);
