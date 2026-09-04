@@ -27,8 +27,10 @@ export function MobileApp() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [offline, setOffline] = useState(!navigator.onLine);
+  const [previewAs, setPreviewAs] = useState<"faculty" | "student">("faculty");
   const home = useApi<Home>("/api/actions/mobile/home");
-  const faculty = user?.role === "FACULTY" || user?.role === "OWNER";
+  const isOwner = user?.role === "OWNER";
+  const faculty = user?.role === "FACULTY" || (isOwner && previewAs === "faculty");
 
   useEffect(() => {
     const on = () => setOffline(false);
@@ -50,7 +52,7 @@ export function MobileApp() {
           home.reload();
         }
       })
-      .catch(() => undefined);
+      .catch((e) => setError((e as Error).message || "Offline sync failed"));
   }, [token, offline]);
 
   if (!token) return <Navigate to="/login" replace />;
@@ -75,6 +77,30 @@ export function MobileApp() {
         <p className="text-xs uppercase tracking-wide text-white/70">{faculty ? "Faculty app" : "Student app"}</p>
         <h1 className="text-lg font-semibold">{user?.orgName || home.data?.name || "Propel"}</h1>
         {offline && <p className="text-xs text-amber-200">Offline — actions queue and sync later.</p>}
+        {isOwner && (
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              className={`rounded-full px-2.5 py-1 text-xs ${previewAs === "faculty" ? "bg-white text-navy" : "bg-white/15"}`}
+              onClick={() => {
+                setPreviewAs("faculty");
+                setTab("home");
+              }}
+            >
+              Faculty preview
+            </button>
+            <button
+              type="button"
+              className={`rounded-full px-2.5 py-1 text-xs ${previewAs === "student" ? "bg-white text-navy" : "bg-white/15"}`}
+              onClick={() => {
+                setPreviewAs("student");
+                setTab("home");
+              }}
+            >
+              Student preview
+            </button>
+          </div>
+        )}
       </header>
       <main className="space-y-4 p-4">
         <ErrorText error={error || home.error} />

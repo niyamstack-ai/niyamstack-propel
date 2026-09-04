@@ -33,13 +33,13 @@ export function PlatformDashboardPage() {
       {canViewInstitutes && (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Stat to="/platform/institutes?filter=new" label="New (7 days)" value={d?.newSignups} />
-          <Stat to="/platform/institutes?filter=unpaid" label="Demo / unpaid" value={d?.unpaid} />
+          <Stat to="/platform/institutes?filter=unpaid" label="Unpaid" value={d?.unpaid} />
           <Stat to="/platform/institutes?filter=pending" label="Paid, awaiting approval" value={d?.paidPending} />
           <Stat to="/platform/institutes?filter=active" label="Active institutes" value={d?.active} />
           <Stat to="/platform/institutes?filter=failed" label="Failed payments" value={d?.failedPay} />
           <Stat to="/platform/institutes?filter=suspended" label="Suspended" value={d?.suspended} />
           <Stat to="/platform/institutes" label="All institutes" value={d?.institutes} />
-          <Stat to="/platform/institutes?filter=active" label="Approx. monthly revenue" value={d?.mrr != null ? `₹${d.mrr}` : "—"} />
+          <Stat to="/platform/institutes" label="Approx. monthly revenue" value={d?.mrr != null ? `₹${d.mrr}` : "—"} />
         </div>
       )}
       <Card title="Next">

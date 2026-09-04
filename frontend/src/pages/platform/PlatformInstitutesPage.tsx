@@ -46,7 +46,7 @@ export function PlatformInstitutesPage() {
   const title =
     {
       new: "New in the last 7 days",
-      unpaid: "Demo / unpaid",
+      unpaid: "Unpaid (demo or awaiting payment)",
       pending: "Paid, awaiting approval",
       active: "Active institutes",
       failed: "Failed payments",

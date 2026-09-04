@@ -482,7 +482,7 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
   const [recUrl, setRecUrl] = useState("");
   const [pkgContent, setPkgContent] = useState("");
   const [pkgStd, setPkgStd] = useState("SCORM_1.2");
-  const [pkgUrl, setPkgUrl] = useState("https://example.com/lti");
+  const [pkgUrl, setPkgUrl] = useState("");
 
   const faculty = user?.role === "OWNER" || user?.role === "FACULTY";
   const student = user?.role === "STUDENT";
@@ -760,16 +760,23 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
                 { value: "LTI_1.3", label: "LTI 1.3" },
               ]}
             />
-            <Field label="Launch URL" value={pkgUrl} onChange={setPkgUrl} />
+            <Field
+              label="Launch URL"
+              value={pkgUrl}
+              onChange={setPkgUrl}
+              placeholder={pkgStd.includes("LTI") ? "https://your-tool.example/lti/launch" : "Optional package URL"}
+            />
             <div className="flex items-end">
               <PrimaryButton
-                disabled={!pkgContent}
+                disabled={!pkgContent || (pkgStd.includes("LTI") && !pkgUrl.trim())}
                 onClick={() =>
                   run(async () => {
+                    if (pkgStd.includes("LTI") && !pkgUrl.trim()) throw new Error("Paste a real LTI launch URL");
                     await api("/api/actions/lms-packages", {
                       method: "POST",
-                      body: JSON.stringify({ contentItemId: pkgContent, standard: pkgStd, launchUrl: pkgUrl, version: "1.0" }),
+                      body: JSON.stringify({ contentItemId: pkgContent, standard: pkgStd, launchUrl: pkgUrl || null, version: "1.0" }),
                     });
+                    setPkgUrl("");
                     packages.reload();
                   })
                 }

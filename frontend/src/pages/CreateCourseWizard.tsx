@@ -76,21 +76,13 @@ export function CreateCourseWizard() {
   const [validityAltUnit, setValidityAltUnit] = useState("MONTH");
   const [discount, setDiscount] = useState("0");
 
-  const [payInternet, setPayInternet] = useState(false);
   const [includeTax, setIncludeTax] = useState(true);
   const [taxPercent, setTaxPercent] = useState("18");
-  const [courseSharing, setCourseSharing] = useState(false);
-  const [offlineMaterial, setOfflineMaterial] = useState(false);
   const [allowOffline, setAllowOffline] = useState(false);
-  const [pdfApp, setPdfApp] = useState(false);
-  const [pdfWeb, setPdfWeb] = useState(false);
   const [allowLive, setAllowLive] = useState(false);
   const [installmentsOn, setInstallmentsOn] = useState(false);
   const [installmentCount, setInstallmentCount] = useState("3");
   const [featured, setFeatured] = useState(false);
-  const [markNew, setMarkNew] = useState(false);
-  const [webVideos, setWebVideos] = useState(false);
-  const [restrictVideos, setRestrictVideos] = useState(false);
   const [allowTrial, setAllowTrial] = useState(false);
   const [allowPreview, setAllowPreview] = useState(true);
   const [bundleIds, setBundleIds] = useState<string[]>([]);
@@ -134,7 +126,7 @@ export function CreateCourseWizard() {
   const listPrice = Math.max(0, Number(fees || 0));
   const discountAmt = Math.max(0, Number(discount || 0));
   const afterDiscount = Math.max(0, listPrice - discountAmt);
-  const gst = includeTax ? 0 : afterDiscount * (Number(taxPercent || 0) / 100);
+  const gst = includeTax ? afterDiscount * (Number(taxPercent || 0) / 100) : 0;
   const effective = paid ? Math.round((afterDiscount + gst) * 100) / 100 : 0;
 
   const durationMonths = useMemo(() => {
@@ -607,37 +599,21 @@ export function CreateCourseWizard() {
       {advancedOpen && (
         <AdvancedSettings
           values={{
-            payInternet,
             includeTax,
             taxPercent,
-            courseSharing,
-            offlineMaterial,
             allowOffline,
-            pdfApp,
-            pdfWeb,
             allowLive,
             featured,
-            markNew,
-            webVideos,
-            restrictVideos,
             allowTrial,
             allowPreview,
           }}
           onChange={(key, value) => {
             const map: Record<string, (v: boolean | string) => void> = {
-              payInternet: (v) => setPayInternet(Boolean(v)),
               includeTax: (v) => setIncludeTax(Boolean(v)),
               taxPercent: (v) => setTaxPercent(String(v)),
-              courseSharing: (v) => setCourseSharing(Boolean(v)),
-              offlineMaterial: (v) => setOfflineMaterial(Boolean(v)),
               allowOffline: (v) => setAllowOffline(Boolean(v)),
-              pdfApp: (v) => setPdfApp(Boolean(v)),
-              pdfWeb: (v) => setPdfWeb(Boolean(v)),
               allowLive: (v) => setAllowLive(Boolean(v)),
               featured: (v) => setFeatured(Boolean(v)),
-              markNew: (v) => setMarkNew(Boolean(v)),
-              webVideos: (v) => setWebVideos(Boolean(v)),
-              restrictVideos: (v) => setRestrictVideos(Boolean(v)),
               allowTrial: (v) => setAllowTrial(Boolean(v)),
               allowPreview: (v) => setAllowPreview(Boolean(v)),
             };
@@ -779,7 +755,7 @@ function AdvancedSettings({
           </button>
         </div>
         <div className="flex-1 space-y-3 overflow-y-auto p-5">
-          <SettingCard title="Tax Details" hint="Switch ON to include GST in the fee plan when you create installments" on={b("includeTax")} onChange={(v) => onChange("includeTax", v)}>
+          <SettingCard title="Tax Details" hint="Switch ON to add GST on top of the course price and fee plan" on={b("includeTax")} onChange={(v) => onChange("includeTax", v)}>
             {b("includeTax") && (
               <select
                 className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"

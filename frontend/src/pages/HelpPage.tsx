@@ -43,7 +43,16 @@ export function HelpPage() {
         {tour.loading ? (
           <p className="text-sm text-slate-500">Loading tour…</p>
         ) : steps.length === 0 || tour.error ? (
-          <p className="text-sm text-slate-500">{tour.error || "No tour for this page."}</p>
+          <div className="space-y-2 text-sm text-slate-500">
+            <p>{tour.error || (locale === "hi" ? "इस पृष्ठ के लिए टूर अभी उपलब्ध नहीं है।" : "No guided tour for this page yet.")}</p>
+            <p>
+              {locale === "hi" ? "नीचे लेख देखें, या " : "See articles below, or open "}
+              <a className="font-medium text-brand hover:underline" href="/support">
+                {locale === "hi" ? "सहायता टिकट" : "Support"}
+              </a>
+              .
+            </p>
+          </div>
         ) : (
           <div>
             <p className="text-lg font-semibold text-navy">{steps[Math.min(step, steps.length - 1)].title}</p>

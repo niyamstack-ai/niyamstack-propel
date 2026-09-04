@@ -195,15 +195,15 @@ export function Shell() {
         <SidebarBrand />
         <SidebarNav onNavigate={() => setMenuOpen(false)} />
         <div className="space-y-2 px-3 pb-4">
-          <a
-            href="mailto:support@niyamstack.com"
+          <NavLink
+            to="/support"
             className="flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-300 hover:bg-white/5 hover:text-white"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
               <path d="M4 4h16v12H5.2L4 17.2V4Zm2 4.4 6 3.6 6-3.6V6H6v2.4Z" />
             </svg>
-            {t("email_support", "Email support")}
-          </a>
+            {t("email_support", "Support ticket")}
+          </NavLink>
           <NavLink to="/help" className="block rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-white/5 hover:text-white">
             {t("help_center", "Help center")}
           </NavLink>

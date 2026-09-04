@@ -72,7 +72,13 @@ export function PlatformLoginPage() {
               {busy ? "Signing in…" : "Login"}
             </button>
           </form>
-          <p className="mt-8 text-center text-xs text-slate-400">Change this password under Settings after you sign in.</p>
+          <p className="mt-4 text-center text-sm text-slate-500">
+            Forgot password?{" "}
+            <a className="font-medium text-brand" href="mailto:support@niyamstack.com?subject=Platform%20password%20reset">
+              Email support@niyamstack.com
+            </a>
+          </p>
+          <p className="mt-4 text-center text-xs text-slate-400">Change this password under Settings after you sign in.</p>
           {import.meta.env.DEV && (
             <p className="mt-6 text-center text-[11px] text-slate-400">Developer: id admin, password admin</p>
           )}

@@ -74,7 +74,7 @@ export function Table({
   }
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-left text-sm">
+      <table className="w-full min-w-[480px] text-left text-sm">
         <thead>
           <tr className="border-b border-line text-slate-500">
             {columns.map((c) => (
