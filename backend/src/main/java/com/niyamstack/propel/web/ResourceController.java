@@ -713,6 +713,15 @@ public class ResourceController {
         }
         body.setId(null);
         body.setOrganizationId(Auth.current().organizationId());
+        if (body instanceof AttendanceRecord att) {
+            if (att.getStudentId() == null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Student is required for attendance");
+            }
+            Student student = store.getOwned(Student.class, att.getStudentId(), Auth.current().organizationId());
+            if (att.getBatchId() != null && (student.getBatchId() == null || !att.getBatchId().equals(student.getBatchId()))) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "That student is not in the selected batch");
+            }
+        }
         if (student) {
             var me = scope.studentFor(Auth.current());
             if (me != null && body instanceof DoubtTicket ticket) {

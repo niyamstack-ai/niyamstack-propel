@@ -180,7 +180,7 @@ export function ContentHubPage() {
             )}
           </FormGrid>
           <div className="mt-3">
-            <PrimaryButton disabled={!title || (mType === "TEST" && !url)} onClick={addMaterial}>
+            <PrimaryButton disabled={!title.trim() || !url.trim()} onClick={addMaterial}>
               Add free material
             </PrimaryButton>
           </div>

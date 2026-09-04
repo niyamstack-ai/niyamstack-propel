@@ -9,6 +9,7 @@ import com.niyamstack.propel.grow.GrowService;
 import com.niyamstack.propel.ess.EssService;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
+import com.niyamstack.propel.security.DataScope;
 import com.niyamstack.propel.security.PasswordPolicy;
 import com.niyamstack.propel.security.Phones;
 import com.niyamstack.propel.security.PropelUser;
@@ -41,13 +42,16 @@ public class SisService {
     private final EssService ess;
     private final GrowService grow;
     private final EnterpriseService enterprise;
+    private final DataScope scope;
     private final TransactionTemplate isolated;
 
     public SisService(Store store, PasswordEncoder encoder, StudentAccountService students, EssService ess,
-                      PlatformTransactionManager txManager, GrowService grow, EnterpriseService enterprise) {
+                      PlatformTransactionManager txManager, GrowService grow, EnterpriseService enterprise,
+                      DataScope scope) {
         this.store = store;
         this.encoder = encoder;
         this.students = students;
+        this.scope = scope;
         this.ess = ess;
         this.grow = grow;
         this.enterprise = enterprise;
@@ -321,7 +325,9 @@ public class SisService {
         } else if (!Roles.PARENT.equals(user.getRole()) && user.getOrganizationId() != null
                 && !orgId().equals(user.getOrganizationId())) {
             throw new ApiException(HttpStatus.CONFLICT, "That mobile already has an account in another institute");
-        } else if (!Roles.PARENT.equals(user.getRole()) && !Roles.STUDENT.equals(user.getRole())) {
+        } else if (Roles.STUDENT.equals(user.getRole())) {
+            throw new ApiException(HttpStatus.CONFLICT, "That mobile belongs to a student login — use a parent mobile");
+        } else if (!Roles.PARENT.equals(user.getRole())) {
             throw new ApiException(HttpStatus.CONFLICT, "That mobile already has a staff login");
         }
         g.setUserId(user.getId());
@@ -358,6 +364,7 @@ public class SisService {
             }
             case "EMPLOYEE" -> {
                 Employee e = store.getOwned(Employee.class, id, orgId());
+                Access.requireWrite(Auth.current(), "ESS");
                 e.setCustomJson(json);
                 store.save(e);
             }
@@ -634,8 +641,16 @@ public class SisService {
 
     public List<Map<String, Object>> progressBoard() {
         Access.requireTenant(Auth.current());
+        PropelUser user = Auth.current();
+        List<Student> students = store.list(Student.class, orgId());
+        if (Roles.PARENT.equals(user.role())) {
+            Set<UUID> kids = scope.parentStudentIds(user);
+            students = students.stream().filter(s -> kids.contains(s.getId())).toList();
+        } else if (Roles.STUDENT.equals(user.role())) {
+            students = students.stream().filter(s -> user.userId().equals(s.getUserId())).toList();
+        }
         List<Map<String, Object>> out = new ArrayList<>();
-        for (Student s : store.list(Student.class, orgId())) {
+        for (Student s : students) {
             out.add(progressFor(s));
         }
         return out;
@@ -644,8 +659,12 @@ public class SisService {
     public Map<String, Object> progressForStudent(UUID studentId) {
         Access.requireTenant(Auth.current());
         Student s = store.getOwned(Student.class, studentId, orgId());
-        if (Roles.STUDENT.equals(Auth.current().role()) && !Auth.current().userId().equals(s.getUserId())) {
+        PropelUser user = Auth.current();
+        if (Roles.STUDENT.equals(user.role()) && !user.userId().equals(s.getUserId())) {
             throw new ApiException(HttpStatus.FORBIDDEN, "That progress is not yours");
+        }
+        if (Roles.PARENT.equals(user.role()) && !scope.parentStudentIds(user).contains(studentId)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "That student is not linked to this parent");
         }
         return progressFor(s);
     }

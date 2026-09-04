@@ -50,7 +50,7 @@ export function CreateCourseWizard() {
   const { courseId } = useParams();
   const courses = useApi<Draft[]>("/api/courses");
   const terms = useApi<{ id: string; name: string }[]>("/api/terms");
-  const feePlans = useApi<{ id: string; courseId?: string; gstRate?: number }[]>("/api/fee-plans");
+  const feePlans = useApi<{ id: string; courseId?: string; gstRate?: number; installmentCount?: number }[]>("/api/fee-plans");
   const editing = Boolean(courseId);
   const [loaded, setLoaded] = useState(false);
 
@@ -71,6 +71,7 @@ export function CreateCourseWizard() {
   const [validityType, setValidityType] = useState("SINGLE");
   const [validityValue, setValidityValue] = useState("1");
   const [validityUnit, setValidityUnit] = useState("YEAR");
+  const [expiryDate, setExpiryDate] = useState("");
   const [fees, setFees] = useState("");
   const [feesAlt, setFeesAlt] = useState("");
   const [validityAltValue, setValidityAltValue] = useState("12");
@@ -107,8 +108,16 @@ export function CreateCourseWizard() {
     setCategoryRows([{ category: existing.category || "", subCategory: existing.subCategory || "" }]);
     setCourseType(existing.courseType === "FREE" ? "FREE" : "PAID");
     setValidityType(existing.validityType || "SINGLE");
-    setValidityValue(String(existing.validityValue || 1));
-    setValidityUnit(existing.validityUnit || "MONTH");
+    if (existing.validityType === "EXPIRY_DATE" && existing.validityValue && existing.validityValue > 20000101) {
+      const raw = String(existing.validityValue);
+      setExpiryDate(`${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`);
+      setValidityValue("1");
+      setValidityUnit("DATE");
+    } else {
+      setValidityValue(String(existing.validityValue || 1));
+      setValidityUnit(existing.validityUnit || "MONTH");
+      setExpiryDate("");
+    }
     setFees(String(existing.fees ?? 0));
     setFeesAlt(existing.feesAlt != null ? String(existing.feesAlt) : "");
     setValidityAltValue(String(existing.validityAltValue || 12));
@@ -121,12 +130,22 @@ export function CreateCourseWizard() {
     setFeatured(Boolean(existing.featured));
     setBundleIds((existing.bundleCsv || "").split(",").filter(Boolean));
     const plan = (feePlans.data ?? []).find((p) => p.courseId === existing.id);
-    if (plan && plan.gstRate != null && Number(plan.gstRate) > 0) {
-      setIncludeTax(true);
-      setTaxPercent(String(plan.gstRate));
-    } else if (plan) {
-      setIncludeTax(false);
-      setTaxPercent("18");
+    if (plan) {
+      madePlan.current = true;
+      if (plan.gstRate != null && Number(plan.gstRate) > 0) {
+        setIncludeTax(true);
+        setTaxPercent(String(plan.gstRate));
+      } else {
+        setIncludeTax(false);
+        setTaxPercent("18");
+      }
+      const count = Number(plan.installmentCount || 0);
+      if (count > 1) {
+        setInstallmentsOn(true);
+        setInstallmentCount(String(count));
+      } else {
+        setInstallmentsOn(false);
+      }
     }
     setLoaded(true);
   }, [courseId, courses.data, feePlans.data, feePlans.loading, loaded]);
@@ -140,12 +159,18 @@ export function CreateCourseWizard() {
   const effectiveWithTax = paid ? Math.round((afterDiscount + gst) * 100) / 100 : 0;
 
   const durationMonths = useMemo(() => {
-    const n = Number(validityValue) || 1;
     if (validityType === "LIFETIME") return 1200;
+    if (validityType === "EXPIRY_DATE" && expiryDate) {
+      const end = new Date(`${expiryDate}T00:00:00`);
+      const now = new Date();
+      const months = (end.getFullYear() - now.getFullYear()) * 12 + (end.getMonth() - now.getMonth());
+      return Math.max(1, months || 1);
+    }
+    const n = Number(validityValue) || 1;
     if (validityUnit === "YEAR") return n * 12;
     if (validityUnit === "DAY") return Math.max(1, Math.round(n / 30));
     return n;
-  }, [validityType, validityValue, validityUnit]);
+  }, [validityType, validityValue, validityUnit, expiryDate]);
 
   function payload(published: boolean) {
     const primary = categoryRows[0];
@@ -163,8 +188,11 @@ export function CreateCourseWizard() {
       validityAltUnit: validityType === "MULTIPLE" ? validityAltUnit : null,
       discount: paid ? Number(discount) : 0,
       validityType,
-      validityValue: Number(validityValue) || 1,
-      validityUnit,
+      validityValue:
+        validityType === "EXPIRY_DATE"
+          ? Number((expiryDate || "").replace(/-/g, "")) || 0
+          : Number(validityValue) || 1,
+      validityUnit: validityType === "EXPIRY_DATE" ? "DATE" : validityUnit,
       durationMonths,
       published,
         featured,
@@ -223,6 +251,9 @@ export function CreateCourseWizard() {
       if (step === 1) {
         if (paid && !(Number(fees) > 0)) {
           throw new Error("Enter a price greater than 0, or mark the course as free.");
+        }
+        if (validityType === "EXPIRY_DATE" && !expiryDate) {
+          throw new Error("Pick the course expiry date.");
         }
         await persist(live);
       }
@@ -441,7 +472,19 @@ export function CreateCourseWizard() {
                   {validityType === "LIFETIME" && "Students keep access to this course with no expiry."}
                   {validityType === "EXPIRY_DATE" && "Every student loses access on the same calendar date, regardless of when they purchased."}
                 </p>
-                {validityType !== "LIFETIME" && (
+                {validityType === "EXPIRY_DATE" ? (
+                  <div className="mt-3 max-w-md">
+                    <label className="block text-sm text-slate-600">
+                      Access ends on
+                      <input
+                        type="date"
+                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-brand"
+                        value={expiryDate}
+                        onChange={(e) => setExpiryDate(e.target.value)}
+                      />
+                    </label>
+                  </div>
+                ) : validityType !== "LIFETIME" ? (
                   <div className="mt-3 grid max-w-md grid-cols-[1fr_1fr] gap-3">
                     <input
                       className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-brand"
@@ -458,7 +501,7 @@ export function CreateCourseWizard() {
                       <option value="YEAR">Year(s)</option>
                     </select>
                   </div>
-                )}
+                ) : null}
                 {validityType === "MULTIPLE" && paid && (
                   <div className="mt-4 rounded-xl bg-[#eef5fb] p-4">
                     <p className="text-sm font-semibold text-navy">Second checkout option</p>

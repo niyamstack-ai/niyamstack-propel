@@ -311,43 +311,57 @@ function OwnerHome() {
             <MiniStat label="Revenue" value={formatInr(data.revenue ?? data.collected)} />
           </div>
           <p className="mt-2 text-xs text-slate-400">Visits count when someone opens your public site. Payments come from fees and course checkout.</p>
-          <Link to="/analytics" className="mt-3 inline-block text-sm text-brand hover:underline">
-            View Details
-          </Link>
+          {growth && pathAllowed("/analytics", user?.modules) && (
+            <Link to="/analytics" className="mt-3 inline-block text-sm text-brand hover:underline">
+              View Details
+            </Link>
+          )}
         </Card>
         <div className="space-y-3">
           <UpcomingClasses />
           <Card title="Offers">
             <ul className="space-y-2 text-sm">
-              <li className="flex justify-between">
-                <Link to="/your-app" className="hover:underline">
-                  Banners
-                </Link>
-                <span>{data.bannersLive ?? 0} Live</span>
-              </li>
-              <li className="flex justify-between">
-                <Link to="/coupons" className="hover:underline">
-                  Coupons
-                </Link>
-                <span>{data.couponsLive ?? 0} Live</span>
-              </li>
+              {pathAllowed("/your-app", user?.modules) && (
+                <li className="flex justify-between">
+                  <Link to="/your-app" className="hover:underline">
+                    Banners
+                  </Link>
+                  <span>{data.bannersLive ?? 0} Live</span>
+                </li>
+              )}
+              {pathAllowed("/coupons", user?.modules) && (
+                <li className="flex justify-between">
+                  <Link to="/coupons" className="hover:underline">
+                    Coupons
+                  </Link>
+                  <span>{data.couponsLive ?? 0} Live</span>
+                </li>
+              )}
             </ul>
           </Card>
         </div>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Link to="/people/students" className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">
-          Enroll student
-        </Link>
-        <Link to="/crm" className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">
-          New lead
-        </Link>
-        <Link to="/fees" className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">
-          Collect fees
-        </Link>
-        <Link to="/courses" className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">
-          Open courses
-        </Link>
+        {pathAllowed("/people/students", user?.modules) && (
+          <Link to="/people/students" className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">
+            Enroll student
+          </Link>
+        )}
+        {pathAllowed("/crm", user?.modules) && (
+          <Link to="/crm" className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">
+            New lead
+          </Link>
+        )}
+        {pathAllowed("/fees", user?.modules) && (
+          <Link to="/fees" className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">
+            Collect fees
+          </Link>
+        )}
+        {pathAllowed("/courses", user?.modules) && (
+          <Link to="/courses" className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">
+            Open courses
+          </Link>
+        )}
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {kpis.map(([label, value, to]) => (

@@ -1484,7 +1484,7 @@ export function StudentCourseLibrary({ courseId, allowDownload = true, examsOnly
                     setQuiz(row);
                   } else if (last) {
                     setReviewId(last.id);
-                    enterExamLock(row.proctoring === true);
+                    enterExamLock(false);
                     setQuiz(row);
                   }
                 }}
@@ -1511,7 +1511,7 @@ export function StudentCourseLibrary({ courseId, allowDownload = true, examsOnly
                     className="text-sm font-medium text-slate-600 hover:text-navy"
                     onClick={() => {
                       setReviewId(last.id);
-                      enterExamLock(row.proctoring === true);
+                      enterExamLock(false);
                       setQuiz(row);
                     }}
                   >

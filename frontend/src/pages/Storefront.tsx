@@ -98,6 +98,7 @@ type PublicCourse = {
   allowOffline?: boolean;
   allowPreview?: boolean;
   allowLive?: boolean;
+  allowTrial?: boolean;
   instituteName?: string;
   fees: number;
   discount?: number;
@@ -768,6 +769,18 @@ function CoursePage() {
                     <span className="block text-slate-500">Save files from My learning after you enroll.</span>
                   </p>
                 )}
+                {course.allowLive && (
+                  <p className="text-sm text-slate-700">
+                    <span className="font-medium">Live classes</span>
+                    <span className="block text-slate-500">Join scheduled sessions from your learning area.</span>
+                  </p>
+                )}
+                {course.allowTrial && (
+                  <p className="text-sm text-slate-700">
+                    <span className="font-medium">Trial access</span>
+                    <span className="block text-slate-500">Explore before you commit — enrol to start.</span>
+                  </p>
+                )}
                 <p className="text-sm text-slate-700">
                   <span className="font-medium">Available on web</span>
                   <span className="block text-slate-500">Bigger screen, better clarity.</span>
@@ -873,6 +886,10 @@ function CoursePage() {
             </div>
           )}
           <p className="text-xl font-bold text-navy">{pay === 0 ? "Free" : formatInr(pay)}</p>
+          {course.allowLive && <p className="text-xs font-medium text-brand">Includes live classes</p>}
+          {course.allowTrial && pay > 0 && (
+            <p className="text-xs text-slate-500">Trial available after enrol — open lessons from My learning.</p>
+          )}
           {token && user && user.role !== "STUDENT" && (
             <p className="text-xs text-amber-800">
               You&apos;re signed in as institute staff. Open this page in a private window, or log out, to buy as a student.
@@ -880,7 +897,7 @@ function CoursePage() {
           )}
           {loggedStudent ? (
             <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy} onClick={() => buy()}>
-              {busy ? "Unlocking…" : pay === 0 ? "Enroll free" : "Get this course"}
+              {busy ? "Unlocking…" : pay === 0 ? (course.allowTrial ? "Start trial" : "Enroll free") : "Get this course"}
             </button>
           ) : (
             <form className="space-y-2" onSubmit={buy}>
@@ -888,7 +905,7 @@ function CoursePage() {
               <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" required placeholder="Mobile" inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value)} />
               <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
               <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy}>
-                {busy ? "Processing…" : pay === 0 ? "Enroll free" : "Get this course"}
+                {busy ? "Processing…" : pay === 0 ? (course.allowTrial ? "Start trial" : "Enroll free") : "Get this course"}
               </button>
             </form>
           )}

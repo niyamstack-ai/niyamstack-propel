@@ -4,6 +4,7 @@ import { api } from "../api";
 import { createRecord } from "../ops";
 import { useAuth } from "../auth";
 import { prettyLabel } from "../labels";
+import { hasGrowthTier } from "../packs";
 import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, TextArea, formatDay, formatInr, formatWhen, useApi } from "../ui";
 
 type Employee = {
@@ -138,16 +139,21 @@ type ManagerInbox = {
 };
 
 const HR_TABS = ["profile", "team", "employees", "attendance", "leave", "payroll", "compensation", "hiring", "devices"] as const;
+const PAYROLL_TABS = ["profile", "attendance", "leave", "payroll", "compensation"] as const;
 const MANAGER_TABS = ["profile", "team", "attendance", "leave", "payroll"] as const;
 const STAFF_TABS = ["profile", "attendance", "leave", "payroll"] as const;
 type Tab = (typeof HR_TABS)[number];
 
 export function EssPage() {
   const { user } = useAuth();
-  const hr = user?.role === "OWNER" || user?.role === "ACCOUNTANT" || (user?.capabilities ?? []).includes("ESS_MANAGE");
+  const hr = user?.role === "OWNER" || (user?.capabilities ?? []).includes("ESS_MANAGE");
+  const payroll = hr || user?.role === "ACCOUNTANT";
+  const growth = hasGrowthTier(user?.packageTier, user?.modules);
   const manager = (user?.capabilities ?? []).includes("LEAVE_APPROVE");
-  const [tab, setTab] = useState<Tab>(hr ? "employees" : manager ? "team" : "profile");
-  const tabs = hr ? HR_TABS : manager ? MANAGER_TABS : STAFF_TABS;
+  const [tab, setTab] = useState<Tab>(hr ? "employees" : payroll ? "payroll" : manager ? "team" : "profile");
+  const tabs = (hr ? HR_TABS : payroll ? PAYROLL_TABS : manager ? MANAGER_TABS : STAFF_TABS).filter(
+    (item) => item !== "compensation" || growth,
+  );
 
   return (
     <div className="space-y-6">
@@ -156,9 +162,11 @@ export function EssPage() {
         <p className="text-sm text-slate-500">
           {hr
             ? "Employee master, staff attendance, leave, payroll, and institute hiring. Staff logins stay under People → Staff."
-            : manager
-              ? "Your profile, team leave approvals, attendance, and payslips."
-              : "Your profile, attendance, leave, and payslips."}
+            : payroll
+              ? "Payroll settings, payslips, attendance, and leave. Hiring and employee master stay with the owner."
+              : manager
+                ? "Your profile, team leave approvals, attendance, and payslips."
+                : "Your profile, attendance, leave, and payslips."}
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -176,10 +184,10 @@ export function EssPage() {
       {tab === "profile" && <ProfileTab hr={hr} />}
       {tab === "team" && (hr || manager) && <TeamTab hr={hr} />}
       {tab === "employees" && hr && <EmployeesTab />}
-      {tab === "attendance" && <AttendanceTab hr={hr} />}
+      {tab === "attendance" && <AttendanceTab hr={hr || payroll} />}
       {tab === "leave" && <LeaveTab hr={hr} manager={manager} />}
-      {tab === "payroll" && <PayrollTab hr={hr} />}
-      {tab === "compensation" && hr && <CompensationTab />}
+      {tab === "payroll" && <PayrollTab hr={hr || payroll} />}
+      {tab === "compensation" && (hr || payroll) && growth && <CompensationTab />}
       {tab === "hiring" && hr && <HiringTab />}
       {tab === "devices" && hr && <DevicesTab />}
     </div>
@@ -635,7 +643,7 @@ function EmployeesTab() {
 
   return (
     <>
-      <ErrorText error={error || people.error} />
+      <ErrorText error={error || people.error || centers.error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       <Card title="Employee master">
         <p className="mb-3 text-sm text-slate-500">
@@ -680,13 +688,21 @@ function EmployeesTab() {
             label="Center"
             value={centerId}
             onChange={setCenterId}
-            options={(centers.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
+            allowEmpty={false}
+            options={[
+              { value: "", label: (centers.data ?? []).length ? "No center" : "No centers yet — add under Institute" },
+              ...(centers.data ?? []).map((c) => ({ value: c.id, label: c.name })),
+            ]}
           />
           <Select
             label="Manager"
             value={managerId}
             onChange={setManagerId}
-            options={(people.data ?? []).map((e) => ({ value: e.id, label: e.fullName }))}
+            allowEmpty={false}
+            options={[
+              { value: "", label: (people.data ?? []).length ? "No manager" : "No managers yet" },
+              ...(people.data ?? []).map((e) => ({ value: e.id, label: e.fullName })),
+            ]}
           />
           <Select
             label="Employment type"

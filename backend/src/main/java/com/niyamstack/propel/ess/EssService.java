@@ -257,7 +257,7 @@ public class EssService {
         out.put("pendingResignation", pendingResign.size());
         out.put("leave", pendingLeave);
         out.put("regularization", pendingReg);
-        out.put("resignation", hrAdmin() ? pendingResign : List.of());
+        out.put("resignation", pendingResign);
         out.put("teamSize", team.size());
         return out;
     }
@@ -828,7 +828,7 @@ public class EssService {
     @Transactional
     public Map<String, Object> saveStructure(Map<String, Object> body) {
         requireEss();
-        requireHrAdmin();
+        requirePayrollAdmin();
         Employee e = store.getOwned(Employee.class, uuid(body, "employeeId"), orgId());
         SalaryStructure s = store.listBy(SalaryStructure.class, orgId(), "employeeId", e.getId()).stream()
                 .findFirst()
@@ -848,7 +848,7 @@ public class EssService {
         requireEss();
         List<Employee> visible = visibleEmployees();
         Set<UUID> ids = visible.stream().map(Employee::getId).collect(java.util.stream.Collectors.toSet());
-        boolean admin = hrAdmin();
+        boolean admin = payrollAdmin();
         return store.list(Payslip.class, orgId()).stream()
                 .filter(p -> ids.contains(p.getEmployeeId()))
                 .filter(p -> admin || "PUBLISHED".equalsIgnoreCase(blank(p.getStatus(), "")))
@@ -861,7 +861,7 @@ public class EssService {
         Payslip p = store.getOwned(Payslip.class, id, orgId());
         Employee e = store.getOwned(Employee.class, p.getEmployeeId(), orgId());
         requireOwnOrAdmin(e);
-        if (!hrAdmin() && !"PUBLISHED".equalsIgnoreCase(blank(p.getStatus(), ""))) {
+        if (!payrollAdmin() && !"PUBLISHED".equalsIgnoreCase(blank(p.getStatus(), ""))) {
             throw new ApiException(HttpStatus.FORBIDDEN, "This payslip is not published yet");
         }
         return payslipView(p, List.of(e), true);
@@ -870,7 +870,7 @@ public class EssService {
     @Transactional
     public Map<String, Object> publishPayslip(UUID id) {
         requireEss();
-        requireHrAdmin();
+        requirePayrollAdmin();
         Payslip p = store.getOwned(Payslip.class, id, orgId());
         p.setStatus("PUBLISHED");
         p.setPaidAt(Instant.now());
@@ -883,14 +883,14 @@ public class EssService {
 
     public Map<String, Object> payrollSettingsView() {
         requireEss();
-        requireHrAdmin();
+        requirePayrollAdmin();
         return settingsView(payrollSettings());
     }
 
     @Transactional
     public Map<String, Object> savePayrollSettings(Map<String, Object> body) {
         requireEss();
-        requireHrAdmin();
+        requirePayrollAdmin();
         PayrollSettings s = payrollSettings();
         if (body.containsKey("pfEnabled")) {
             s.setPfEnabled(bool(body, "pfEnabled"));
@@ -934,7 +934,7 @@ public class EssService {
 
     public List<Map<String, Object>> previewPayroll(Map<String, Object> body) {
         requireEss();
-        requireHrAdmin();
+        requirePayrollAdmin();
         int year = integer(body, "year", LocalDate.now().getYear());
         int month = integer(body, "month", LocalDate.now().getMonthValue());
         PayrollSettings settings = payrollSettings();
@@ -957,7 +957,7 @@ public class EssService {
 
     public Map<String, Object> statutorySummary(int year, int month) {
         requireEss();
-        requireHrAdmin();
+        requirePayrollAdmin();
         List<Payslip> slips = payslipsForPeriod(year, month);
         BigDecimal pfEmp = BigDecimal.ZERO;
         BigDecimal pfEr = BigDecimal.ZERO;
@@ -999,7 +999,7 @@ public class EssService {
 
     public List<Map<String, Object>> payrollRegister(int year, int month) {
         requireEss();
-        requireHrAdmin();
+        requirePayrollAdmin();
         List<Employee> all = store.list(Employee.class, orgId());
         return payslipsForPeriod(year, month).stream()
                 .map(p -> {
@@ -1016,7 +1016,7 @@ public class EssService {
     @Transactional
     public Map<String, Object> bulkPublishPayroll(Map<String, Object> body) {
         requireEss();
-        requireHrAdmin();
+        requirePayrollAdmin();
         int year = integer(body, "year", LocalDate.now().getYear());
         int month = integer(body, "month", LocalDate.now().getMonthValue());
         int published = 0;
@@ -1042,7 +1042,7 @@ public class EssService {
     @Transactional
     public List<Map<String, Object>> runPayroll(Map<String, Object> body) {
         requireEss();
-        requireHrAdmin();
+        requirePayrollAdmin();
         int year = integer(body, "year", LocalDate.now().getYear());
         int month = integer(body, "month", LocalDate.now().getMonthValue());
         PayrollSettings settings = payrollSettings();
@@ -1207,7 +1207,17 @@ public class EssService {
         String type = upper(punchType, "IN");
         Instant at = Instant.now();
         Employee employee = findEmployee(org, code);
-        Student student = studentId != null ? store.getOwned(Student.class, studentId, org) : findStudent(org, code);
+        Student byCode = findStudent(org, code);
+        Student student;
+        if (studentId != null) {
+            Student claimed = store.getOwned(Student.class, studentId, org);
+            if (byCode == null || !claimed.getId().equals(byCode.getId())) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Biometric code does not match this student");
+            }
+            student = claimed;
+        } else {
+            student = byCode;
+        }
         if (employee == null && student == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "No employee or student matches this code or mobile");
         }
@@ -1223,14 +1233,7 @@ public class EssService {
         }
         if (student != null) {
             punch.setStudentId(student.getId());
-            AttendanceRecord rec = new AttendanceRecord();
-            rec.setOrganizationId(org);
-            rec.setStudentId(student.getId());
-            rec.setBatchId(student.getBatchId());
-            rec.setSessionDate(LocalDate.now());
-            rec.setStatus("PRESENT");
-            rec.setSource("BIOMETRIC");
-            store.save(rec);
+            upsertStudentDay(org, student, LocalDate.now());
         }
         punch = store.save(punch);
         Map<String, Object> out = punchView(punch);
@@ -1245,6 +1248,21 @@ public class EssService {
             out.put("source", "BIOMETRIC");
         }
         return out;
+    }
+
+    private void upsertStudentDay(UUID org, Student student, LocalDate day) {
+        AttendanceRecord rec = store.listBy(AttendanceRecord.class, org, "studentId", student.getId()).stream()
+                .filter(a -> day.equals(a.getSessionDate())
+                        && (student.getBatchId() == null || student.getBatchId().equals(a.getBatchId())))
+                .findFirst()
+                .orElseGet(AttendanceRecord::new);
+        rec.setOrganizationId(org);
+        rec.setStudentId(student.getId());
+        rec.setBatchId(student.getBatchId());
+        rec.setSessionDate(day);
+        rec.setStatus("PRESENT");
+        rec.setSource("BIOMETRIC");
+        store.save(rec);
     }
 
     private void upsertStaffDay(UUID org, Employee employee, LocalDate day, String type, Instant at) {
@@ -1782,7 +1800,7 @@ public class EssService {
 
     private List<Employee> visibleEmployees() {
         List<Employee> all = store.list(Employee.class, orgId());
-        if (hrAdmin()) {
+        if (payrollAdmin()) {
             return all;
         }
         Employee me = selfEmployee(false);
@@ -1853,16 +1871,31 @@ public class EssService {
 
     private void requireHrAdmin() {
         if (!hrAdmin()) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "Only the owner or accountant can change HR records");
+            throw new ApiException(HttpStatus.FORBIDDEN, "Only the owner or HR manager can change HR records");
         }
     }
 
+    private void requirePayrollAdmin() {
+        if (!payrollAdmin()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Only the owner, accountant, or HR manager can change payroll");
+        }
+    }
+
+    /** Full HR (employees, hiring, devices, leave policy). Accountants are payroll-only. */
     private boolean hrAdmin() {
         String role = Auth.current().role();
-        if (Roles.OWNER.equals(role) || Roles.ACCOUNTANT.equals(role)) {
+        if (Roles.OWNER.equals(role)) {
             return true;
         }
         return Access.hasCap(Auth.current(), Packs.CAP_ESS_MANAGE);
+    }
+
+    /** Payroll / payslips / salary structures — includes ACCOUNTANT. */
+    private boolean payrollAdmin() {
+        if (hrAdmin()) {
+            return true;
+        }
+        return Roles.ACCOUNTANT.equals(Auth.current().role());
     }
 
     private boolean leaveApprover() {

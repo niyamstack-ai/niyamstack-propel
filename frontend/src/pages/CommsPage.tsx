@@ -76,6 +76,7 @@ export function CommsPage() {
             label="Channel"
             value={channel}
             onChange={setChannel}
+            allowEmpty={false}
             options={[
               { value: "IN_APP", label: "On the student website" },
               { value: "EMAIL", label: "Email (sends when mail is connected)" },
@@ -86,6 +87,7 @@ export function CommsPage() {
             label="Batch (optional)"
             value={batchId}
             onChange={setBatchId}
+            allowEmpty={false}
             options={[{ value: "", label: "All students" }, ...(batches.data ?? []).map((b) => ({ value: b.id, label: b.name }))]}
           />
           <div className="flex items-end">

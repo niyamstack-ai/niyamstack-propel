@@ -630,7 +630,7 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
                         kind: "MCQ",
                         batchId: batchId || null,
                         courseId: courseId || null,
-                        published: true,
+                        published: false,
                         durationMinutes: 45,
                         totalMarks: 100,
                         passingScore: 40,
@@ -640,10 +640,11 @@ export function StaffLms({ courseId, embedded }: { courseId?: string; embedded?:
                     })
                   }
                 >
-                  Publish exam
+                  Save draft exam
                 </PrimaryButton>
               </div>
             </FormGrid>
+            <p className="mt-2 text-xs text-slate-500">Saved as draft. Add questions in Content Hub / quiz builder, then publish when ready — empty exams stay unpublished.</p>
           </Card>
           )}
           {show("attendance") && (
