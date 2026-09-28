@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { createRecord, deleteRecord, updateRecord } from "../ops";
+import { prettyLabel } from "../labels";
 import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, useApi } from "../ui";
 
 type Org = { name: string; slug?: string; appShareUrl?: string; logoUrl?: string; brandPrimary?: string };
@@ -124,16 +125,16 @@ export function YourAppPage() {
             <p className="text-lg font-semibold text-navy">{org.data?.name || "Your institute"}</p>
             <FormGrid>
               <Field
-                label="App share URL"
+                label="Share / install URL"
                 value={appUrl || org.data?.appShareUrl || ""}
                 onChange={setAppUrl}
-                placeholder="Share this website link, or a Play Store URL if you have one"
+                placeholder="Website, /s/your-slug/app, or a store link if you have one"
               />
             </FormGrid>
             <div className="mt-3 flex flex-wrap gap-2">
               <PrimaryButton onClick={saveApp}>Save</PrimaryButton>
               <Link className="rounded-full border border-line px-4 py-2 text-sm" to="/m">
-                Open student / faculty app
+                Open /m mobile site
               </Link>
               {(appUrl || org.data?.appShareUrl || org.data?.slug) && (
                 <a
@@ -142,19 +143,19 @@ export function YourAppPage() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Install prompt
+                  Open install page
                 </a>
               )}
             </div>
           </Card>
           <Card title="Preview">
             <div className="mx-auto flex h-64 w-40 flex-col rounded-3xl border-4 border-navy bg-mist p-3">
-              <div className="rounded-xl bg-white p-2 text-center text-xs font-bold text-navy">{org.data?.name || "App"}</div>
+              <div className="rounded-xl bg-white p-2 text-center text-xs font-bold text-navy">{org.data?.name || "Mobile site"}</div>
               <div className="mt-3 flex-1 rounded-xl bg-white/70" />
               <p className="mt-2 text-center text-[10px] text-slate-500">Attendance, fees, notices, mark class</p>
             </div>
             <p className="mt-3 text-center text-xs text-slate-500">
-              Decorative preview only. Use Open student / faculty app for the live /m experience (owner sees staff home, not a simulated student UI).
+              Decorative preview only. Use Open /m mobile site for the live phone layout (owner sees staff home, not a simulated student UI).
             </p>
           </Card>
         </div>
@@ -174,6 +175,7 @@ export function YourAppPage() {
           </div>
           <div className="mt-4">
             <Table
+              empty="No banners yet. Add one above — it shows on the mobile site."
               columns={["Title", "Link", "Live", ""]}
               rows={(banners.data ?? []).map((b) => [
                 b.title,
@@ -195,7 +197,7 @@ export function YourAppPage() {
 
       {tab === "marketing" && (
         <Card title="Notification Panel">
-          <p className="mb-3 text-sm text-slate-500">Shown in the student app notices. WhatsApp also sends when that key is saved in Integrations.</p>
+          <p className="mb-3 text-sm text-slate-500">Shown in mobile-site notices. WhatsApp also sends when that key is saved in Integrations.</p>
           <FormGrid>
             <Field label="Title" value={pTitle} onChange={setPTitle} />
             <Field label="Message" value={pBody} onChange={setPBody} />
@@ -217,8 +219,9 @@ export function YourAppPage() {
           </div>
           <div className="mt-4">
             <Table
+              empty="No notices sent yet."
               columns={["Title", "Audience", "Status"]}
-              rows={(pushes.data ?? []).map((p) => [p.title, p.audience, p.status])}
+              rows={(pushes.data ?? []).map((p) => [p.title, prettyLabel(p.audience), prettyLabel(p.status)])}
             />
           </div>
         </Card>

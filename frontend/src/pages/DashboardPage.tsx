@@ -154,7 +154,7 @@ function FacultyHome() {
       </p>
       <div className="grid gap-3 sm:grid-cols-3">
         <HomeLink to="/courses" title="Courses" text="Content, attendance, grading inside each course" />
-        <HomeLink to="/m" title="Faculty app" text="Mark attendance and notices on a phone" />
+        <HomeLink to="/m" title="Faculty mobile site" text="Phone layout (/m) for attendance and notices" />
         <HomeLink to="/students" title="My students" text="Batch roster" />
         <HomeLink to="/academics" title="Academics" text="Timetable, workload, progress" />
         <HomeLink to="/comms" title="Notices" text="Announce to a batch" />

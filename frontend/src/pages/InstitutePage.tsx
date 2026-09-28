@@ -212,7 +212,7 @@ export function InstitutePage() {
           </div>
         </FormGrid>
         <div className="mt-4">
-          <Table columns={["Name", "Code", "City"]} rows={(centers.data ?? []).map((c) => [c.name, c.code, c.city])} />
+          <Table empty="No centers yet. Add one above." columns={["Name", "Code", "City"]} rows={(centers.data ?? []).map((c) => [c.name, c.code, c.city])} />
         </div>
       </Card>
       <Card title="Courses">
@@ -224,6 +224,7 @@ export function InstitutePage() {
         </div>
         <div className="mt-4">
           <Table
+            empty="No courses yet — create one above or open Courses."
             columns={["Code", "Name", "Fees"]}
             rows={(courses.data ?? []).map((c) => [c.code, c.name, formatInr(c.fees)])}
           />
@@ -248,6 +249,7 @@ export function InstitutePage() {
               {b.name} — {prettyLabel(b.status)} ({b.capacity})
             </li>
           ))}
+          {(batches.data ?? []).length === 0 && <li className="text-slate-500">No batches yet. Create a course, then save a batch above.</li>}
         </ul>
       </Card>
       <Card title="Classrooms">
@@ -279,6 +281,7 @@ export function InstitutePage() {
               {r.name} ({r.type})
             </li>
           ))}
+          {(rooms.data ?? []).length === 0 && <li className="text-slate-500">No classrooms yet. Add rooms for timetable and seating.</li>}
         </ul>
       </Card>
       <InstituteRoles />

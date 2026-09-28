@@ -2426,9 +2426,9 @@ function AppInstallPage() {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="rounded-2xl border border-line bg-white p-6">
-        <h1 className="text-2xl font-bold text-navy">Install the student app</h1>
+        <h1 className="text-2xl font-bold text-navy">Install on your phone</h1>
         <p className="mt-2 text-sm text-slate-500">
-          This is an installable website app (PWA) for {site?.name || "this institute"}. It is not a Play Store listing — the feature stays here so students can pin the site on their phone.
+          This is an installable website (PWA) for {site?.name || "this institute"}. It is not a Play Store listing — the feature stays here so students can pin the site on their phone.
         </p>
         {!site?.appShareUrl && (
           <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -2438,7 +2438,7 @@ function AppInstallPage() {
         {site?.appShareUrl && (
           <p className="mt-3 text-sm">
             <a className="font-semibold text-brand underline" href={site.appShareUrl} target="_blank" rel="noreferrer">
-              Open institute app link
+              Open institute share link
             </a>
           </p>
         )}
@@ -2454,6 +2454,11 @@ function AppInstallPage() {
             Install on this phone
           </button>
         )}
+        {!prompt && !installed && (
+          <p className="mt-3 text-sm text-slate-500">
+            No install button in this browser — use the steps below (Safari on iPhone will not show Install; use Share → Add to Home Screen).
+          </p>
+        )}
         {installed && <p className="mt-4 text-sm text-emerald-700">Installed. Open it from your home screen.</p>}
         <button
           className="mt-4 rounded-full border border-line px-5 py-2 text-sm"
@@ -2463,7 +2468,7 @@ function AppInstallPage() {
             const perm = await Notification.requestPermission();
             setPushOn(perm === "granted");
             if (perm === "granted") {
-              new Notification(site?.name || "Student app", { body: "Notices will also appear under Notices after you log in." });
+              new Notification(site?.name || "Student site", { body: "Notices will also appear under Notices after you log in." });
             }
           }}
         >
@@ -2477,7 +2482,7 @@ function AppInstallPage() {
       </div>
       <div className="flex justify-center">
         <div className="h-[420px] w-[220px] rounded-[2rem] border-4 border-navy bg-white p-3">
-          <p className="rounded-xl bg-mist py-2 text-center text-xs font-bold text-navy">{site?.name || "App"}</p>
+          <p className="rounded-xl bg-mist py-2 text-center text-xs font-bold text-navy">{site?.name || "Home"}</p>
           <div className="mt-3 space-y-2">
             <div className="rounded-xl bg-mist p-3 text-sm">Courses</div>
             <div className="rounded-xl bg-mist p-3 text-sm">My learning</div>

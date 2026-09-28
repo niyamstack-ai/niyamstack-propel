@@ -528,17 +528,23 @@ export function WebsitePage() {
               <Field label="Your domain" value={customDomain} onChange={setCustomDomain} placeholder="yourdomain.com" />
             </div>
             {host && (
-              <p className="mt-2 text-xs text-slate-500">
-                {host.startsWith("www.") ? (
-                  <>CNAME {host} → {HOST_TARGET}</>
-                ) : (
-                  <>
-                    CNAME www → {HOST_TARGET}
-                    <br />
-                    CNAME {host} → {HOST_TARGET} (or ALIAS/ANAME at apex)
-                  </>
-                )}
-              </p>
+              <div className="mt-2 space-y-1 text-xs text-slate-500">
+                <p>
+                  {host.startsWith("www.") ? (
+                    <>CNAME {host} → {HOST_TARGET}</>
+                  ) : (
+                    <>
+                      CNAME www → {HOST_TARGET}
+                      <br />
+                      CNAME {host} → {HOST_TARGET} (or ALIAS/ANAME at apex)
+                    </>
+                  )}
+                </p>
+                <p className="text-amber-800">
+                  After Save, status stays pending until DNS propagates (minutes to 48h). SSL activates once the CNAME points to {HOST_TARGET}.
+                  We do not register or auto-verify domains — contact Niyamstack support when DNS is live.
+                </p>
+              </div>
             )}
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" className="rounded-full border border-line px-4 py-2 text-sm" onClick={() => setShareOpen(false)}>

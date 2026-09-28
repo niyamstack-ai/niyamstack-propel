@@ -78,7 +78,7 @@ export function MobileApp() {
   return (
     <div className="relative mx-auto min-h-screen max-w-md bg-mist pb-20">
       <header className="sticky top-0 z-10 border-b border-line bg-navy px-4 py-3 text-white">
-        <p className="text-xs uppercase tracking-wide text-white/70">{faculty ? "Faculty app" : "Student app"}</p>
+        <p className="text-xs uppercase tracking-wide text-white/70">{faculty ? "Faculty mobile site" : "Student mobile site"}</p>
         <h1 className="text-lg font-semibold">{user?.orgName || home.data?.name || "Propel"}</h1>
         {offline && <p className="text-xs text-amber-200">Offline — actions queue and sync later.</p>}
         {isOwner && (
@@ -274,8 +274,9 @@ function FacultyBatches({ data }: { data?: Home }) {
       <Card title="Live classes">
         <ul className="text-sm">
           {(data?.live ?? []).map((l) => (
-            <li key={l.id}>{l.title}</li>
+            <li key={l.id}>{l.title}{l.startsAt ? ` · ${formatDay(l.startsAt)}` : ""}</li>
           ))}
+          {(data?.live ?? []).length === 0 && <li className="text-slate-500">No live classes scheduled.</li>}
         </ul>
       </Card>
     </>
