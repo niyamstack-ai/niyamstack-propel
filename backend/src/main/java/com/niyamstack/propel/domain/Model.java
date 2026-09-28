@@ -542,6 +542,9 @@ public final class Model {
         private String sacCode;
         private String seriesPrefix;
         private Instant lastRemindedAt;
+        /** Opaque checkout metadata (e.g. coupon:CODE) until capture. */
+        @Column(length = 500)
+        private String notes;
     }
 
     @Entity(name = "Payment") @Table(name = "payments") @Getter @Setter

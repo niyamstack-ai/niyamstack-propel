@@ -254,6 +254,12 @@ public class LmsService {
     public ExamAttempt startExam(UUID assessmentId) {
         PropelUser user = Auth.current();
         Assessment exam = store.getOwned(Assessment.class, assessmentId, user.organizationId());
+        if (exam.getCourseId() != null) {
+            Course examCourse = store.getOwned(Course.class, exam.getCourseId(), user.organizationId());
+            if (!examCourse.isEnableTests()) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Tests are not enabled for this course");
+            }
+        }
         requireExamOpen(user, exam);
         Student student = requireCurrentStudent(user);
         requireEnrolled(student, exam.getCourseId(), exam.getBatchId());
@@ -422,6 +428,9 @@ public class LmsService {
     public Map<String, Object> practiceLab(UUID courseId) {
         PropelUser user = Auth.current();
         Course course = store.getOwned(Course.class, courseId, user.organizationId());
+        if (!Access.canSeeAnswerKeys(user) && !course.isEnableCoding()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Coding practice is not enabled for this course");
+        }
         if (!Access.canSeeAnswerKeys(user)) {
             requireEnrolled(requireCurrentStudent(user), courseId, null);
         }
@@ -470,6 +479,9 @@ public class LmsService {
     public Map<String, Object> runPractice(UUID courseId, String language, String source, String stdin) {
         PropelUser user = Auth.current();
         Course course = store.getOwned(Course.class, courseId, user.organizationId());
+        if (!Access.canSeeAnswerKeys(user) && !course.isEnableCoding()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Coding practice is not enabled for this course");
+        }
         if (!Access.canSeeAnswerKeys(user)) {
             requireEnrolled(requireCurrentStudent(user), courseId, null);
         }
@@ -539,6 +551,12 @@ public class LmsService {
         ContentItem item = store.getOwned(ContentItem.class, contentId, user.organizationId());
         if ("FOLDER".equalsIgnoreCase(item.getContentType())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Folders are not study items");
+        }
+        if (item.getCourseId() != null) {
+            Course course = store.getOwned(Course.class, item.getCourseId(), user.organizationId());
+            if (!course.isEnableContents()) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Course contents are not enabled");
+            }
         }
         requireEnrolled(student, item.getCourseId(), item.getBatchId());
         boolean already = store.listBy(ContentProgress.class, user.organizationId(), "studentId", student.getId()).stream()

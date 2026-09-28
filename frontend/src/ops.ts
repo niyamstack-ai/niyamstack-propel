@@ -4,10 +4,21 @@ import { compressImage } from "./imageUpload";
 function writeBlockedMessage() {
   try {
     const raw = localStorage.getItem("propel.user");
-    const user = raw ? (JSON.parse(raw) as { accessStatus?: string; paymentStatus?: string }) : null;
+    const user = raw
+      ? (JSON.parse(raw) as { accessStatus?: string; paymentStatus?: string; inGrace?: boolean; graceEndsAt?: string })
+      : null;
     if (!user) return null;
-    if (user.accessStatus === "SUSPENDED" || user.paymentStatus === "FAILED") {
-      return "Institute subscription payment failed or access is suspended. Renew to create courses and sell online.";
+    if (user.accessStatus === "SUSPENDED") {
+      return "This institute is suspended. Contact Niyamstack to restore access.";
+    }
+    if (user.paymentStatus === "FAILED") {
+      const graceActive =
+        user.inGrace === true ||
+        (!!user.graceEndsAt && new Date(user.graceEndsAt).getTime() > Date.now());
+      if (!graceActive) {
+        return "Institute subscription payment failed. Renew to create courses and sell online.";
+      }
+      return null;
     }
     if (user.accessStatus === "DEMO" || user.accessStatus === "PENDING_APPROVAL") {
       return "You are not a paid user. Please subscribe to use this facility.";
@@ -45,6 +56,7 @@ export async function deleteRecord(path: string): Promise<void> {
 }
 
 export async function ensureWebsitePublished() {
+  if (demoWriteBlocked()) return;
   const org = await api<{ slug?: string; websitePublished?: boolean; websiteUrl?: string }>("/api/organization");
   if (org.slug && org.websitePublished === false) {
     await updateRecord("/api/organization", { ...org, websitePublished: true, websiteUrl: org.websiteUrl || `/s/${org.slug}` });

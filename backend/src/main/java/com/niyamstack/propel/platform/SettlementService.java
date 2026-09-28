@@ -19,6 +19,7 @@ import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -29,6 +30,7 @@ import java.util.UUID;
 @Service
 public class SettlementService {
     private static final Logger log = LoggerFactory.getLogger(SettlementService.class);
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     public static final String SETTING_PAYOUT_MODE = "payoutMode";
     public static final BigDecimal DEFAULT_FEE = new BigDecimal("0.0500");
 
@@ -141,10 +143,11 @@ public class SettlementService {
     /** Cron / internal entry — no auth principal required. */
     @Transactional
     public List<Map<String, Object>> runWeeklyPayoutsInternal() {
-        LocalDate end = LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
+        LocalDate end = LocalDate.now(IST).with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
         LocalDate start = end.minusDays(6);
         List<Map<String, Object>> created = new ArrayList<>();
         for (Organization org : store.listOrganizations()) {
+            releaseHoldsForOrg(org.getId());
             Map<String, Object> batch = buildBatch(org, start, end);
             if (batch != null) {
                 created.add(batch);
@@ -153,13 +156,36 @@ public class SettlementService {
         return created;
     }
 
+    /** Re-open batches held for missing bank once institute adds payout details. */
+    @Transactional
+    public void releaseHoldsForOrg(UUID orgId) {
+        Organization org = store.get(Organization.class, orgId);
+        if (!OrgAccess.hasBankDetails(org)) {
+            return;
+        }
+        for (PayoutBatch batch : store.list(PayoutBatch.class, orgId)) {
+            if (!"HOLD_NO_BANK".equalsIgnoreCase(batch.getStatus())) {
+                continue;
+            }
+            batch.setBankAccountName(org.getBankAccountName());
+            batch.setBankAccountNumber(org.getBankAccountNumber());
+            batch.setBankIfsc(org.getBankIfsc());
+            String mode = effectivePayoutMode(org);
+            batch.setStatus("AUTOMATIC".equals(mode) ? "READY_AUTO" : "READY");
+            batch = store.save(batch);
+            if ("READY_AUTO".equals(batch.getStatus())) {
+                attemptAutomaticPayout(org, batch);
+            }
+        }
+    }
+
     @Transactional
     public Map<String, Object> buildBatch(Organization org, LocalDate start, LocalDate end) {
         List<SettlementEntry> pending = store.list(SettlementEntry.class, org.getId()).stream()
                 .filter(e -> "PENDING".equalsIgnoreCase(e.getStatus()))
                 .filter(e -> e.getCreatedAt() != null)
                 .filter(e -> {
-                    LocalDate day = e.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+                    LocalDate day = e.getCreatedAt().atZone(IST).toLocalDate();
                     return !day.isBefore(start) && !day.isAfter(end);
                 })
                 .toList();

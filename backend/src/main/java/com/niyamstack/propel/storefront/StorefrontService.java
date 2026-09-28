@@ -284,59 +284,22 @@ public class StorefrontService {
             pendingFlows.remove("PURCHASE:" + phone);
             fullName = pending.getOrDefault("fullName", fullName);
             mail = pending.getOrDefault("email", mail);
-            if (pending.get("couponCode") != null) {
-                couponCode = pending.get("couponCode");
-            }
-            if (pending.get("validityOption") != null) {
-                validityOption = pending.get("validityOption");
-            }
+            couponCode = pending.get("couponCode");
+            validityOption = pending.getOrDefault("validityOption", "a");
         }
 
-        if (user == null) {
-            licenses.requireStudentCapacity(org);
-            AppUser byEmail = store.findUserByEmail(mail);
-            if (byEmail != null) {
-                throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+        Student student = null;
+        if (user != null) {
+            student = store.listBy(Student.class, org.getId(), "userId", user.getId()).stream().findFirst().orElse(null);
+            if (student != null) {
+                CourseEnrollment prior = store.listBy(CourseEnrollment.class, org.getId(), "studentId", student.getId()).stream()
+                        .filter(e -> course.getId().equals(e.getCourseId()) && !"CANCELLED".equals(e.getStatus()))
+                        .findFirst()
+                        .orElse(null);
+                if (prior != null) {
+                    return purchaseSession(user, course, null, null, true);
+                }
             }
-            user = new AppUser();
-            user.setOrganizationId(org.getId());
-            user.setFullName(fullName.trim());
-            user.setEmail(mail);
-            user.setPhone(phone);
-            user.setPasswordHash(encoder.encode(UUID.randomUUID().toString()));
-            user.setRole(Roles.STUDENT);
-            user.setActive(true);
-            user.setPasswordChangedAt(Instant.now());
-            user.setEmailVerified(true);
-            user = store.save(user);
-        } else if (!user.isEmailVerified()) {
-            user.setEmail(mail);
-            user.setFullName(fullName.trim());
-            user.setEmailVerified(true);
-            user = store.save(user);
-        }
-
-        Student student = store.listBy(Student.class, org.getId(), "userId", user.getId()).stream().findFirst().orElse(null);
-        if (student == null) {
-            student = new Student();
-            student.setOrganizationId(org.getId());
-            student.setUserId(user.getId());
-            student.setFullName(user.getFullName());
-            student.setEmail(user.getEmail());
-            student.setPhone(phone);
-            student.setStudentCode("STU-" + System.currentTimeMillis() % 100000);
-            student.setStatus("ENROLLED");
-            student.setEnrollmentDate(LocalDate.now());
-            student.setCourseId(course.getId());
-            student = store.save(student);
-        }
-
-        CourseEnrollment existing = store.listBy(CourseEnrollment.class, org.getId(), "studentId", student.getId()).stream()
-                .filter(e -> course.getId().equals(e.getCourseId()) && !"CANCELLED".equals(e.getStatus()))
-                .findFirst()
-                .orElse(null);
-        if (existing != null) {
-            return purchaseSession(user, course, null, null, true);
         }
 
         BigDecimal listPrice = payable(course, validityOption);
@@ -344,13 +307,58 @@ public class StorefrontService {
         if (applied != null) {
             listPrice = discounted(listPrice, applied);
         }
-        if (listPrice.signum() > 0) {
-            OrgAccess.requireCanSell(org);
-        }
+        OrgAccess.requireCanSell(org);
         BigDecimal price = settlements.checkoutAmount(org, listPrice);
+        boolean deferAccount = price.signum() > 0 && payments.live(org.getId()) && user == null;
+
+        if (!deferAccount) {
+            if (user == null) {
+                licenses.requireStudentCapacity(org);
+                AppUser byEmail = store.findUserByEmail(mail);
+                if (byEmail != null) {
+                    throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+                }
+                user = new AppUser();
+                user.setOrganizationId(org.getId());
+                user.setFullName(fullName.trim());
+                user.setEmail(mail);
+                user.setPhone(phone);
+                user.setPasswordHash(encoder.encode(UUID.randomUUID().toString()));
+                user.setRole(Roles.STUDENT);
+                user.setActive(true);
+                user.setPasswordChangedAt(Instant.now());
+                user.setEmailVerified(true);
+                user = store.save(user);
+            } else if (!user.isEmailVerified()) {
+                user.setEmail(mail);
+                user.setFullName(fullName.trim());
+                user.setEmailVerified(true);
+                user = store.save(user);
+            }
+
+            if (student == null) {
+                student = new Student();
+                student.setOrganizationId(org.getId());
+                student.setUserId(user.getId());
+                student.setFullName(user.getFullName());
+                student.setEmail(user.getEmail());
+                student.setPhone(phone);
+                student.setStudentCode("STU-" + System.currentTimeMillis() % 100000);
+                student.setStatus("ENROLLED");
+                student.setEnrollmentDate(LocalDate.now());
+                student.setCourseId(course.getId());
+                student = store.save(student);
+            }
+        } else {
+            licenses.requireStudentCapacity(org);
+            if (store.findUserByEmail(mail) != null) {
+                throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+            }
+        }
+
         Invoice invoice = new Invoice();
         invoice.setOrganizationId(org.getId());
-        invoice.setStudentId(student.getId());
+        invoice.setStudentId(student == null ? null : student.getId());
         invoice.setCourseId(course.getId());
         invoice.setInvoiceNo("WEB-" + System.currentTimeMillis() % 1_000_000);
         invoice.setAmount(price);
@@ -360,7 +368,12 @@ public class StorefrontService {
         invoice.setGstRate(new BigDecimal("18"));
         invoice.setSacCode("999293");
         invoice.setHsn("9992");
-        invoice.setBuyerName(student.getFullName());
+        invoice.setBuyerName(student == null ? fullName.trim() : student.getFullName());
+        if (deferAccount) {
+            invoice.setNotes(checkoutPendingNotes(fullName, mail, phone, validityOption, applied));
+        } else if (applied != null) {
+            invoice.setNotes("coupon:" + applied.getCode());
+        }
         invoice = fees.finalizeInvoice(invoice);
 
         if (price.signum() == 0) {
@@ -383,10 +396,6 @@ public class StorefrontService {
             pending.setReceivedAt(Instant.now());
             pending.setStatus("PENDING");
             store.save(pending);
-            if (applied != null) {
-                invoice.setNotes("coupon:" + applied.getCode());
-                store.save(invoice);
-            }
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("checkout", true);
             out.put("keyId", payments.publicKey(org.getId()));
@@ -442,12 +451,16 @@ public class StorefrontService {
     public Map<String, Object> confirmPurchase(String slug, UUID invoiceId, String orderId, String paymentId, String signature) {
         Organization org = liveOrg(slug);
         Invoice invoice = store.getOwned(Invoice.class, invoiceId, org.getId());
-        fees.captureVerified(org.getId(), invoice, orderId, paymentId, signature);
         if (invoice.getCourseId() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "This invoice is not a course purchase");
         }
-        Student student = store.getOwned(Student.class, invoice.getStudentId(), org.getId());
+        if (!payments.verifyCheckout(org.getId(), orderId, paymentId, signature)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Payment signature did not match. The fee was not marked paid.");
+        }
         Course course = store.getOwned(Course.class, invoice.getCourseId(), org.getId());
+        // Account only after payment is verified — settlement ledger needs studentId on capture.
+        Student student = ensureStudentForWebPurchase(org, course, invoice);
+        fees.captureVerified(org.getId(), invoice, orderId, paymentId, signature);
         enroll(org, student, course, invoice, null);
         redeemCouponFromInvoice(org, invoice);
         AppUser user = store.get(AppUser.class, student.getUserId());
@@ -458,14 +471,19 @@ public class StorefrontService {
 
     @Transactional
     public void webhookPaid(UUID orgId, UUID invoiceId, String orderId, String paymentId) {
-        fees.captureFromWebhook(orgId, invoiceId, orderId, paymentId);
         Invoice invoice = store.getOwned(Invoice.class, invoiceId, orgId);
         if (invoice.getCourseId() == null) {
+            fees.captureFromWebhook(orgId, invoiceId, orderId, paymentId);
             return;
         }
-        Student student = store.getOwned(Student.class, invoice.getStudentId(), orgId);
         Course course = store.getOwned(Course.class, invoice.getCourseId(), orgId);
-        enroll(store.get(Organization.class, orgId), student, course, invoice, null);
+        Organization org = store.get(Organization.class, orgId);
+        ensureStudentForWebPurchase(org, course, invoice);
+        fees.captureFromWebhook(orgId, invoiceId, orderId, paymentId);
+        invoice = store.getOwned(Invoice.class, invoiceId, orgId);
+        Student student = store.getOwned(Student.class, invoice.getStudentId(), orgId);
+        enroll(org, student, course, invoice, null);
+        redeemCouponFromInvoice(org, invoice);
     }
 
     private Map<String, Object> purchaseSession(AppUser user, Course course, Invoice invoice, Receipt receipt, boolean already) {
@@ -930,11 +948,13 @@ public class StorefrontService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "This coupon is not valid for this course.");
         }
         BigDecimal original = payable(course);
+        BigDecimal list = discounted(original, coupon);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("valid", true);
         out.put("code", coupon.getCode());
         out.put("originalPrice", original);
-        out.put("price", discounted(original, coupon));
+        out.put("listPrice", list);
+        out.put("price", settlements.checkoutAmount(org, list));
         return out;
     }
 
@@ -1011,6 +1031,7 @@ public class StorefrontService {
 
     public Map<String, Object> registerOtp(String slug, String fullName, String email, String phoneRaw, UUID courseId) {
         Organization org = liveOrg(slug);
+        OrgAccess.requireStorefrontOpen(org);
         licenses.requireStudentCapacity(org);
         if (fullName == null || fullName.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Name is required");
@@ -1063,6 +1084,7 @@ public class StorefrontService {
     @Transactional
     public Map<String, Object> registerVerify(String slug, String phoneRaw, String code) {
         Organization org = liveOrg(slug);
+        OrgAccess.requireStorefrontOpen(org);
         licenses.requireStudentCapacity(org);
         String phone = StudentAccountService.requireMobile(phoneRaw);
         String raw = pendingFlows.getPayload("REGISTER:" + phone);
@@ -1122,6 +1144,7 @@ public class StorefrontService {
         if (courseId != null) {
             Course course = store.getOwned(Course.class, courseId, org.getId());
             if ("FREE".equalsIgnoreCase(course.getCourseType())) {
+                OrgAccess.requireCanSell(org);
                 studentAccounts.enrollIfCourse(org.getId(), student, course.getId(), "WEBSITE");
             }
         }
@@ -1289,16 +1312,103 @@ public class StorefrontService {
     }
 
     private void redeemCouponFromInvoice(Organization org, Invoice invoice) {
-        if (invoice == null || invoice.getNotes() == null || !invoice.getNotes().startsWith("coupon:")) {
+        if (invoice == null || invoice.getNotes() == null) {
             return;
         }
-        String code = invoice.getNotes().substring("coupon:".length()).trim();
-        if (code.isBlank()) {
+        String notes = invoice.getNotes();
+        String code = null;
+        if (notes.startsWith("coupon:")) {
+            code = notes.substring("coupon:".length()).trim();
+        } else if (notes.startsWith("pending:")) {
+            Map<String, String> meta = parseCheckoutPending(notes);
+            code = meta.get("cp");
+        }
+        if (code == null || code.isBlank()) {
             return;
         }
         Coupon applied = couponFor(org.getId(), invoice.getCourseId(), code);
         redeemCoupon(applied);
         invoice.setNotes(null);
         store.save(invoice);
+    }
+
+    private String checkoutPendingNotes(String fullName, String email, String phone, String validityOption, Coupon applied) {
+        Map<String, String> payload = new LinkedHashMap<>();
+        payload.put("fn", fullName == null ? "" : fullName.trim());
+        payload.put("em", email == null ? "" : email.trim().toLowerCase());
+        payload.put("ph", phone == null ? "" : phone);
+        if (validityOption != null && !validityOption.isBlank()) {
+            payload.put("vo", validityOption.trim());
+        }
+        if (applied != null && applied.getCode() != null) {
+            payload.put("cp", applied.getCode());
+        }
+        try {
+            return "pending:" + json.writeValueAsString(payload);
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not start checkout");
+        }
+    }
+
+    private Map<String, String> parseCheckoutPending(String notes) {
+        if (notes == null || !notes.startsWith("pending:")) {
+            return Map.of();
+        }
+        try {
+            return json.readValue(notes.substring("pending:".length()), new TypeReference<>() {});
+        } catch (Exception e) {
+            return Map.of();
+        }
+    }
+
+    private Student ensureStudentForWebPurchase(Organization org, Course course, Invoice invoice) {
+        if (invoice.getStudentId() != null) {
+            return store.getOwned(Student.class, invoice.getStudentId(), org.getId());
+        }
+        Map<String, String> meta = parseCheckoutPending(invoice.getNotes());
+        String mail = meta.getOrDefault("em", invoice.getBuyerName() == null ? "" : invoice.getBuyerName());
+        String phone = meta.getOrDefault("ph", "");
+        String fullName = meta.getOrDefault("fn", invoice.getBuyerName() == null ? "Student" : invoice.getBuyerName());
+        if (mail.isBlank() || !mail.contains("@") || !Phones.isMobile(phone)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Checkout is missing buyer details");
+        }
+        AppUser existing = store.findUserByPhone(phone);
+        if (existing != null && org.getId().equals(existing.getOrganizationId())) {
+            Student linked = store.listBy(Student.class, org.getId(), "userId", existing.getId()).stream().findFirst().orElse(null);
+            if (linked != null) {
+                invoice.setStudentId(linked.getId());
+                store.save(invoice);
+                return linked;
+            }
+        }
+        licenses.requireStudentCapacity(org);
+        if (store.findUserByEmail(mail) != null) {
+            throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+        }
+        AppUser user = new AppUser();
+        user.setOrganizationId(org.getId());
+        user.setFullName(fullName.trim());
+        user.setEmail(mail);
+        user.setPhone(phone);
+        user.setPasswordHash(encoder.encode(UUID.randomUUID().toString()));
+        user.setRole(Roles.STUDENT);
+        user.setActive(true);
+        user.setEmailVerified(true);
+        user.setPasswordChangedAt(Instant.now());
+        user = store.save(user);
+        Student student = new Student();
+        student.setOrganizationId(org.getId());
+        student.setUserId(user.getId());
+        student.setFullName(user.getFullName());
+        student.setEmail(user.getEmail());
+        student.setPhone(phone);
+        student.setStudentCode("STU-" + System.currentTimeMillis() % 100000);
+        student.setStatus("ENROLLED");
+        student.setEnrollmentDate(LocalDate.now());
+        student.setCourseId(course.getId());
+        student = store.save(student);
+        invoice.setStudentId(student.getId());
+        store.save(invoice);
+        return student;
     }
 }

@@ -184,6 +184,7 @@ public class SchemaPatch {
                 "UPDATE organizations SET modules_csv = TRIM(BOTH ',' FROM REPLACE(modules_csv || ',ESS', ',,', ',')) WHERE product_pack = 'FULL_OPS' AND modules_csv IS NOT NULL AND (',' || REPLACE(modules_csv, ' ', '') || ',') NOT LIKE '%,ESS,%'",
                 "UPDATE organizations SET modules_csv = 'ESS,STAFF' WHERE product_pack = 'ESS' AND (modules_csv IS NULL OR TRIM(modules_csv) = '' OR (',' || REPLACE(modules_csv, ' ', '') || ',') NOT LIKE '%,ESS,%')",
                 "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminded_at TIMESTAMP WITH TIME ZONE",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS notes VARCHAR(500)",
                 "ALTER TABLE assessments ADD COLUMN IF NOT EXISTS scores_published BOOLEAN DEFAULT TRUE",
                 "UPDATE assessments SET scores_published = TRUE WHERE scores_published IS NULL",
                 "ALTER TABLE certificates ADD COLUMN IF NOT EXISTS course_id UUID",

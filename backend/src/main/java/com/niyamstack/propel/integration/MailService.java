@@ -70,11 +70,13 @@ public class MailService {
     public void sendOtp(String to, String purpose, String code) {
         String label = switch (purpose == null ? "" : purpose) {
             case "RESET" -> "password reset";
+            case "VERIFY_PHONE" -> "mobile verification";
             case "SIGNUP", "VERIFY_EMAIL", "STUDENT_REGISTER" -> "email verification";
             default -> "login";
         };
         String title = switch (purpose == null ? "" : purpose) {
             case "RESET" -> "Your password reset code";
+            case "VERIFY_PHONE" -> "Verify your mobile number";
             case "SIGNUP", "VERIFY_EMAIL", "STUDENT_REGISTER" -> "Verify your email";
             default -> "Your login code";
         };

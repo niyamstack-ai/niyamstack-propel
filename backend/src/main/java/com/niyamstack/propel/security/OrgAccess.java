@@ -88,12 +88,17 @@ public final class OrgAccess {
         }
     }
 
-    /** Public storefront may sell only when ACTIVE, not failed, and bank details present. */
-    public static void requireCanSell(Organization org) {
+    /** Registration and other storefront flows that do not require bank details yet. */
+    public static void requireStorefrontOpen(Organization org) {
         requireNotSuspended(org);
-        if (!active(org) || paymentFailed(org) || !"PAID".equals(payment(org))) {
+        if (demo(org) || !active(org) || paymentFailed(org) || !"PAID".equals(payment(org))) {
             throw new ApiException(HttpStatus.FORBIDDEN, STOREFRONT_INACTIVE_MESSAGE);
         }
+    }
+
+    /** Public storefront may sell only when ACTIVE, not failed, and bank details present. */
+    public static void requireCanSell(Organization org) {
+        requireStorefrontOpen(org);
         if (!hasBankDetails(org)) {
             throw new ApiException(HttpStatus.FORBIDDEN, BANK_REQUIRED_MESSAGE);
         }

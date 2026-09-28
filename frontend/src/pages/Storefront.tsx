@@ -681,7 +681,7 @@ function CoursePage() {
   }, [slug, courseId, token, user?.role]);
 
   async function applyCoupon() {
-    if (!slug || !course?.id || !coupon.trim()) return;
+    if (!slug || !course?.id || !coupon.trim() || otpSent) return;
     setBusy(true);
     setError(null);
     try {
@@ -880,8 +880,8 @@ function CoursePage() {
             <section className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-sky-50 px-4 py-3 text-sm">
               <span>Have a coupon code</span>
               <div className="flex gap-2">
-                <input className="w-36 rounded-lg border border-line px-2 py-1.5" placeholder="Code" value={coupon} onChange={(e) => setCoupon(e.target.value)} />
-                <button type="button" className="font-semibold text-brand disabled:opacity-50" disabled={busy || !coupon.trim()} onClick={applyCoupon}>
+                <input className="w-36 rounded-lg border border-line px-2 py-1.5" placeholder="Code" value={coupon} disabled={!!otpSent} onChange={(e) => { setCoupon(e.target.value); if (otpSent) { setOtpSent(null); setOtp(""); } }} />
+                <button type="button" className="font-semibold text-brand disabled:opacity-50" disabled={busy || !coupon.trim() || !!otpSent} onClick={applyCoupon}>
                   {busy ? "Applying…" : "Apply here"}
                 </button>
               </div>
@@ -959,7 +959,12 @@ function CoursePage() {
                       type="radio"
                       className="mr-2"
                       checked={validityOption === opt.id}
+                      disabled={!!otpSent}
                       onChange={() => {
+                        if (otpSent) {
+                          setOtpSent(null);
+                          setOtp("");
+                        }
                         setValidityOption(opt.id);
                         setPrice(opt.price);
                       }}
@@ -1452,6 +1457,22 @@ function StudyPage() {
   const [enrolled, setEnrolled] = useState<boolean | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState<StudySection>("contents");
+
+  useEffect(() => {
+    if (!course) return;
+    const items: StudySection[] = [
+      ...(course.enableContents !== false ? (["contents"] as const) : []),
+      ...(course.enableCoding !== false ? (["practice"] as const) : []),
+      ...(course.enableTests !== false ? (["tests"] as const) : []),
+      ...(course.allowLive ? (["live", "recordings"] as const) : []),
+      "timetable",
+      "assignments",
+      "doubts",
+    ];
+    if (items.length > 0) {
+      setTab((current) => (items.includes(current) ? current : items[0]));
+    }
+  }, [course?.id, course?.enableContents, course?.enableCoding, course?.enableTests, course?.allowLive]);
 
   useEffect(() => {
     setLoadError(null);

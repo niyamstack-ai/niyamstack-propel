@@ -26,7 +26,9 @@ import com.niyamstack.propel.grow.GrowService;
 import com.niyamstack.propel.integration.MailService;
 import com.niyamstack.propel.sis.SisService;
 import com.niyamstack.propel.sis.StudentAccountService;
+import com.niyamstack.propel.security.OrgAccess;
 import com.niyamstack.propel.security.OtpService;
+import com.niyamstack.propel.platform.SettlementService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
@@ -58,11 +60,13 @@ public class ResourceController {
     private final CompensationService compensation;
     private final OtpService otp;
     private final MailService mail;
+    private final SettlementService settlements;
 
     public ResourceController(Store store, DataScope scope, LmsService lms, PasswordEncoder encoder, FeeService fees,
                               StudentAccountService studentAccounts, SessionService sessions, LicenseService licenses,
                               EssService ess, SisService sis, GrowService grow, FoundationService foundation,
-                              CompensationService compensation, OtpService otp, MailService mail) {
+                              CompensationService compensation, OtpService otp, MailService mail,
+                              SettlementService settlements) {
         this.store = store;
         this.scope = scope;
         this.lms = lms;
@@ -78,6 +82,7 @@ public class ResourceController {
         this.compensation = compensation;
         this.otp = otp;
         this.mail = mail;
+        this.settlements = settlements;
     }
 
     @GetMapping("/features")
@@ -118,6 +123,9 @@ public class ResourceController {
         existing.setWebsiteUrl(body.getWebsiteUrl());
         existing.setAppShareUrl(body.getAppShareUrl());
         existing.setCustomDomain(body.getCustomDomain());
+        if (body.isWebsitePublished() && !existing.isWebsitePublished() && OrgAccess.writeBlocked(existing)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, OrgAccess.writeBlockMessage(existing));
+        }
         existing.setWebsitePublished(body.isWebsitePublished() || existing.isWebsitePublished());
         if (body.getSettingsJson() != null) {
             existing.setSettingsJson(body.getSettingsJson());
@@ -139,7 +147,11 @@ public class ResourceController {
             String mode = body.getPlatformFeeMode().trim().toUpperCase();
             existing.setPlatformFeeMode("PASS_STUDENT".equals(mode) ? "PASS_STUDENT" : "ABSORB");
         }
-        return store.save(existing);
+        Organization saved = store.save(existing);
+        if (OrgAccess.hasBankDetails(saved)) {
+            settlements.releaseHoldsForOrg(saved.getId());
+        }
+        return saved;
     }
 
     @GetMapping("/centers") public List<Center> centers() { return list(Center.class); }
@@ -272,7 +284,27 @@ public class ResourceController {
     @GetMapping("/staff-candidates") public List<Map<String, Object>> staffCandidates() { return ess.candidates(); }
     @PostMapping("/staff-candidates") public Map<String, Object> createCandidate(@RequestBody Map<String, Object> body) { return ess.createCandidate(body); }
 
-    @GetMapping("/content") public List<ContentItem> content() { return list(ContentItem.class); }
+    @GetMapping("/content")
+    public List<ContentItem> content() {
+        List<ContentItem> rows = list(ContentItem.class);
+        PropelUser user = Auth.current();
+        if (!Roles.STUDENT.equals(user.role())) {
+            return rows;
+        }
+        return rows.stream()
+                .filter(item -> {
+                    if (item.getCourseId() == null) {
+                        return true;
+                    }
+                    try {
+                        Course course = store.getOwned(Course.class, item.getCourseId(), user.organizationId());
+                        return course.isEnableContents();
+                    } catch (Exception ignored) {
+                        return true;
+                    }
+                })
+                .toList();
+    }
     @PostMapping("/content") public ContentItem createContent(@RequestBody ContentItem body) { return create(body, "LMS"); }
     @PutMapping("/content/{id}") public ContentItem updateContent(@PathVariable UUID id, @RequestBody ContentItem body) { return update(ContentItem.class, id, body, "LMS"); }
     @DeleteMapping("/content/{id}")
@@ -575,11 +607,21 @@ public class ResourceController {
         user.setPhone(phone);
         user.setRole(role);
         user.setActive(true);
+        user.setEmailVerified(false);
         user.setCapabilitiesCsv(Packs.sanitizeCapsCsv(body.capabilitiesCsv(), body.capabilities()));
         user.setPasswordHash(encoder.encode(temp));
         user.setPasswordChangedAt(Instant.now());
         user = store.save(user);
         foundation.ensureEmployeeForStaff(user);
+        String emailForOtp = user.getEmail();
+        if (emailForOtp != null && !emailForOtp.isBlank() && mail.canDeliver(emailForOtp)) {
+            var issued = otp.issue(emailForOtp.trim().toLowerCase(), OtpService.VERIFY_EMAIL);
+            try {
+                mail.sendOtp(emailForOtp.trim().toLowerCase(), OtpService.VERIFY_EMAIL, issued.code());
+            } catch (Exception ignored) {
+                /* best effort */
+            }
+        }
         Map<String, Object> out = new LinkedHashMap<>(staffView(user));
         out.put("tempPassword", temp);
         return out;
@@ -654,7 +696,18 @@ public class ResourceController {
             return Map.of("status", "already_verified", "channel", "phone");
         }
         var issued = otp.issue(phone, OtpService.VERIFY_PHONE);
+        String email = user.getEmail() == null ? "" : user.getEmail().trim().toLowerCase();
+        if (!email.isBlank() && mail.canDeliver(email)) {
+            try {
+                mail.sendOtp(email, OtpService.VERIFY_PHONE, issued.code());
+            } catch (Exception ignored) {
+                /* still return OTP for testing when SMTP fails */
+            }
+        }
         Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
+        if (!otp.reveal() && (email.isBlank() || !mail.live() || !mail.canDeliver(email))) {
+            out.put("devOtp", issued.code());
+        }
         out.put("channel", "phone");
         return out;
     }

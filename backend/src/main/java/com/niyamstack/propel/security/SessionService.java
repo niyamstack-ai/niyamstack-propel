@@ -5,6 +5,7 @@ import com.niyamstack.propel.domain.Model.AppUser;
 import com.niyamstack.propel.domain.Model.Organization;
 import com.niyamstack.propel.catalog.Packs;
 import com.niyamstack.propel.platform.OrgSettings;
+import com.niyamstack.propel.security.OrgAccess;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -58,6 +59,8 @@ public class SessionService {
         if (user.getOrganizationId() != null) {
             Organization org = store.get(Organization.class, user.getOrganizationId());
             profile.put("onboardingComplete", OrgSettings.onboarding(org).get("completed"));
+            profile.put("graceEndsAt", org.getGraceEndsAt());
+            profile.put("inGrace", OrgAccess.inGrace(org));
         }
         return profile;
     }

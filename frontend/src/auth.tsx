@@ -12,6 +12,8 @@ export type SessionUser = {
   emailVerified?: boolean;
   accessStatus?: string;
   paymentStatus?: string;
+  graceEndsAt?: string;
+  inGrace?: boolean;
   orgSlug?: string;
   orgName?: string;
   productPack?: string;
