@@ -19,6 +19,11 @@ type Org = {
   brandPrimary?: string;
   brandSecondary?: string;
   websitePublished?: boolean;
+  bankAccountName?: string;
+  bankAccountNumber?: string;
+  bankIfsc?: string;
+  bankUpi?: string;
+  platformFeeMode?: string;
 };
 type Center = { id: string; name: string; code: string; city: string; address?: string };
 type Course = { id: string; code: string; name: string; fees: number; durationMonths?: number };
@@ -42,6 +47,11 @@ export function InstitutePage() {
   const [logoUrl, setLogoUrl] = useState("");
   const [brandPrimary, setBrandPrimary] = useState("#0078f0");
   const [brandSecondary, setBrandSecondary] = useState("#071a33");
+  const [bankName, setBankName] = useState("");
+  const [bankNumber, setBankNumber] = useState("");
+  const [bankIfsc, setBankIfsc] = useState("");
+  const [bankUpi, setBankUpi] = useState("");
+  const [feeMode, setFeeMode] = useState("ABSORB");
 
   const [cName, setCName] = useState("");
   const [cCode, setCCode] = useState("");
@@ -71,6 +81,11 @@ export function InstitutePage() {
     setLogoUrl(org.data.logoUrl || "");
     setBrandPrimary(org.data.brandPrimary || "#0078f0");
     setBrandSecondary(org.data.brandSecondary || "#071a33");
+    setBankName(org.data.bankAccountName || "");
+    setBankNumber(org.data.bankAccountNumber || "");
+    setBankIfsc(org.data.bankIfsc || "");
+    setBankUpi(org.data.bankUpi || "");
+    setFeeMode(org.data.platformFeeMode || "ABSORB");
   }
 
   async function saveOrg() {
@@ -86,6 +101,11 @@ export function InstitutePage() {
         logoUrl,
         brandPrimary,
         brandSecondary,
+        bankAccountName: bankName,
+        bankAccountNumber: bankNumber,
+        bankIfsc,
+        bankUpi,
+        platformFeeMode: feeMode,
         websitePublished: org.data?.websitePublished === true,
       });
       org.reload();
@@ -155,6 +175,30 @@ export function InstitutePage() {
         </FormGrid>
           </>
         )}
+      </Card>
+      <Card title="Bank account for payouts">
+        <p className="mb-3 text-sm text-slate-500">
+          Required before selling paid courses online. Weekly settlements are paid to this account after the platform fee.
+        </p>
+        <FormGrid>
+          <Field label="Account holder name" value={bankName} onChange={setBankName} />
+          <Field label="Account number" value={bankNumber} onChange={setBankNumber} />
+          <Field label="IFSC" value={bankIfsc} onChange={setBankIfsc} placeholder="HDFC0001234" />
+          <Field label="UPI (optional)" value={bankUpi} onChange={setBankUpi} />
+          <Select
+            label="Platform fee on checkout"
+            value={feeMode}
+            onChange={setFeeMode}
+            options={[
+              { value: "ABSORB", label: "Absorb (student pays list price; you receive ~95%)" },
+              { value: "PASS_STUDENT", label: "Pass to student (list + fee; you receive 100% of list)" },
+            ]}
+            allowEmpty={false}
+          />
+          <div className="flex items-end">
+            <PrimaryButton onClick={saveOrg}>Save bank details</PrimaryButton>
+          </div>
+        </FormGrid>
       </Card>
       <Card title="Add center">
         <FormGrid>

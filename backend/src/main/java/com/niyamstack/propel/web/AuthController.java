@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -74,6 +75,8 @@ public class AuthController {
             @NotBlank @Email String email,
             @NotBlank String password
     ) {}
+
+    public record PhoneLoginRequest(@NotBlank String phone, @NotBlank String password) {}
 
     public record PhoneRequest(@NotBlank String phone) {}
 
@@ -127,15 +130,44 @@ public class AuthController {
         return sessions.issue(user);
     }
 
+    @PostMapping("/login/phone")
+    @Transactional
+    public Map<String, Object> loginPhone(@Valid @RequestBody PhoneLoginRequest body, jakarta.servlet.http.HttpServletRequest request) {
+        String ip = clientIp(request);
+        guardIp(ip);
+        AppUser user = requirePhoneUser(body.phone());
+        if (Roles.isPlatform(user.getRole())) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid mobile or password");
+        }
+        if (!passwordOk(user, body.password(), ip, user.getPhone())) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid mobile or password");
+        }
+        ensureActive(user);
+        requireOrgAccess(user);
+        clearLock(user, ip);
+        audit.log("LOGIN_PHONE", "AppUser", user.getId(), user.getPhone());
+        return sessions.issue(user);
+    }
+
     @PostMapping("/otp/request")
     @Transactional
     public Map<String, Object> requestLoginOtp(@Valid @RequestBody PhoneRequest body) {
         AppUser user = requirePhoneUser(body.phone());
         ensureActive(user);
         requireOrgAccess(user);
+        if (user.getEmail() == null || user.getEmail().isBlank() || !mail.canDeliver(user.getEmail())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Add a real email on your profile to receive OTP.");
+        }
         var issued = otp.issue(user.getPhone(), OtpService.LOGIN);
-        emailOtp(user, OtpService.LOGIN, issued.code());
-        return otp.publicIssue(issued);
+        Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
+        if (mail.live() && mail.canDeliver(user.getEmail())) {
+            mail.sendOtp(user.getEmail(), OtpService.LOGIN, issued.code());
+        } else {
+            out.put("devOtp", issued.code());
+        }
+        out.put("emailMasked", maskEmail(user.getEmail()));
+        out.put("channel", "email");
+        return out;
     }
 
     @PostMapping("/otp/verify")
@@ -145,6 +177,10 @@ public class AuthController {
         ensureActive(user);
         requireOrgAccess(user);
         otp.verify(user.getPhone(), OtpService.LOGIN, body.otp());
+        if (!user.isEmailVerified()) {
+            user.setEmailVerified(true);
+            store.save(user);
+        }
         clearLock(user, "otp");
         audit.log("LOGIN_OTP", "AppUser", user.getId(), user.getPhone());
         return sessions.issue(user);
@@ -191,11 +227,17 @@ public class AuthController {
         foundation.seedStarter(org.getId(), user.getId());
         audit.log("SIGNUP", "Organization", org.getId(), email);
         var issued = otp.issue(phone, OtpService.LOGIN);
-        emailOtp(user, OtpService.LOGIN, issued.code());
+        Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
         if (mail.live() && mail.canDeliver(email)) {
+            mail.sendOtp(email, OtpService.LOGIN, issued.code());
             mail.sendWelcome(email, user.getFullName());
+        } else {
+            // Local/demo without SMTP: still return the code so signup can complete.
+            out.put("devOtp", issued.code());
         }
-        return otp.publicIssue(issued);
+        out.put("emailMasked", maskEmail(email));
+        out.put("channel", "email");
+        return out;
     }
 
     @PostMapping("/forgot/otp")
@@ -319,6 +361,16 @@ public class AuthController {
             return;
         }
         mail.sendOtp(user.getEmail(), purpose, code);
+    }
+
+    private static String maskEmail(String email) {
+        if (email == null || !email.contains("@")) {
+            return "";
+        }
+        String[] parts = email.split("@", 2);
+        String userPart = parts[0];
+        String visible = userPart.length() <= 1 ? "*" : userPart.charAt(0) + "***";
+        return visible + "@" + parts[1];
     }
 
     private boolean passwordOk(AppUser user, String password, String ip, String email) {

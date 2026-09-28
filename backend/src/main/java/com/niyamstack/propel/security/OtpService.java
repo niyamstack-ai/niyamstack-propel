@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,22 +20,24 @@ public class OtpService {
 
     private final String devCode;
     private final boolean reveal;
+    private final SecureRandom random = new SecureRandom();
     private final ConcurrentHashMap<String, Challenge> challenges = new ConcurrentHashMap<>();
 
     public OtpService(
             @Value("${app.otp.dev-code:123456}") String devCode,
             @Value("${app.otp.reveal:false}") boolean reveal
     ) {
-        this.devCode = devCode;
+        this.devCode = devCode == null || devCode.isBlank() ? "123456" : devCode.trim();
         this.reveal = reveal;
     }
 
     public record Issued(String phone, boolean reveal, String code) {}
 
     public Issued issue(String phone, String purpose) {
-        Challenge challenge = new Challenge(devCode, purpose, Instant.now().plusSeconds(300), 0);
+        String code = reveal ? devCode : randomCode();
+        Challenge challenge = new Challenge(code, purpose, Instant.now().plusSeconds(300), 0);
         challenges.put(key(phone, purpose), challenge);
-        return new Issued(phone, reveal, devCode);
+        return new Issued(phone, reveal, code);
     }
 
     public void verify(String phone, String purpose, String otp) {
@@ -65,6 +68,11 @@ public class OtpService {
             return Map.of("status", "otp_sent", "phone", issued.phone, "devOtp", issued.code);
         }
         return Map.of("status", "otp_sent", "phone", issued.phone);
+    }
+
+    private String randomCode() {
+        int n = random.nextInt(1_000_000);
+        return String.format("%06d", n);
     }
 
     private static String key(String phone, String purpose) {

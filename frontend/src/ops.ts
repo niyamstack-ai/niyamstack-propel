@@ -1,20 +1,31 @@
 import { api, getToken } from "./api";
 import { compressImage } from "./imageUpload";
 
-function demoWriteBlocked() {
+function writeBlockedMessage() {
   try {
     const raw = localStorage.getItem("propel.user");
-    const user = raw ? (JSON.parse(raw) as { accessStatus?: string }) : null;
-    return user?.accessStatus === "DEMO";
+    const user = raw ? (JSON.parse(raw) as { accessStatus?: string; paymentStatus?: string }) : null;
+    if (!user) return null;
+    if (user.accessStatus === "SUSPENDED" || user.paymentStatus === "FAILED") {
+      return "Institute subscription payment failed or access is suspended. Renew to create courses and sell online.";
+    }
+    if (user.accessStatus === "DEMO" || user.accessStatus === "PENDING_APPROVAL") {
+      return "You are not a paid user. Please subscribe to use this facility.";
+    }
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 
 function rejectDemoWrite(): never {
-  const message = "You are not a paid user. Please subscribe to use this facility.";
+  const message = writeBlockedMessage() || "You are not a paid user. Please subscribe to use this facility.";
   window.dispatchEvent(new CustomEvent("propel:subscribe-required", { detail: message }));
   throw new Error(message);
+}
+
+function demoWriteBlocked() {
+  return !!writeBlockedMessage();
 }
 
 export async function createRecord<T>(path: string, body: unknown): Promise<T> {
@@ -23,7 +34,8 @@ export async function createRecord<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function updateRecord<T>(path: string, body: unknown): Promise<T> {
-  if (demoWriteBlocked()) rejectDemoWrite();
+  // Allow institute profile / bank details save even when subscription is locked.
+  if (demoWriteBlocked() && path !== "/api/organization") rejectDemoWrite();
   return api<T>(path, { method: "PUT", body: JSON.stringify(body) });
 }
 

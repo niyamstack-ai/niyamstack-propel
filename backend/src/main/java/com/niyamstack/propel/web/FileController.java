@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 
 @RestController
 public class FileController {
@@ -35,18 +36,42 @@ public class FileController {
         if (!dest.startsWith(root) || !Files.isRegularFile(dest)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "File not found");
         }
-        String guessed = MediaType.APPLICATION_OCTET_STREAM_VALUE;
-        try {
-            String probed = Files.probeContentType(dest);
-            if (probed != null) {
-                guessed = probed;
-            }
-        } catch (Exception ignored) {
-            /* keep default */
-        }
+        String guessed = guessContentType(dest, name);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + name.replace("\"", "") + "\"")
+                .header("X-Frame-Options", "SAMEORIGIN")
                 .contentType(MediaType.parseMediaType(guessed))
                 .body(new FileSystemResource(dest));
+    }
+
+    static String guessContentType(Path dest, String name) {
+        String lower = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".pdf")) {
+            return MediaType.APPLICATION_PDF_VALUE;
+        }
+        if (lower.endsWith(".png")) {
+            return MediaType.IMAGE_PNG_VALUE;
+        }
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+            return MediaType.IMAGE_JPEG_VALUE;
+        }
+        if (lower.endsWith(".webp")) {
+            return "image/webp";
+        }
+        if (lower.endsWith(".mp4")) {
+            return "video/mp4";
+        }
+        if (lower.endsWith(".webm")) {
+            return "video/webm";
+        }
+        try {
+            String probed = Files.probeContentType(dest);
+            if (probed != null && !probed.isBlank() && !MediaType.APPLICATION_OCTET_STREAM_VALUE.equals(probed)) {
+                return probed;
+            }
+        } catch (Exception ignored) {
+            /* keep fallback */
+        }
+        return MediaType.APPLICATION_OCTET_STREAM_VALUE;
     }
 }

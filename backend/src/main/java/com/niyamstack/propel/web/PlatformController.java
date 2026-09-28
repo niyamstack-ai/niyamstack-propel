@@ -5,6 +5,7 @@ import com.niyamstack.propel.platform.PlatformService;
 import com.niyamstack.propel.platform.PlatformService.DealRequest;
 import com.niyamstack.propel.platform.PlatformService.EmployeeRequest;
 import com.niyamstack.propel.platform.PlatformService.EmployeeUpdate;
+import com.niyamstack.propel.platform.SettlementService;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
 import jakarta.validation.Valid;
@@ -19,9 +20,11 @@ import java.util.UUID;
 @RequestMapping("/api/platform")
 public class PlatformController {
     private final PlatformService platform;
+    private final SettlementService settlements;
 
-    public PlatformController(PlatformService platform) {
+    public PlatformController(PlatformService platform, SettlementService settlements) {
         this.platform = platform;
+        this.settlements = settlements;
     }
 
     public record LoginRequest(@NotBlank String username, @NotBlank String password) {}
@@ -142,5 +145,36 @@ public class PlatformController {
     @PutMapping("/payment-gateway")
     public Map<String, Object> savePaymentGateway(@RequestBody Map<String, String> body) {
         return platform.savePaymentGateway(body);
+    }
+
+    @GetMapping("/settlement/report")
+    public List<Map<String, Object>> settlementReport(@RequestParam(required = false) UUID organizationId) {
+        return settlements.report(organizationId);
+    }
+
+    @GetMapping("/settlement/batches")
+    public List<Map<String, Object>> settlementBatches(@RequestParam(required = false) UUID organizationId) {
+        return settlements.batches(organizationId);
+    }
+
+    @PostMapping("/settlement/weekly")
+    public List<Map<String, Object>> runWeeklySettlement() {
+        return settlements.runWeeklyPayouts();
+    }
+
+    @PostMapping("/settlement/batches/{id}/mark-paid")
+    public Map<String, Object> markBatchPaid(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> body) {
+        String ref = body == null ? null : body.get("gatewayRef");
+        return settlements.markBatchPaid(id, ref);
+    }
+
+    @GetMapping("/settlement/payout-mode")
+    public Map<String, Object> payoutMode() {
+        return settlements.payoutSettings();
+    }
+
+    @PutMapping("/settlement/payout-mode")
+    public Map<String, Object> savePayoutMode(@RequestBody Map<String, String> body) {
+        return settlements.setGlobalPayoutMode(body == null ? null : body.get("payoutMode"));
     }
 }

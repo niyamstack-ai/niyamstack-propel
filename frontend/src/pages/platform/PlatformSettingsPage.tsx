@@ -32,6 +32,11 @@ export function PlatformSettingsPage() {
     razorpayKeySecret: "",
     razorpayWebhookSecret: "",
   });
+  const payoutMode = useApi<{ payoutMode: string }>(canManageRights ? "/api/platform/settlement/payout-mode" : "");
+  const settlement = useApi<
+    { organizationId: string; name: string; grossAmount: number; platformFeeAmount: number; netToInstitute: number; pendingPayout: number; hasBank: boolean }[]
+  >(canManageRights ? "/api/platform/settlement/report" : "");
+  const [payoutBusy, setPayoutBusy] = useState(false);
 
   async function createRole(e: FormEvent) {
     e.preventDefault();
@@ -199,6 +204,92 @@ export function PlatformSettingsPage() {
                 {busy ? "Saving…" : "Save payment keys"}
               </button>
             </form>
+          </Card>
+          <Card title="Institute settlements">
+            <p className="text-sm text-slate-500">
+              Default platform fee is 5% (editable per institute on the institute deal). Weekly batches pay institutes after deduction. Automatic queues READY_AUTO batches for RazorpayX later.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <p className="text-sm text-navy">
+                Global payout mode: <span className="font-semibold">{payoutMode.data?.payoutMode || "MANUAL"}</span>
+              </p>
+              <button
+                type="button"
+                className="rounded-full border border-line px-3 py-1.5 text-sm"
+                disabled={payoutBusy}
+                onClick={() =>
+                  void (async () => {
+                    setPayoutBusy(true);
+                    try {
+                      const next = payoutMode.data?.payoutMode === "AUTOMATIC" ? "MANUAL" : "AUTOMATIC";
+                      await api("/api/platform/settlement/payout-mode", { method: "PUT", body: JSON.stringify({ payoutMode: next }) });
+                      payoutMode.reload();
+                      setDone(`Payout mode set to ${next}.`);
+                    } catch (err) {
+                      setError((err as Error).message);
+                    } finally {
+                      setPayoutBusy(false);
+                    }
+                  })()
+                }
+              >
+                Switch to {payoutMode.data?.payoutMode === "AUTOMATIC" ? "MANUAL" : "AUTOMATIC"}
+              </button>
+              <button
+                type="button"
+                className="rounded-full bg-navy px-3 py-1.5 text-sm text-white"
+                disabled={payoutBusy}
+                onClick={() =>
+                  void (async () => {
+                    setPayoutBusy(true);
+                    try {
+                      const rows = await api<unknown[]>("/api/platform/settlement/weekly", { method: "POST", body: "{}" });
+                      settlement.reload();
+                      setDone(`Weekly settlement created ${rows.length} batch(es).`);
+                    } catch (err) {
+                      setError((err as Error).message);
+                    } finally {
+                      setPayoutBusy(false);
+                    }
+                  })()
+                }
+              >
+                Run weekly settlement now
+              </button>
+            </div>
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-line text-slate-500">
+                    <th className="py-2 pr-3">Institute</th>
+                    <th className="py-2 pr-3">Gross</th>
+                    <th className="py-2 pr-3">Platform fee</th>
+                    <th className="py-2 pr-3">Net</th>
+                    <th className="py-2 pr-3">Pending payout</th>
+                    <th className="py-2">Bank</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(settlement.data ?? []).map((row) => (
+                    <tr key={row.organizationId} className="border-b border-line/70">
+                      <td className="py-2 pr-3 font-medium text-navy">{row.name}</td>
+                      <td className="py-2 pr-3">₹{Number(row.grossAmount || 0).toLocaleString("en-IN")}</td>
+                      <td className="py-2 pr-3">₹{Number(row.platformFeeAmount || 0).toLocaleString("en-IN")}</td>
+                      <td className="py-2 pr-3">₹{Number(row.netToInstitute || 0).toLocaleString("en-IN")}</td>
+                      <td className="py-2 pr-3">₹{Number(row.pendingPayout || 0).toLocaleString("en-IN")}</td>
+                      <td className="py-2">{row.hasBank ? "Yes" : "Missing"}</td>
+                    </tr>
+                  ))}
+                  {(settlement.data?.length ?? 0) === 0 && (
+                    <tr>
+                      <td className="py-3 text-slate-500" colSpan={6}>
+                        No student settlements yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </Card>
           <Card title="Create a role">
             <form className="flex flex-wrap items-end gap-3" onSubmit={createRole}>

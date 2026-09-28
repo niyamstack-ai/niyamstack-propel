@@ -10,6 +10,7 @@ import com.niyamstack.propel.domain.Model.PlatformUserRole;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.JwtService;
+import com.niyamstack.propel.security.OrgAccess;
 import com.niyamstack.propel.security.PasswordPolicy;
 import com.niyamstack.propel.security.PropelUser;
 import com.niyamstack.propel.security.Roles;
@@ -27,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -186,6 +188,28 @@ public class PlatformService {
         if (body.packageTier() != null && !body.packageTier().isBlank()) {
             org.setPackageTier(body.packageTier().trim().toUpperCase());
         }
+        if (body.platformFeePercent() != null) {
+            BigDecimal pct = body.platformFeePercent();
+            if (pct.signum() < 0 || pct.compareTo(new BigDecimal("0.5")) > 0) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Platform fee percent must be between 0 and 50%");
+            }
+            // Accept 5 for 5% or 0.05 for fraction.
+            if (pct.compareTo(BigDecimal.ONE) >= 0) {
+                pct = pct.divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+            }
+            org.setPlatformFeePercent(pct.setScale(4, RoundingMode.HALF_UP));
+        }
+        if (body.platformFeeMode() != null && !body.platformFeeMode().isBlank()) {
+            String mode = body.platformFeeMode().trim().toUpperCase();
+            org.setPlatformFeeMode("PASS_STUDENT".equals(mode) ? "PASS_STUDENT" : "ABSORB");
+        }
+        if (body.payoutMode() != null && !body.payoutMode().isBlank()) {
+            String mode = body.payoutMode().trim().toUpperCase();
+            if (!Set.of("INHERIT", "MANUAL", "AUTOMATIC").contains(mode)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Payout mode must be INHERIT, MANUAL, or AUTOMATIC");
+            }
+            org.setPayoutMode(mode);
+        }
         store.save(org);
         audit.log("PLATFORM_DEAL_SAVE", "Organization", org.getId(), org.getName());
         return toView(org);
@@ -210,6 +234,10 @@ public class PlatformService {
         requireCap(PlatformCaps.MARK_PAID);
         Organization org = store.get(Organization.class, id);
         org.setPaymentStatus("FAILED");
+        // Past-due institutes lose write/sell rights until paid again.
+        if ("ACTIVE".equals(nz(org.getAccessStatus(), ""))) {
+            org.setAccessStatus("SUSPENDED");
+        }
         store.save(org);
         audit.log("PLATFORM_PAY_FAILED", "Organization", org.getId(), org.getName());
         return toView(org);
@@ -469,7 +497,10 @@ public class PlatformService {
             String couponCode,
             String dealNotes,
             String packageTier,
-            String productPack
+            String productPack,
+            BigDecimal platformFeePercent,
+            String platformFeeMode,
+            String payoutMode
     ) {}
 
     private Map<String, Object> session(AppUser user) {
@@ -615,6 +646,12 @@ public class PlatformService {
         row.put("createdAt", org.getCreatedAt());
         row.put("paidAt", org.getPaidAt());
         row.put("approvedAt", org.getApprovedAt());
+        row.put("platformFeePercent", org.getPlatformFeePercent() == null ? new BigDecimal("0.05") : org.getPlatformFeePercent());
+        row.put("platformFeeMode", org.getPlatformFeeMode() == null ? "ABSORB" : org.getPlatformFeeMode());
+        row.put("payoutMode", org.getPayoutMode() == null ? "INHERIT" : org.getPayoutMode());
+        row.put("hasBank", OrgAccess.hasBankDetails(org));
+        row.put("bankAccountName", org.getBankAccountName());
+        row.put("bankIfsc", org.getBankIfsc());
         return row;
     }
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { fileSrc } from "../api";
+import { RichTextArea } from "../RichTextArea";
 import { createRecord, ensureWebsitePublished, updateRecord, uploadContentFile } from "../ops";
 import { ErrorText, useApi } from "../ui";
 import { UserMenu } from "../UserMenu";
@@ -28,6 +29,9 @@ type Draft = {
   allowTrial?: boolean;
   allowPreview?: boolean;
   allowLive?: boolean;
+  enableContents?: boolean;
+  enableTests?: boolean;
+  enableCoding?: boolean;
   featured?: boolean;
   shareSlug?: string;
   bundleCsv?: string;
@@ -82,6 +86,9 @@ export function CreateCourseWizard() {
   const [taxPercent, setTaxPercent] = useState("18");
   const [allowOffline, setAllowOffline] = useState(false);
   const [allowLive, setAllowLive] = useState(false);
+  const [enableContents, setEnableContents] = useState(true);
+  const [enableTests, setEnableTests] = useState(true);
+  const [enableCoding, setEnableCoding] = useState(true);
   const [installmentsOn, setInstallmentsOn] = useState(false);
   const [installmentCount, setInstallmentCount] = useState("3");
   const [featured, setFeatured] = useState(false);
@@ -128,6 +135,9 @@ export function CreateCourseWizard() {
     setAllowTrial(Boolean(existing.allowTrial));
     setAllowPreview(existing.allowPreview !== false);
     setAllowLive(Boolean(existing.allowLive));
+    setEnableContents(existing.enableContents !== false);
+    setEnableTests(existing.enableTests !== false);
+    setEnableCoding(existing.enableCoding !== false);
     setFeatured(Boolean(existing.featured));
     setBundleIds((existing.bundleCsv || "").split(",").filter(Boolean));
     const plan = (feePlans.data ?? []).find((p) => p.courseId === existing.id);
@@ -204,6 +214,9 @@ export function CreateCourseWizard() {
       allowTrial,
       allowPreview,
       allowLive,
+      enableContents,
+      enableTests,
+      enableCoding,
       bundleCsv: bundleIds.join(","),
       active: true,
       termId: terms.data?.[0]?.id || null,
@@ -341,12 +354,7 @@ export function CreateCourseWizard() {
               </label>
               <label className="block text-sm">
                 <span className="font-medium text-slate-700">Description</span>
-                <textarea
-                  className="mt-1.5 min-h-28 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-brand"
-                  placeholder="Enter course description here."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
+                <RichTextArea value={description} onChange={setDescription} placeholder="Enter course description here." />
               </label>
               <div>
                 <p className="text-sm font-medium text-slate-700">Add Thumbnail</p>
@@ -445,6 +453,18 @@ export function CreateCourseWizard() {
                 <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
                   <span>Live classes</span>
                   <Toggle on={allowLive} onChange={setAllowLive} />
+                </li>
+                <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
+                  <span>Contents (videos/PDFs)</span>
+                  <Toggle on={enableContents} onChange={setEnableContents} />
+                </li>
+                <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
+                  <span>Tests / MCQ</span>
+                  <Toggle on={enableTests} onChange={setEnableTests} />
+                </li>
+                <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
+                  <span>Coding practice</span>
+                  <Toggle on={enableCoding} onChange={setEnableCoding} />
                 </li>
                 <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
                   <span>Course preview</span>

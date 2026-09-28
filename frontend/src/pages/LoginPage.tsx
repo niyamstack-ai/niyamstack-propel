@@ -5,7 +5,7 @@ import { useAuth } from "../auth";
 import { PACKS, type PackId } from "../packs";
 import { NiyamstackLogo } from "../brand/NiyamstackLogo";
 
-type OtpSent = { status: string; phone?: string; devOtp?: string };
+type OtpSent = { status: string; phone?: string; emailMasked?: string; channel?: string; devOtp?: string };
 type EmailSent = { status: string; resetToken?: string };
 
 export function LoginPage() {
@@ -73,15 +73,41 @@ function LoginViews() {
 }
 
 function OtpLoginView() {
-  const { loginWithOtp } = useAuth();
+  const { loginWithOtp, applySession } = useAuth();
   const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [sent, setSent] = useState<OtpSent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function sendOtp(e: FormEvent) {
+  async function loginPassword(e: FormEvent) {
     e.preventDefault();
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length !== 10) {
+      setError("Enter a valid 10-digit mobile number");
+      return;
+    }
+    if (!password) {
+      setError("Enter your password, or use OTP on mail");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api<{ token: string; user: unknown }>("/api/auth/login/phone", {
+        method: "POST",
+        body: JSON.stringify({ phone: digits, password }),
+      });
+      applySession(res as never);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendOtp() {
     const digits = phone.replace(/\D/g, "");
     if (digits.length !== 10) {
       setError("Enter a valid 10-digit mobile number");
@@ -121,8 +147,8 @@ function OtpLoginView() {
       <h1 className="text-2xl font-bold text-navy">Login</h1>
       <p className="mt-2 text-sm text-slate-500">Institute owners sign in here. Students should open your institute website, not this page.</p>
       {!sent ? (
-        <form className="mt-8" onSubmit={sendOtp}>
-          <label className="block text-sm font-medium text-navy">Mobile Number</label>
+        <form className="mt-8" onSubmit={loginPassword}>
+          <label className="block text-sm font-medium text-navy">Mobile</label>
           <div className="mt-1 flex">
             <span className="inline-flex items-center rounded-l-lg border border-r-0 border-line bg-mist px-3 text-sm text-slate-600">+91</span>
             <input
@@ -133,14 +159,19 @@ function OtpLoginView() {
               onChange={(e) => setPhone(e.target.value)}
             />
           </div>
+          <label className="mt-4 block text-sm font-medium text-navy">Password</label>
+          <PasswordField value={password} onChange={setPassword} />
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
           <button className="mt-6 w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy}>
-            {busy ? "Sending…" : "Send OTP"}
+            {busy ? "Signing in…" : "Login"}
+          </button>
+          <button type="button" className="mt-3 w-full text-sm font-medium text-brand disabled:opacity-60" disabled={busy} onClick={() => void sendOtp()}>
+            OTP on mail
           </button>
         </form>
       ) : (
         <form className="mt-8" onSubmit={verify}>
-          <p className="text-sm text-slate-500">OTP sent to +91 {sent.phone || phone}</p>
+          <p className="text-sm text-slate-500">OTP sent to {sent.emailMasked || `+91 ${sent.phone || phone}`}</p>
           {sent.devOtp && <p className="mt-1 text-xs text-slate-400">Local OTP: {sent.devOtp}</p>}
           <label className="mt-4 block text-sm font-medium text-navy">OTP</label>
           <input
@@ -155,7 +186,7 @@ function OtpLoginView() {
             {busy ? "Signing in…" : "Login"}
           </button>
           <button type="button" className="mt-3 w-full text-sm text-brand" onClick={() => setSent(null)}>
-            Change number
+            Back
           </button>
         </form>
       )}
@@ -220,7 +251,7 @@ function EmailLoginView() {
       </form>
       <OrLine />
       <Link className="block text-center text-sm font-medium text-brand" to="/login">
-        Login via mobile OTP
+        Login via Mobile
       </Link>
       <p className="mt-6 text-center text-sm text-slate-500">
         New institute?{" "}

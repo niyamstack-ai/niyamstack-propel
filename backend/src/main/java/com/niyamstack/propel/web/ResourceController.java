@@ -122,6 +122,23 @@ public class ResourceController {
         if (body.getSettingsJson() != null) {
             existing.setSettingsJson(body.getSettingsJson());
         }
+        if (body.getBankAccountName() != null) {
+            existing.setBankAccountName(body.getBankAccountName().trim());
+        }
+        if (body.getBankAccountNumber() != null) {
+            existing.setBankAccountNumber(body.getBankAccountNumber().trim());
+        }
+        if (body.getBankIfsc() != null) {
+            existing.setBankIfsc(body.getBankIfsc().trim().toUpperCase());
+        }
+        if (body.getBankUpi() != null) {
+            existing.setBankUpi(body.getBankUpi().trim());
+        }
+        // Institutes choose absorb vs pass-to-student; platform fee % stays platform-controlled.
+        if (body.getPlatformFeeMode() != null && !body.getPlatformFeeMode().isBlank()) {
+            String mode = body.getPlatformFeeMode().trim().toUpperCase();
+            existing.setPlatformFeeMode("PASS_STUDENT".equals(mode) ? "PASS_STUDENT" : "ABSORB");
+        }
         return store.save(existing);
     }
 

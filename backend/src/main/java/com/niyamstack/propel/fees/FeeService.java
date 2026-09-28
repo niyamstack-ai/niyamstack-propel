@@ -10,6 +10,7 @@ import com.niyamstack.propel.integration.MessagingGateway;
 import com.niyamstack.propel.integration.OrgSecrets;
 import com.niyamstack.propel.integration.PaymentGateway;
 import com.niyamstack.propel.catalog.Packs;
+import com.niyamstack.propel.platform.SettlementService;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.DataScope;
@@ -41,9 +42,10 @@ public class FeeService {
     private final EventHook hooks;
     private final CompensationService compensation;
     private final DataScope scope;
+    private final SettlementService settlements;
 
     public FeeService(Store store, PaymentGateway payments, MessagingGateway messaging, AuditService audit, EventHook hooks,
-                      CompensationService compensation, DataScope scope) {
+                      CompensationService compensation, DataScope scope, SettlementService settlements) {
         this.store = store;
         this.payments = payments;
         this.messaging = messaging;
@@ -51,6 +53,7 @@ public class FeeService {
         this.hooks = hooks;
         this.compensation = compensation;
         this.scope = scope;
+        this.settlements = settlements;
     }
 
     @Transactional
@@ -577,6 +580,7 @@ public class FeeService {
         n.setBody(send.message() + " — " + payment.getReceiptNo());
         n.setStatus(send.status());
         store.save(n);
+        settlements.recordCapture(org, payment, invoice.getId(), invoice.getStudentId(), invoice.getCourseId());
         hooks.fire(org.getId(), "payment.captured", Map.of(
                 "invoiceNo", invoice.getInvoiceNo(),
                 "amount", payment.getAmount(),

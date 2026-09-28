@@ -58,6 +58,12 @@ public class DemoSeeder implements CommandLineRunner {
         org.setBrandSecondary("#071a33");
         org.setWebsitePublished(true);
         org.setWebsiteUrl("/s/aarohan");
+        org.setPlatformFeePercent(new BigDecimal("0.0500"));
+        org.setPlatformFeeMode("ABSORB");
+        org.setBankAccountName("Aarohan Skills Private Limited");
+        org.setBankAccountNumber("50200012345678");
+        org.setBankIfsc("HDFC0001234");
+        org.setBankVerified(true);
         org = store.save(org);
         UUID oid = org.getId();
 
@@ -630,6 +636,14 @@ public class DemoSeeder implements CommandLineRunner {
             org.setModulesCsv("STUDENTS,CRM,LMS,FEES,PLACEMENT,COMMS,ANALYTICS,WEBSITE,TESTS,STAFF,GROW,ESS");
         }
         org.setWebsitePublished(true);
+        if (org.getBankAccountNumber() == null || org.getBankAccountNumber().isBlank()) {
+            org.setPlatformFeePercent(new BigDecimal("0.0500"));
+            org.setPlatformFeeMode("ABSORB");
+            org.setBankAccountName("Aarohan Skills Private Limited");
+            org.setBankAccountNumber("50200012345678");
+            org.setBankIfsc("HDFC0001234");
+            org.setBankVerified(true);
+        }
         if (org.getWebsiteUrl() == null || org.getWebsiteUrl().isBlank()) {
             org.setWebsiteUrl("/s/aarohan");
         }

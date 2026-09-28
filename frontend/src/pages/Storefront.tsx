@@ -15,6 +15,7 @@ import { PageSections } from "../PageSections";
 import { EnquireForm } from "../EnquireForm";
 import { parseFormFields } from "../formFields";
 import { isProductHost } from "../siteHost";
+import { RichHtml } from "../RichTextArea";
 import { openRazorpay, type CheckoutOrder } from "../razorpay";
 
 type CmsPage = { title: string; slug: string; pageType?: string; body?: string };
@@ -100,10 +101,15 @@ type PublicCourse = {
   allowPreview?: boolean;
   allowLive?: boolean;
   allowTrial?: boolean;
+  enableContents?: boolean;
+  enableTests?: boolean;
+  enableCoding?: boolean;
   instituteName?: string;
   fees: number;
   discount?: number;
   price: number;
+  listPrice?: number;
+  canSell?: boolean;
   courseType?: string;
   validityOptions?: { id: string; label: string; price: number }[];
 };
@@ -784,7 +790,11 @@ function CoursePage() {
           <div className="space-y-5">
             <section>
               <h2 className="font-semibold text-navy">About this course</h2>
-              <p className="mt-2 text-sm leading-relaxed text-slate-600">{course.description || "Details will appear here after the institute adds a description."}</p>
+              {course.description ? (
+                <RichHtml html={course.description} className="prose prose-sm mt-2 max-w-none text-slate-600" />
+              ) : (
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">Details will appear here after the institute adds a description.</p>
+              )}
               {validity && (
                 <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-line bg-white px-3 py-2 text-sm text-navy">
                   <span className="grid h-8 w-8 place-items-center rounded-full bg-sky-100 text-brand">▶</span>
@@ -1392,15 +1402,15 @@ function StudyPage() {
   }, [course?.name]);
 
   const nav: { id: StudySection; label: string }[] = [
-    { id: "contents", label: "Contents" },
-    { id: "practice", label: "Practice" },
-    { id: "tests", label: "Tests" },
-    { id: "live", label: "Live class" },
-    { id: "recordings", label: "Recordings" },
-    { id: "timetable", label: "Timetable" },
-    { id: "assignments", label: "Assignments" },
-    { id: "doubts", label: "Doubts" },
-  ];
+    course?.enableContents !== false ? { id: "contents" as const, label: "Contents" } : null,
+    course?.enableCoding !== false ? { id: "practice" as const, label: "Practice" } : null,
+    course?.enableTests !== false ? { id: "tests" as const, label: "Tests" } : null,
+    course?.allowLive ? { id: "live" as const, label: "Live class" } : null,
+    course?.allowLive ? { id: "recordings" as const, label: "Recordings" } : null,
+    { id: "timetable" as const, label: "Timetable" },
+    { id: "assignments" as const, label: "Assignments" },
+    { id: "doubts" as const, label: "Doubts" },
+  ].filter(Boolean) as { id: StudySection; label: string }[];
 
   if (loadError) {
     return (

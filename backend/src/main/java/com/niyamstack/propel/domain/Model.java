@@ -56,6 +56,19 @@ public final class Model {
         private String dataMode = "SHARED";
         @Column(precision = 6, scale = 4)
         private BigDecimal defaultRoyaltyPct = BigDecimal.ZERO;
+        /** Platform take-rate on student payments, e.g. 0.05 = 5%. */
+        @Column(precision = 6, scale = 4)
+        private BigDecimal platformFeePercent = new BigDecimal("0.0500");
+        /** ABSORB = student pays list price; PASS_STUDENT = fee added on checkout. */
+        private String platformFeeMode = "ABSORB";
+        /** INHERIT | MANUAL | AUTOMATIC — payout handling for this institute. */
+        private String payoutMode = "INHERIT";
+        private String bankAccountName;
+        private String bankAccountNumber;
+        private String bankIfsc;
+        private String bankUpi;
+        @JsonProperty("bankVerified")
+        private boolean bankVerified;
     }
 
     @Entity(name = "Center") @Table(name = "centers") @Getter @Setter
@@ -133,6 +146,10 @@ public final class Model {
         private boolean allowTrial;
         private boolean allowPreview;
         private boolean allowLive = true;
+        /** Student library tabs after purchase. */
+        private boolean enableContents = true;
+        private boolean enableTests = true;
+        private boolean enableCoding = true;
         private Integer likesCount = 0;
         private Integer durationMonths;
         private BigDecimal fees;
@@ -797,6 +814,46 @@ public final class Model {
         private String settingKey;
         @Column(length = 4000)
         private String settingValue;
+    }
+
+    @Entity(name = "SettlementEntry") @Table(name = "settlement_entries") @Getter @Setter
+    public static class SettlementEntry extends TenantEntity {
+        private UUID paymentId;
+        private UUID invoiceId;
+        private UUID studentId;
+        private UUID courseId;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal grossAmount;
+        @Column(precision = 6, scale = 4)
+        private BigDecimal platformFeePercent;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal platformFeeAmount;
+        private String feeMode;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal netToInstitute;
+        private String status = "PENDING";
+        private UUID payoutBatchId;
+        @Column(length = 500)
+        private String notes;
+    }
+
+    @Entity(name = "PayoutBatch") @Table(name = "payout_batches") @Getter @Setter
+    public static class PayoutBatch extends TenantEntity {
+        private LocalDate periodStart;
+        private LocalDate periodEnd;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal grossAmount = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal platformFeeAmount = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal netAmount = BigDecimal.ZERO;
+        private String status = "READY";
+        private String mode = "MANUAL";
+        private String bankAccountName;
+        private String bankAccountNumber;
+        private String bankIfsc;
+        private String gatewayRef;
+        private Instant paidAt;
     }
 
     @Entity(name = "PlatformRole") @Table(name = "platform_roles") @Getter @Setter

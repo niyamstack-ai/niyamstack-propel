@@ -53,8 +53,8 @@ public class LicenseFilter extends OncePerRequestFilter {
                     reject(response, HttpServletResponse.SC_FORBIDDEN, OrgAccess.SUSPENDED_MESSAGE);
                     return;
                 }
-                if (OrgAccess.demo(org) && OrgAccess.writeBlockedForDemo(request.getMethod(), request.getRequestURI())) {
-                    reject(response, HttpServletResponse.SC_FORBIDDEN, OrgAccess.SUBSCRIBE_MESSAGE);
+                if (OrgAccess.writeBlocked(org) && OrgAccess.writeBlockedForMethod(request.getMethod(), request.getRequestURI())) {
+                    reject(response, HttpServletResponse.SC_FORBIDDEN, OrgAccess.writeBlockMessage(org));
                     return;
                 }
             } catch (Exception ignored) {

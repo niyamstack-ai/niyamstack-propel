@@ -21,6 +21,10 @@ type Institute = {
   maxCenters?: number;
   couponCode?: string;
   dealNotes?: string;
+  platformFeePercent?: number;
+  platformFeeMode?: string;
+  payoutMode?: string;
+  hasBank?: boolean;
 };
 
 export function PlatformInstituteDetailPage() {
@@ -44,6 +48,9 @@ export function PlatformInstituteDetailPage() {
   const [maxCenters, setMaxCenters] = useState("");
   const [coupon, setCoupon] = useState("");
   const [notes, setNotes] = useState("");
+  const [feePct, setFeePct] = useState("5");
+  const [feeMode, setFeeMode] = useState("ABSORB");
+  const [payoutMode, setPayoutMode] = useState("INHERIT");
 
   useEffect(() => {
     const org = rec.data;
@@ -58,6 +65,10 @@ export function PlatformInstituteDetailPage() {
     setMaxCenters(org.maxCenters != null ? String(org.maxCenters) : "");
     setCoupon(org.couponCode || "");
     setNotes(org.dealNotes || "");
+    const pct = org.platformFeePercent != null ? Number(org.platformFeePercent) : 0.05;
+    setFeePct(String(pct <= 1 ? Math.round(pct * 1000) / 10 : pct));
+    setFeeMode(org.platformFeeMode || "ABSORB");
+    setPayoutMode(org.payoutMode || "INHERIT");
   }, [rec.data]);
 
   async function saveDeal(e: FormEvent) {
@@ -78,6 +89,9 @@ export function PlatformInstituteDetailPage() {
           maxCenters: maxCenters.trim() ? Number(maxCenters) : null,
           couponCode: coupon,
           dealNotes: notes,
+          platformFeePercent: feePct.trim() ? Number(feePct) : 5,
+          platformFeeMode: feeMode,
+          payoutMode,
         }),
       });
       rec.reload();
@@ -215,6 +229,28 @@ export function PlatformInstituteDetailPage() {
             <Field label="Coupon (optional)" value={coupon} onChange={setCoupon} />
             <Field label="Max students" value={maxStudents} onChange={setMaxStudents} />
             <Field label="Max centers" value={maxCenters} onChange={setMaxCenters} />
+            <Field label="Platform fee %" value={feePct} onChange={setFeePct} placeholder="5 = 5%" />
+            <Select
+              label="Fee mode"
+              value={feeMode}
+              onChange={setFeeMode}
+              options={[
+                { value: "ABSORB", label: "Absorb (default)" },
+                { value: "PASS_STUDENT", label: "Pass to student" },
+              ]}
+              allowEmpty={false}
+            />
+            <Select
+              label="Payout mode"
+              value={payoutMode}
+              onChange={setPayoutMode}
+              options={[
+                { value: "INHERIT", label: "Inherit global" },
+                { value: "MANUAL", label: "Manual" },
+                { value: "AUTOMATIC", label: "Automatic" },
+              ]}
+              allowEmpty={false}
+            />
           </FormGrid>
           <div>
             <p className="text-sm text-slate-600">Modules for this institute</p>

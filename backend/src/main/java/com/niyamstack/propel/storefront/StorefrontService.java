@@ -26,8 +26,10 @@ import com.niyamstack.propel.domain.Model.TimetableSlot;
 import com.niyamstack.propel.grow.GrowService;
 import com.niyamstack.propel.fees.FeeService;
 import com.niyamstack.propel.integration.EventHook;
+import com.niyamstack.propel.integration.MailService;
 import com.niyamstack.propel.integration.PaymentGateway;
 import com.niyamstack.propel.domain.Model.Inquiry;
+import com.niyamstack.propel.platform.SettlementService;
 import com.niyamstack.propel.security.LicenseService;
 import com.niyamstack.propel.security.OrgAccess;
 import com.niyamstack.propel.security.OtpService;
@@ -67,11 +69,13 @@ public class StorefrontService {
     private final StudentAccountService studentAccounts;
     private final LicenseService licenses;
     private final GrowService grow;
+    private final SettlementService settlements;
+    private final MailService mailService;
     private final ConcurrentHashMap<String, PendingRegister> pendingRegisters = new ConcurrentHashMap<>();
 
     public StorefrontService(Store store, PaymentGateway payments, PasswordEncoder encoder, SessionService sessions,
                              EventHook hooks, FeeService fees, OtpService otp, StudentAccountService studentAccounts,
-                             LicenseService licenses, GrowService grow) {
+                             LicenseService licenses, GrowService grow, SettlementService settlements, MailService mailService) {
         this.store = store;
         this.payments = payments;
         this.encoder = encoder;
@@ -82,6 +86,8 @@ public class StorefrontService {
         this.studentAccounts = studentAccounts;
         this.licenses = licenses;
         this.grow = grow;
+        this.settlements = settlements;
+        this.mailService = mailService;
     }
 
     public Organization orgBySlug(String slug) {
@@ -198,6 +204,9 @@ public class StorefrontService {
         if (!course.isActive() || !course.isPublished()) {
             throw new ApiException(HttpStatus.NOT_FOUND, "This course is not published yet");
         }
+        if (email == null || email.isBlank() || !email.contains("@") || email.toLowerCase().endsWith(".local")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a real email address. We send login OTP to this email.");
+        }
 
         AppUser user = store.findUserByPhone(phone);
         if (user != null && !org.getId().equals(user.getOrganizationId())) {
@@ -248,11 +257,15 @@ public class StorefrontService {
             return purchaseSession(user, course, null, null, true);
         }
 
-        BigDecimal price = payable(course, validityOption);
+        BigDecimal listPrice = payable(course, validityOption);
         Coupon applied = couponFor(org.getId(), course.getId(), couponCode);
         if (applied != null) {
-            price = discounted(price, applied);
+            listPrice = discounted(listPrice, applied);
         }
+        if (listPrice.signum() > 0) {
+            OrgAccess.requireCanSell(org);
+        }
+        BigDecimal price = settlements.checkoutAmount(org, listPrice);
         Invoice invoice = new Invoice();
         invoice.setOrganizationId(org.getId());
         invoice.setStudentId(student.getId());
@@ -729,29 +742,42 @@ public class StorefrontService {
         out.put("allowOffline", course.isAllowOffline());
         out.put("allowPreview", course.isAllowPreview());
         out.put("allowLive", course.isAllowLive());
+        out.put("enableContents", course.isEnableContents());
+        out.put("enableTests", course.isEnableTests());
+        out.put("enableCoding", course.isEnableCoding());
         out.put("instituteName", org.getName());
         out.put("fees", fees);
         out.put("discount", discount);
-        out.put("price", payable(course));
+        BigDecimal list = payable(course);
+        out.put("listPrice", list);
+        out.put("price", settlements.checkoutAmount(org, list));
+        out.put("platformFeeMode", settlements.feeMode(org));
+        out.put("platformFeePercent", settlements.feePercent(org));
         out.put("courseType", course.getCourseType() == null ? "PAID" : course.getCourseType());
         out.put("featured", course.isFeatured());
         out.put("shareSlug", course.getShareSlug() == null ? "" : course.getShareSlug());
-        out.put("validityOptions", validityOptions(course));
+        out.put("validityOptions", validityOptions(org, course));
+        out.put("canSell", OrgAccess.active(org) && !OrgAccess.paymentFailed(org)
+                && "PAID".equals(OrgAccess.payment(org)) && OrgAccess.hasBankDetails(org));
         return out;
     }
 
-    private List<Map<String, Object>> validityOptions(Course course) {
+    private List<Map<String, Object>> validityOptions(Organization org, Course course) {
         List<Map<String, Object>> options = new ArrayList<>();
         Map<String, Object> primary = new LinkedHashMap<>();
         primary.put("id", "a");
         primary.put("label", validityLabel(course.getValidityType(), course.getValidityValue(), course.getValidityUnit(), course.getDurationMonths()));
-        primary.put("price", payable(course, "a"));
+        BigDecimal listA = payable(course, "a");
+        primary.put("listPrice", listA);
+        primary.put("price", settlements.checkoutAmount(org, listA));
         options.add(primary);
         if ("MULTIPLE".equalsIgnoreCase(course.getValidityType()) && course.getFeesAlt() != null && course.getFeesAlt().signum() > 0) {
             Map<String, Object> alt = new LinkedHashMap<>();
             alt.put("id", "b");
             alt.put("label", validityLabel("SINGLE", course.getValidityAltValue(), course.getValidityAltUnit(), course.getDurationMonths()));
-            alt.put("price", payable(course, "b"));
+            BigDecimal listB = payable(course, "b");
+            alt.put("listPrice", listB);
+            alt.put("price", settlements.checkoutAmount(org, listB));
             options.add(alt);
         }
         return options;
@@ -910,8 +936,11 @@ public class StorefrontService {
         if (existing != null) {
             throw new ApiException(HttpStatus.CONFLICT, "An account already exists for this mobile. Log in instead.");
         }
-        String mail = StudentAccountService.emailOrGenerated(email, phone);
-        if (store.findUserByEmail(mail) != null && (email != null && !email.isBlank())) {
+        if (email == null || email.isBlank() || !email.contains("@") || email.toLowerCase().endsWith(".local")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a real email. OTP is sent to email.");
+        }
+        String mail = email.trim().toLowerCase();
+        if (store.findUserByEmail(mail) != null) {
             throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
         }
         if (courseId != null) {
@@ -922,7 +951,15 @@ public class StorefrontService {
         }
         pendingRegisters.put(phone, new PendingRegister(org.getId(), fullName.trim(), mail, courseId, Instant.now().plusSeconds(300)));
         var issued = otp.issue(phone, OtpService.SIGNUP);
-        return otp.publicIssue(issued);
+        Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
+        if (mailService.live() && mailService.canDeliver(mail)) {
+            mailService.sendOtp(mail, OtpService.SIGNUP, issued.code());
+        } else {
+            out.put("devOtp", issued.code());
+        }
+        out.put("emailMasked", maskEmail(mail));
+        out.put("channel", "email");
+        return out;
     }
 
     @Transactional
@@ -950,6 +987,7 @@ public class StorefrontService {
         user.setPasswordHash(encoder.encode(UUID.randomUUID().toString()));
         user.setRole(Roles.STUDENT);
         user.setActive(true);
+        user.setEmailVerified(true);
         user.setPasswordChangedAt(Instant.now());
         user = store.save(user);
 
@@ -1046,6 +1084,17 @@ public class StorefrontService {
 
     private static String jsonEscape(String value) {
         return value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
+    }
+
+    private static String maskEmail(String email) {
+        if (email == null || !email.contains("@")) {
+            return "";
+        }
+        String[] parts = email.split("@", 2);
+        String user = parts[0];
+        String domain = parts[1];
+        String visible = user.length() <= 1 ? "*" : user.charAt(0) + "***";
+        return visible + "@" + domain;
     }
 
     private record PendingRegister(UUID orgId, String fullName, String email, UUID courseId, Instant expires) {}
