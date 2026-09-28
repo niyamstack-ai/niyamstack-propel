@@ -696,10 +696,10 @@ function CourseCard({
   return (
     <article className="overflow-hidden rounded-2xl border border-line bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
       <Link to={href} className="block">
-        <div className={`relative h-36 p-4 text-white ${coverClass(c.id + title)}`}>
+        <div className={`relative aspect-video w-full overflow-hidden p-4 text-white ${coverClass(c.id + title)}`}>
           {c.thumbnailUrl && (
             <>
-              <img src={fileSrc(c.thumbnailUrl)} alt="" className="absolute inset-0 h-full w-full object-cover" />
+              <img src={fileSrc(c.thumbnailUrl)} alt={title} className="absolute inset-0 h-full w-full object-cover" />
               <div className="absolute inset-0 bg-black/25" />
             </>
           )}

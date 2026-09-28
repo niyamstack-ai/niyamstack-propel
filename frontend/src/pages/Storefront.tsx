@@ -17,6 +17,7 @@ import { parseFormFields } from "../formFields";
 import { isProductHost } from "../siteHost";
 import { RichHtml } from "../RichTextArea";
 import { openRazorpay, type CheckoutOrder } from "../razorpay";
+import { printReceiptById } from "../receiptPrint";
 
 type CmsPage = { title: string; slug: string; pageType?: string; body?: string };
 
@@ -109,10 +110,103 @@ type PublicCourse = {
   discount?: number;
   price: number;
   listPrice?: number;
+  platformFeeMode?: string;
+  platformFeePercent?: number;
   canSell?: boolean;
   courseType?: string;
-  validityOptions?: { id: string; label: string; price: number }[];
+  validityOptions?: { id: string; label: string; price: number; listPrice?: number }[];
 };
+
+function stripHtml(html?: string) {
+  if (!html) return "";
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function courseCategoryLine(c: Pick<PublicCourse, "category" | "subCategory">) {
+  const cat = c.category && c.category !== "Others" ? c.category : "General";
+  if (c.subCategory && c.subCategory !== "Others" && c.subCategory !== cat) {
+    return `${cat} · ${c.subCategory}`;
+  }
+  return cat;
+}
+
+function courseValidityLabel(course: PublicCourse) {
+  if (course.validityType === "LIFETIME") return "Lifetime access";
+  if (course.validityType === "EXPIRY_DATE" && course.validityValue && course.validityValue > 20000101) {
+    const raw = String(course.validityValue).padStart(8, "0");
+    return `Access until ${raw.slice(6, 8)}/${raw.slice(4, 6)}/${raw.slice(0, 4)}`;
+  }
+  if (course.validityValue) {
+    const unit = (course.validityUnit || "MONTH").toLowerCase();
+    const plural = Number(course.validityValue) === 1 ? unit.replace(/s$/, "") : unit.endsWith("s") ? unit : `${unit}s`;
+    return `${course.validityValue} ${plural} validity`;
+  }
+  if (course.durationMonths) return `${course.durationMonths} month validity`;
+  return null;
+}
+
+function courseBuyAsideAccessLine(course: PublicCourse, selected?: { label: string }) {
+  const sole = course.validityOptions?.length === 1 ? course.validityOptions[0] : undefined;
+  const raw = selected?.label || sole?.label || courseValidityLabel(course);
+  if (!raw) return null;
+  if (/access/i.test(raw) || /^access until/i.test(raw)) return raw;
+  return `${raw} access`;
+}
+
+function openStudentCertificate(certificateId: string) {
+  void api<{ certificateNo?: string; title: string; studentName?: string; courseName?: string; instituteName?: string; issuedOn?: string }>(
+    `/api/actions/certificates/${certificateId}`,
+  ).then((rec) => {
+    const win = window.open("", "_blank");
+    if (!win) return;
+    win.document.write(`<!doctype html><html><head><title>${rec.certificateNo || "Certificate"}</title>
+      <style>body{font-family:Georgia,serif;padding:48px;text-align:center;color:#071a33}h1{margin:24px 0 8px;font-size:28px}p{margin:8px 0}</style></head>
+      <body>
+        <p>${rec.instituteName || ""}</p>
+        <h1>Certificate of completion</h1>
+        <p>This is to certify that</p>
+        <p style="font-size:22px;font-weight:700">${rec.studentName || ""}</p>
+        <p>has completed</p>
+        <p style="font-size:18px;font-weight:600">${rec.courseName || rec.title}</p>
+        <p>${rec.issuedOn || ""} · ${rec.certificateNo || ""}</p>
+        <script>window.print()<\/script>
+      </body></html>`);
+    win.document.close();
+  });
+}
+
+function PassThroughPriceLine({ listPrice, pay, mode }: { listPrice: number; pay: number; mode?: string }) {
+  if (mode !== "PASS_STUDENT" || pay <= 0 || listPrice <= pay) return null;
+  return (
+    <p className="text-xs text-slate-500">
+      List {formatInr(listPrice)} · Platform fee · You pay {formatInr(pay)}
+    </p>
+  );
+}
+
+function CourseCover({ slug, courseId, name, className = "" }: { slug: string; courseId: string; name: string; className?: string }) {
+  const [broken, setBroken] = useState(false);
+  const fallback = initialsOf(name) || name.slice(0, 2).toUpperCase();
+  if (broken) {
+    return (
+      <div className={`aspect-video w-full overflow-hidden bg-navy ${className}`}>
+        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-navy to-slate-800 px-3 text-center text-lg font-semibold text-white">
+          {fallback}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className={`aspect-video w-full overflow-hidden bg-navy ${className}`}>
+      <img
+        src={`/api/public/sites/${slug}/courses/${courseId}/cover`}
+        alt={name}
+        className="h-full w-full object-cover"
+        onError={() => setBroken(true)}
+      />
+    </div>
+  );
+}
 
 type OutlineItem = {
   id: string;
@@ -125,6 +219,8 @@ type OutlineItem = {
 type MyCourse = {
   id?: string;
   status?: string;
+  expired?: boolean;
+  expiresAt?: string;
   source?: string;
   progressPct?: number;
   progress?: {
@@ -409,7 +505,7 @@ function StorefrontShell() {
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <Link to={sitePath(slug) || "/"} className={`flex items-center gap-2 ${examLock ? "pointer-events-none opacity-40" : ""}`} tabIndex={examLock ? -1 : 0} aria-hidden={examLock}>
             {site.logoUrl ? (
-              <img src={site.logoUrl} alt="" className="h-9 w-9 rounded-lg object-cover" />
+              <img src={site.logoUrl} alt="" className="h-9 w-9 rounded-lg object-contain" />
             ) : (
               <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-navy text-sm font-bold text-white">
                 {initialsOf(site.name)}
@@ -552,7 +648,7 @@ function CatalogPage() {
   useEffect(() => {
     if (!token || user?.role !== "STUDENT") return;
     api<MyCourse[]>("/api/actions/my-courses")
-      .then((rows) => setOwned(new Set(rows.map((r) => r.course.id))))
+      .then((rows) => setOwned(new Set(rows.filter((r) => !r.expired).map((r) => r.course.id))))
       .catch(() => undefined);
   }, [token, user?.role]);
 
@@ -561,17 +657,38 @@ function CatalogPage() {
 
   const grid = (
     <div className="grid gap-4 sm:grid-cols-2">
-      {courses.length === 0 && <p className="text-sm text-slate-500">No published courses yet.</p>}
+      {courses.length === 0 && (
+        <div className="sm:col-span-2 text-sm text-slate-500">
+          <p>No published courses yet.</p>
+          {(site?.phone || site?.email) && (
+            <p className="mt-2">
+              Questions?{" "}
+              {site.email ? (
+                <a className="font-medium text-brand hover:underline" href={`mailto:${site.email}`}>
+                  {site.email}
+                </a>
+              ) : null}
+              {site.phone && site.email ? " · " : null}
+              {site.phone ? (
+                <a className="font-medium text-brand hover:underline" href={`tel:${site.phone}`}>
+                  {site.phone}
+                </a>
+              ) : null}
+            </p>
+          )}
+        </div>
+      )}
       {courses.map((c) => (
         <Link key={c.id} to={`${sitePath(slug)}/courses/${c.shareSlug || c.id}`} className="overflow-hidden rounded-2xl border border-line bg-white hover:border-brand">
-          <img src={`/api/public/sites/${slug}/courses/${c.id}/cover`} alt="" className="h-36 w-full bg-navy object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          <CourseCover slug={slug!} courseId={c.id} name={c.name} />
           <div className="p-5">
-            <p className="text-xs uppercase tracking-wide text-slate-400">{c.category && c.category !== "Others" ? c.category : "Course"}</p>
+            <p className="text-xs uppercase tracking-wide text-slate-400">{courseCategoryLine(c)}</p>
             <h2 className="mt-1 text-lg font-semibold text-navy">{c.name}</h2>
-            <p className="mt-2 line-clamp-2 text-sm text-slate-500">{c.description || "Open this course to see lessons, fees, and how to enrol."}</p>
+            <p className="mt-2 line-clamp-2 text-sm text-slate-500">{stripHtml(c.description) || "Open this course to see lessons, fees, and how to enrol."}</p>
             <p className="mt-4 text-lg font-bold text-navy">
               {owned.has(c.id) ? "Continue learning" : c.price === 0 ? "Free" : formatInr(c.price)}
             </p>
+            <PassThroughPriceLine listPrice={Number(c.listPrice ?? c.price)} pay={Number(c.price)} mode={c.platformFeeMode} />
           </div>
         </Link>
       ))}
@@ -654,7 +771,7 @@ function CoursePage() {
           try {
             const rows = await api<MyCourse[]>("/api/actions/my-courses");
             if (cancelled) return;
-            setOwned(rows.some((r) => r.course.id === row.id || r.course.id === courseId));
+            setOwned(rows.some((r) => !r.expired && (r.course.id === row.id || r.course.id === courseId)));
           } catch (err) {
             if (cancelled) return;
             setOwned(false);
@@ -731,6 +848,7 @@ function CoursePage() {
       await sendPurchaseOtp();
       return;
     }
+    const wasGuest = !(token && user?.role === "STUDENT");
     setBusy(true);
     setError(null);
     try {
@@ -739,7 +857,7 @@ function CoursePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind: "BUY_CLICK", path: `/courses/${course.id}` }),
       }).catch(() => undefined);
-      const res = await api<CheckoutOrder & { token?: string; user?: { id: string; name: string; email: string; role: string; organizationId: string; packageTier: string }; receiptNo?: string; loginHint?: string; phone?: string; invoiceId?: string }>(
+      const res = await api<CheckoutOrder & { token?: string; user?: { id: string; name: string; email: string; role: string; organizationId: string; packageTier: string }; receiptNo?: string; receiptId?: string; invoiceNo?: string; loginHint?: string; phone?: string; invoiceId?: string }>(
         `/api/public/sites/${slug}/purchase`,
         {
           method: "POST",
@@ -755,10 +873,12 @@ function CoursePage() {
         }
       );
       let receiptNo = res.receiptNo;
+      let receiptId = res.receiptId;
+      let invoiceNo = res.invoiceNo;
       let loginHint = res.loginHint;
       if (res.checkout) {
         const paid = await openRazorpay(res);
-        const done = await api<{ token: string; user: { id: string; name: string; email: string; role: string; organizationId: string; packageTier: string }; receiptNo?: string; loginHint?: string }>(
+        const done = await api<{ token: string; user: { id: string; name: string; email: string; role: string; organizationId: string; packageTier: string }; receiptNo?: string; receiptId?: string; invoiceNo?: string; loginHint?: string }>(
           `/api/public/sites/${slug}/purchase/confirm`,
           {
             method: "POST",
@@ -767,6 +887,8 @@ function CoursePage() {
         );
         applySession(done);
         receiptNo = done.receiptNo || receiptNo;
+        receiptId = done.receiptId || receiptId;
+        invoiceNo = done.invoiceNo || invoiceNo;
         loginHint = done.loginHint || loginHint;
       } else if (res.token && res.user) {
         applySession({ token: res.token, user: res.user });
@@ -778,9 +900,18 @@ function CoursePage() {
       } catch {
         /* tracking is best-effort */
       }
+      const noticeParts = [
+        receiptNo ? `Receipt ${receiptNo}` : null,
+        invoiceNo ? `Invoice ${invoiceNo}` : null,
+        wasGuest && loginHint ? loginHint : null,
+      ].filter(Boolean);
       navigate(`${sitePath(slug)}/learn/${course.id}`, {
         state: {
-          purchaseNotice: [receiptNo ? `Receipt ${receiptNo}.` : null, loginHint || `Log in later with ${phone} on this website (OTP).`].filter(Boolean).join(" "),
+          purchaseSuccess: true,
+          receiptId,
+          receiptNo,
+          invoiceNo,
+          purchaseNotice: noticeParts.length > 0 ? noticeParts.join(" · ") : "Purchase complete.",
         },
       });
     } catch (err) {
@@ -796,15 +927,23 @@ function CoursePage() {
   const loggedStudent = token && user?.role === "STUDENT";
   const selected = (course.validityOptions ?? []).find((o) => o.id === validityOption);
   const pay = selected ? Number(selected.price) : price ?? Number(course.price);
-  const validity =
-    course.validityType === "LIFETIME"
-      ? "Lifetime access"
-      : course.validityValue
-        ? `${course.validityValue} ${(course.validityUnit || "MONTH").toLowerCase()}${Number(course.validityValue) === 1 ? "" : "s"} validity`
-        : course.durationMonths
-          ? `${course.durationMonths} month validity`
-          : null;
+  const listPay = selected ? Number(selected.listPrice ?? selected.price) : Number(course.listPrice ?? course.price);
+  const validity = courseValidityLabel(course);
+  const asideAccess = courseBuyAsideAccessLine(course, selected);
+  const sellBlocked = pay > 0 && course.courseType !== "FREE" && course.canSell === false;
+  const paidCta = pay === 0 ? (course.allowTrial ? "Enroll free" : "Enroll free") : `Pay ${formatInr(pay)}`;
   const folders = outline.filter((row) => row.type === "FOLDER");
+
+  function clearCouponOnValidityChange(nextOption: string, nextPrice: number) {
+    if (otpSent) {
+      setOtpSent(null);
+      setOtp("");
+    }
+    setCouponOk(null);
+    setCoupon("");
+    setValidityOption(nextOption);
+    setPrice(nextPrice);
+  }
 
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -819,10 +958,10 @@ function CoursePage() {
         <h1 className="text-2xl font-bold text-navy">{course.name}</h1>
         <div className="flex gap-6 border-b border-line text-sm font-semibold">
           <button type="button" className={`-mb-px border-b-2 pb-2 ${tab === "overview" ? "border-brand text-brand" : "border-transparent text-slate-500"}`} onClick={() => setTab("overview")}>
-            OVERVIEW
+            Overview
           </button>
           <button type="button" className={`-mb-px border-b-2 pb-2 ${tab === "content" ? "border-brand text-brand" : "border-transparent text-slate-500"}`} onClick={() => setTab("content")}>
-            CONTENT
+            Content
           </button>
         </div>
 
@@ -857,10 +996,10 @@ function CoursePage() {
                     <span className="block text-slate-500">Join scheduled sessions from your learning area.</span>
                   </p>
                 )}
-                {course.allowTrial && (
+                {course.allowTrial && pay === 0 && (
                   <p className="text-sm text-slate-700">
-                    <span className="font-medium">Trial access</span>
-                    <span className="block text-slate-500">Explore before you commit — enrol to start.</span>
+                    <span className="font-medium">Free preview</span>
+                    <span className="block text-slate-500">Enrol at no cost to explore the course.</span>
                   </p>
                 )}
                 <p className="text-sm text-slate-700">
@@ -873,7 +1012,10 @@ function CoursePage() {
             <section>
               <p className="text-sm text-slate-500">You pay</p>
               <p className="text-2xl font-bold text-navy">{pay === 0 ? "Free" : formatInr(pay)}</p>
-              {Number(course.discount || 0) > 0 && <p className="text-xs text-slate-400">List price ₹{course.fees}</p>}
+              <PassThroughPriceLine listPrice={listPay} pay={pay} mode={course.platformFeeMode} />
+              {Number(course.discount || 0) > 0 && course.platformFeeMode !== "PASS_STUDENT" && (
+                <p className="text-xs text-slate-400">List price ₹{course.fees}</p>
+              )}
             </section>
             )}
             {!owned && (
@@ -882,7 +1024,7 @@ function CoursePage() {
               <div className="flex gap-2">
                 <input className="w-36 rounded-lg border border-line px-2 py-1.5" placeholder="Code" value={coupon} disabled={!!otpSent} onChange={(e) => { setCoupon(e.target.value); if (otpSent) { setOtpSent(null); setOtp(""); } }} />
                 <button type="button" className="font-semibold text-brand disabled:opacity-50" disabled={busy || !coupon.trim() || !!otpSent} onClick={applyCoupon}>
-                  {busy ? "Applying…" : "Apply here"}
+                  {busy ? "Applying…" : "Apply"}
                 </button>
               </div>
             </section>
@@ -896,7 +1038,7 @@ function CoursePage() {
           </div>
         ) : (
           <div className="divide-y divide-line rounded-2xl border border-line bg-white">
-            {outline.length === 0 && <p className="px-4 py-6 text-sm text-slate-500">Content is added after you purchase.</p>}
+            {outline.length === 0 && <p className="px-4 py-6 text-sm text-slate-500">Syllabus not published yet.</p>}
             {folders.map((folder) => (
               <div key={folder.id} className="px-4 py-3">
                 <p className="font-medium text-navy">{folder.title}</p>
@@ -920,16 +1062,9 @@ function CoursePage() {
 
       <aside className="sticky top-4 overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
         <div className="bg-navy p-5 text-white">
-          <img
-            src={`/api/public/sites/${slug}/courses/${course.id}/cover`}
-            alt=""
-            className="mb-3 h-28 w-full rounded-xl object-cover"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
-          />
+          <CourseCover slug={slug!} courseId={course.id} name={course.name} className="mb-3 rounded-xl" />
           <h2 className="text-lg font-bold leading-snug">{course.name}</h2>
-          <p className="mt-1 text-xs text-sky-200">{course.category || "Course"}</p>
+          <p className="mt-1 text-xs text-sky-200">{courseCategoryLine(course)}</p>
         </div>
         <div className="space-y-3 p-5">
           {ownedError && (
@@ -960,14 +1095,7 @@ function CoursePage() {
                       className="mr-2"
                       checked={validityOption === opt.id}
                       disabled={!!otpSent}
-                      onChange={() => {
-                        if (otpSent) {
-                          setOtpSent(null);
-                          setOtp("");
-                        }
-                        setValidityOption(opt.id);
-                        setPrice(opt.price);
-                      }}
+                      onChange={() => clearCouponOnValidityChange(opt.id, Number(opt.price))}
                     />
                     {opt.label}
                   </span>
@@ -976,10 +1104,16 @@ function CoursePage() {
               ))}
             </div>
           )}
+          {(course.validityOptions?.length ?? 0) <= 1 && asideAccess && (
+            <p className="text-xs font-medium text-slate-600">{asideAccess}</p>
+          )}
           <p className="text-xl font-bold text-navy">{pay === 0 ? "Free" : formatInr(pay)}</p>
+          <PassThroughPriceLine listPrice={listPay} pay={pay} mode={course.platformFeeMode} />
           {course.allowLive && <p className="text-xs font-medium text-brand">Includes live classes</p>}
-          {course.allowTrial && pay > 0 && (
-            <p className="text-xs text-slate-500">Trial available after enrol — open lessons from My learning.</p>
+          {sellBlocked && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Online enrolment is temporarily closed. Contact the institute.
+            </p>
           )}
           {token && user && user.role !== "STUDENT" && (
             <p className="text-xs text-amber-800">
@@ -989,8 +1123,8 @@ function CoursePage() {
           {loggedStudent && !needsEmailVerify ? (
             <>
               {error && <p className="text-sm text-red-600">{error}</p>}
-              <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy} onClick={() => void buy()}>
-                {busy ? "Unlocking…" : pay === 0 ? (course.allowTrial ? "Start trial" : "Enroll free") : "Get this course"}
+              <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy || sellBlocked} onClick={() => void buy()}>
+                {busy ? "Unlocking…" : pay === 0 ? "Enroll free" : paidCta}
               </button>
             </>
           ) : !otpSent ? (
@@ -1000,8 +1134,8 @@ function CoursePage() {
               <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
               <p className="text-xs text-slate-500">We email a verification code before checkout.</p>
               {error && <p className="text-sm text-red-600">{error}</p>}
-              <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy}>
-                {busy ? "Sending…" : "Send email code"}
+              <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy || sellBlocked}>
+                {busy ? "Sending…" : sellBlocked ? "Enrolment closed" : "Send email code"}
               </button>
             </form>
           ) : (
@@ -1017,8 +1151,8 @@ function CoursePage() {
                 onChange={(e) => setOtp(e.target.value)}
               />
               {error && <p className="text-sm text-red-600">{error}</p>}
-              <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy}>
-                {busy ? "Processing…" : pay === 0 ? (course.allowTrial ? "Verify & start trial" : "Verify & enroll") : "Verify & continue to pay"}
+              <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy || sellBlocked}>
+                {busy ? "Processing…" : pay === 0 ? "Verify & enroll" : "Verify & continue to pay"}
               </button>
               <button
                 type="button"
@@ -1288,7 +1422,7 @@ function StudentRegisterPage() {
           </button>
           <div className="flex justify-between text-xs">
             <button type="button" className="text-brand" onClick={() => { setSent(null); setOtp(""); }}>
-              Change number
+              Change details
             </button>
             <button type="button" className="text-brand" disabled={busy} onClick={() => void sendOtp({ preventDefault() {} } as FormEvent)}>
               Resend OTP
@@ -1415,15 +1549,25 @@ function MyLearningPage() {
         {rows.map((row) => {
           const p = row.progress;
           const pct = Number(row.progressPct || p?.pct || 0);
+          const renewHref = `${sitePath(slug)}/courses/${row.course.shareSlug || row.course.id}`;
+          const progressTotals = (p?.filesTotal ?? 0) + (p?.homeworkTotal ?? 0) + (p?.testsTotal ?? 0);
           return (
-            <Link key={row.course.id} to={`${sitePath(slug)}/learn/${row.course.id}`} className="rounded-2xl border border-line bg-white p-5 hover:border-brand">
+            <Link key={row.course.id} to={row.expired ? renewHref : `${sitePath(slug)}/learn/${row.course.id}`} className="rounded-2xl border border-line bg-white p-5 hover:border-brand">
               <p className="font-semibold text-navy">{row.course.name}</p>
+              {row.expired && (
+                <p className="mt-1 text-xs font-medium text-amber-800">Access expired — renew to continue</p>
+              )}
+              {!row.expired && row.expiresAt && (
+                <p className="mt-1 text-xs text-slate-500">Access until {formatDay(row.expiresAt)}</p>
+              )}
               <p className="mt-1 text-sm text-slate-500">
-                {pct >= 100 ? "Completed" : p?.resume ? `Next: ${p.resume}` : `${pct}% complete`}
+                {row.expired ? "Renew on the course page to continue" : pct >= 100 ? "Completed" : p?.resume ? `Next: ${p.resume}` : `${pct}% complete`}
               </p>
+              {p && progressTotals > 0 && (
               <p className="mt-1 text-xs text-slate-400">
-                {p ? `${p.filesDone}/${p.filesTotal} lessons · ${p.homeworkDone}/${p.homeworkTotal} homework · ${p.testsDone}/${p.testsTotal} tests` : ""}
+                {`${p.filesDone}/${p.filesTotal} lessons · ${p.homeworkDone}/${p.homeworkTotal} homework · ${p.testsDone}/${p.testsTotal} tests`}
               </p>
+              )}
               <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-mist">
                 <div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(100, pct)}%` }} />
               </div>
@@ -1436,9 +1580,16 @@ function MyLearningPage() {
           <p className="text-xs uppercase tracking-wide text-brand">Certificates</p>
           <ul className="mt-2 space-y-1 text-sm">
             {(today.certificates ?? []).map((c) => (
-              <li key={c.id}>
-                {c.title}
-                {c.issuedOn ? ` · ${formatDay(c.issuedOn)}` : ""}
+              <li key={c.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  {c.title}
+                  {c.issuedOn ? ` · ${formatDay(c.issuedOn)}` : ""}
+                </span>
+                {c.id && (
+                  <button type="button" className="text-xs font-medium text-brand" onClick={() => openStudentCertificate(c.id)}>
+                    Download
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -1448,13 +1599,23 @@ function MyLearningPage() {
   );
 }
 
+type StudyLocationState = {
+  purchaseSuccess?: boolean;
+  purchaseNotice?: string;
+  receiptId?: string;
+  receiptNo?: string;
+  invoiceNo?: string;
+};
+
 function StudyPage() {
   const slug = useSlug();
   const { courseId } = useParams();
   const location = useLocation();
-  const purchaseNotice = (location.state as { purchaseNotice?: string } | null)?.purchaseNotice;
+  const purchaseState = (location.state as StudyLocationState | null) ?? {};
   const [course, setCourse] = useState<PublicCourse | null>(null);
   const [enrolled, setEnrolled] = useState<boolean | null>(null);
+  const [expiredEnrollment, setExpiredEnrollment] = useState<MyCourse | null>(null);
+  const [printError, setPrintError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState<StudySection>("contents");
 
@@ -1482,7 +1643,13 @@ function StudyPage() {
           (r) => r.course.id === courseId || (r.course as { shareSlug?: string }).shareSlug === courseId,
         );
         setCourse(match?.course || null);
-        setEnrolled(!!match);
+        if (match?.expired) {
+          setExpiredEnrollment(match);
+          setEnrolled(false);
+        } else {
+          setExpiredEnrollment(null);
+          setEnrolled(!!match);
+        }
       })
       .catch((e) => {
         setEnrolled(false);
@@ -1525,17 +1692,31 @@ function StudyPage() {
   }
 
   if (enrolled === false) {
+    const renewTarget = expiredEnrollment?.course
+      ? `${sitePath(slug)}/courses/${expiredEnrollment.course.shareSlug || expiredEnrollment.course.id}`
+      : `${sitePath(slug)}`;
     return (
       <div className="space-y-3">
         <Link to={`${sitePath(slug)}/learn`} className="text-sm text-brand hover:underline">
           ← My learning
         </Link>
-        <h1 className="text-2xl font-bold text-navy">Course not in your library</h1>
+        <h1 className="text-2xl font-bold text-navy">{expiredEnrollment ? "Your access has expired" : "Course not in your library"}</h1>
         <p className="text-sm text-slate-500">
-          You are not enrolled in this course.{" "}
-          <Link className="text-brand" to={`${sitePath(slug)}`}>
-            Browse catalog
-          </Link>
+          {expiredEnrollment ? (
+            <>
+              Renew to continue learning.{" "}
+              <Link className="text-brand" to={renewTarget}>
+                View course &amp; buy again
+              </Link>
+            </>
+          ) : (
+            <>
+              You are not enrolled in this course.{" "}
+              <Link className="text-brand" to={`${sitePath(slug)}`}>
+                Browse catalog
+              </Link>
+            </>
+          )}
         </p>
       </div>
     );
@@ -1547,7 +1728,30 @@ function StudyPage() {
         ← My learning
       </Link>
       <h1 className="text-2xl font-bold text-navy">{course?.name || "Course"}</h1>
-      {purchaseNotice && <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{purchaseNotice}</p>}
+      {purchaseState.purchaseSuccess && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <p className="font-medium">Purchase complete</p>
+          <p className="mt-1">{purchaseState.purchaseNotice}</p>
+          <div className="mt-3 flex flex-wrap gap-3">
+            {purchaseState.receiptId && (
+              <button
+                type="button"
+                className="text-sm font-semibold text-brand"
+                onClick={() => {
+                  setPrintError(null);
+                  void printReceiptById(purchaseState.receiptId!).catch((e: Error) => setPrintError(e.message));
+                }}
+              >
+                Print receipt
+              </button>
+            )}
+            <Link className="text-sm font-semibold text-brand" to={`${sitePath(slug)}/fees`}>
+              My fees
+            </Link>
+          </div>
+          {printError && <p className="mt-2 text-xs text-red-700">{printError}</p>}
+        </div>
+      )}
       <div className="grid items-start gap-6 lg:grid-cols-[12.5rem_minmax(0,1fr)]">
         <nav className="flex gap-1 overflow-x-auto lg:sticky lg:top-20 lg:flex-col lg:overflow-visible">
           {nav.map((item) => (
@@ -1905,7 +2109,7 @@ function StudentForgotPage() {
         </>
       ) : (
         <>
-          <p className="mt-1 text-sm text-slate-500">Reset with email, or enter your mobile — we send the OTP to the email on your account.</p>
+          <p className="mt-1 text-sm text-slate-500">Mobile to identify your account · OTP sent to your email.</p>
           <div className="mt-4 flex gap-2">
             <button type="button" className={`rounded-full px-3 py-1 text-sm ${method === "otp" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => { setMethod("otp"); setSent(null); }}>
               Email OTP

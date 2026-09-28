@@ -53,10 +53,20 @@ type Course = {
   id: string;
   name: string;
   fees: number;
+  discount?: number;
   published?: boolean;
   description?: string;
   thumbnailUrl?: string;
 };
+
+function stripHtml(html?: string) {
+  if (!html) return "";
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function catalogPrice(c: Course) {
+  return Math.max(0, Number(c.fees || 0) - Number(c.discount || 0));
+}
 
 const HOST_TARGET = "sites.niyamstack.com";
 const DEFAULT_PAGES = [
@@ -318,11 +328,17 @@ export function WebsitePage() {
       {liveCourses.length === 0 && <p className="text-sm text-slate-500">Publish a course and it will show here.</p>}
       {liveCourses.map((c) => (
         <div key={c.id} className="overflow-hidden rounded-2xl border border-line bg-white">
-          {c.thumbnailUrl && <img src={fileSrc(c.thumbnailUrl)} alt="" className="h-28 w-full object-cover" />}
+          <div className="aspect-video w-full overflow-hidden bg-navy">
+            {c.thumbnailUrl ? (
+              <img src={fileSrc(c.thumbnailUrl)} alt={c.name} className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full items-center justify-center px-3 text-center text-sm font-semibold text-white">{c.name}</div>
+            )}
+          </div>
           <div className="p-4">
             <p className="font-semibold text-navy">{c.name}</p>
-            <p className="mt-1 line-clamp-2 text-xs text-slate-500">{c.description}</p>
-            <p className="mt-2 text-sm font-bold text-navy">{formatInr(c.fees)}</p>
+            <p className="mt-1 line-clamp-2 text-xs text-slate-500">{stripHtml(c.description)}</p>
+            <p className="mt-2 text-sm font-bold text-navy">{catalogPrice(c) === 0 ? "Free" : formatInr(catalogPrice(c))}</p>
           </div>
         </div>
       ))}

@@ -6,6 +6,7 @@ import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.*;
 import com.niyamstack.propel.integration.EventHook;
+import com.niyamstack.propel.integration.MailService;
 import com.niyamstack.propel.integration.MessagingGateway;
 import com.niyamstack.propel.integration.OrgSecrets;
 import com.niyamstack.propel.integration.PaymentGateway;
@@ -43,9 +44,10 @@ public class FeeService {
     private final CompensationService compensation;
     private final DataScope scope;
     private final SettlementService settlements;
+    private final MailService mail;
 
     public FeeService(Store store, PaymentGateway payments, MessagingGateway messaging, AuditService audit, EventHook hooks,
-                      CompensationService compensation, DataScope scope, SettlementService settlements) {
+                      CompensationService compensation, DataScope scope, SettlementService settlements, MailService mail) {
         this.store = store;
         this.payments = payments;
         this.messaging = messaging;
@@ -54,6 +56,7 @@ public class FeeService {
         this.compensation = compensation;
         this.scope = scope;
         this.settlements = settlements;
+        this.mail = mail;
     }
 
     @Transactional
@@ -576,6 +579,26 @@ public class FeeService {
         receipt.setIssuedAt(Instant.now());
         store.save(receipt);
         Student billed = store.getOwned(Student.class, invoice.getStudentId(), org.getId());
+        if (invoice.getCourseId() != null) {
+            try {
+                Course course = store.getOwned(Course.class, invoice.getCourseId(), org.getId());
+                String email = billed.getEmail();
+                if (email == null || email.isBlank()) {
+                    AppUser owner = store.get(AppUser.class, billed.getUserId());
+                    email = owner.getEmail();
+                }
+                if (email != null && !email.isBlank()) {
+                    mail.sendPurchaseReceipt(
+                            email,
+                            payment.getReceiptNo(),
+                            invoice.getInvoiceNo(),
+                            "₹" + payment.getAmount(),
+                            course.getName());
+                }
+            } catch (Exception ignored) {
+                /* best-effort */
+            }
+        }
         String to = billed.getPhone() != null && !billed.getPhone().isBlank() ? billed.getPhone() : billed.getEmail();
         var send = messaging.send(org.getId(), "WHATSAPP", to, "Fee receipt",
                 "Receipt " + payment.getReceiptNo() + " for invoice " + invoice.getInvoiceNo());
@@ -823,6 +846,10 @@ public class FeeService {
         out.put("sgst", invoice.getSgst());
         out.put("igst", invoice.getIgst());
         out.put("taxAmount", invoice.getTaxAmount());
+        if (invoice.getCourseId() != null) {
+            Course course = store.getOwned(Course.class, invoice.getCourseId(), user.organizationId());
+            out.put("course", course.getName());
+        }
         return out;
     }
 

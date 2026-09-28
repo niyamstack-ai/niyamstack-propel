@@ -203,10 +203,13 @@ export function CreateCourseWizard() {
       discount: paid ? Number(discount) : 0,
       validityType,
       validityValue:
-        validityType === "EXPIRY_DATE"
-          ? Number((expiryDate || "").replace(/-/g, "")) || 0
-          : Number(validityValue) || 1,
-      validityUnit: validityType === "EXPIRY_DATE" ? "DATE" : validityUnit,
+        validityType === "LIFETIME"
+          ? null
+          : validityType === "EXPIRY_DATE"
+            ? Number((expiryDate || "").replace(/-/g, "")) || 0
+            : Number(validityValue) || 1,
+      validityUnit:
+        validityType === "LIFETIME" ? null : validityType === "EXPIRY_DATE" ? "DATE" : validityUnit,
       durationMonths,
       published,
         featured,
@@ -363,10 +366,12 @@ export function CreateCourseWizard() {
                   <UploadIcon /> Upload thumbnail image
                 </button>
                 {thumbnailUrl && (
-                  <div className="mt-3 max-w-xs overflow-hidden rounded-lg border border-line">
-                    <img src={fileSrc(thumbnailUrl)} alt="Course thumbnail" className="h-36 w-full object-cover" />
+                  <div className="mt-3 max-w-md overflow-hidden rounded-lg border border-line">
+                    <div className="aspect-video w-full overflow-hidden bg-navy">
+                      <img src={fileSrc(thumbnailUrl)} alt="Course thumbnail preview" className="h-full w-full object-cover" />
+                    </div>
                     <div className="flex items-center justify-between px-2 py-1">
-                      <p className="text-xs text-slate-500">Thumbnail uploaded</p>
+                      <p className="text-xs text-slate-500">Preview (student card crop)</p>
                       <button
                         type="button"
                         className="text-xs text-brand hover:underline"
@@ -378,8 +383,9 @@ export function CreateCourseWizard() {
                   </div>
                 )}
                 <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
-                  <span className="text-amber-400">💡</span> Recommended Image Size: 800px x 600px, PNG or JPEG file.
+                  <span className="text-amber-400">💡</span> Recommended: 1280×720 (16:9), PNG or JPEG.
                 </p>
+                <p className="mt-1 text-xs text-slate-500">Avoid important text near top/bottom edges; it may crop on cards.</p>
               </div>
               {categoryRows.map((row, i) => (
                 <div key={i} className="grid min-w-0 gap-3 sm:grid-cols-2">
@@ -437,13 +443,16 @@ export function CreateCourseWizard() {
                   <Toggle on={installmentsOn} onChange={(v) => { setInstallmentsOn(v); if (v) madePlan.current = false; }} />
                 </li>
                 {installmentsOn && (
-                  <li>
+                  <li className="space-y-2">
                     <input
                       className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                       value={installmentCount}
                       onChange={(e) => setInstallmentCount(e.target.value)}
                       placeholder="Number of installments"
                     />
+                    <p className="text-xs text-slate-500">
+                      Installment plans are managed under Fees after enrol — not charged automatically at website checkout.
+                    </p>
                   </li>
                 )}
                 <li className="flex items-center justify-between gap-3 text-sm text-slate-700">

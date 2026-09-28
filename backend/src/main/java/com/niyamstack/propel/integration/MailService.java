@@ -103,6 +103,35 @@ public class MailService {
         sendHtml(to, "Reset your Niyamstack Propel password", plain, layout("Reset your password", inner));
     }
 
+    public void sendPurchaseReceipt(String to, String receiptNo, String invoiceNo, String amountInr, String courseName) {
+        if (!live() || !canDeliver(to)) {
+            return;
+        }
+        String courseLine = courseName == null || courseName.isBlank() ? "" : esc(courseName);
+        String plain = "Thank you for your purchase. Receipt " + receiptNo + " for " + amountInr + ".";
+        String inner = """
+                <p style="margin:0 0 16px;font-size:15px;line-height:1.5;color:#334155;">Your payment was received. Here is your receipt summary.</p>
+                <table role="presentation" style="width:100%%;font-size:14px;color:#334155;margin:16px 0;">
+                  <tr><td style="padding:4px 0;color:#64748b;">Receipt</td><td style="padding:4px 0;font-weight:600;">%s</td></tr>
+                  <tr><td style="padding:4px 0;color:#64748b;">Invoice</td><td style="padding:4px 0;">%s</td></tr>
+                  <tr><td style="padding:4px 0;color:#64748b;">Amount</td><td style="padding:4px 0;font-weight:600;">%s</td></tr>
+                  %s
+                </table>
+                <p style="margin:0;font-size:13px;color:#64748b;">Sign in to your institute website to access your course.</p>
+                """.formatted(
+                esc(receiptNo),
+                esc(invoiceNo == null || invoiceNo.isBlank() ? "—" : invoiceNo),
+                esc(amountInr),
+                courseLine.isBlank() ? "" : "<tr><td style=\"padding:4px 0;color:#64748b;\">Course</td><td style=\"padding:4px 0;\">" + courseLine + "</td></tr>");
+        try {
+            sendHtml(to, "Your course receipt — " + receiptNo, plain, layout("Payment receipt", inner));
+        } catch (RuntimeException e) {
+            log.warn("Purchase receipt email failed to {}: {}", to, e.getMessage());
+        } catch (Exception e) {
+            log.warn("Purchase receipt email failed to {}: {}", to, e.getMessage());
+        }
+    }
+
     public void sendWelcome(String to, String name) {
         String greet = name == null || name.isBlank() ? "there" : name;
         String login = publicUrl + "/login";

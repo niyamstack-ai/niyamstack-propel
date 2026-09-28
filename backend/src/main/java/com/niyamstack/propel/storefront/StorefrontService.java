@@ -274,6 +274,7 @@ public class StorefrontService {
         String mail = ctx.email();
 
         AppUser user = ctx.user();
+        boolean loggedStudentBuyer = user != null && Roles.STUDENT.equals(user.getRole());
         boolean needsVerify = user == null || !user.isEmailVerified();
         if (needsVerify) {
             String raw = pendingFlows.getPayload("PURCHASE:" + phone);
@@ -309,7 +310,7 @@ public class StorefrontService {
                         .findFirst()
                         .orElse(null);
                 if (prior != null) {
-                    return purchaseSession(user, course, null, null, true);
+                    return purchaseSession(user, course, null, null, true, false);
                 }
             }
         }
@@ -393,7 +394,8 @@ public class StorefrontService {
             redeemCoupon(applied);
             hooks.fire(org.getId(), "course.enrolled", Map.of("courseId", course.getId(), "price", 0));
             Receipt complimentary = complimentaryReceipt(org, invoice);
-            return purchaseSession(user, course, invoice, complimentary, false);
+            emailPurchaseReceipt(user, course, invoice, complimentary);
+            return purchaseSession(user, course, invoice, complimentary, false, !loggedStudentBuyer);
         }
 
         if (payments.live(org.getId())) {
@@ -449,7 +451,7 @@ public class StorefrontService {
         fees.completeCapturedPayment(org, invoice, payment);
         hooks.fire(org.getId(), "course.purchased", Map.of("courseId", course.getId(), "amount", price));
         Receipt receipt = latestReceipt(org.getId(), invoice.getId());
-        return purchaseSession(user, course, invoice, receipt, false);
+        return purchaseSession(user, course, invoice, receipt, false, !loggedStudentBuyer);
     }
 
     @Transactional
@@ -471,7 +473,7 @@ public class StorefrontService {
         AppUser user = store.get(AppUser.class, student.getUserId());
         hooks.fire(org.getId(), "course.purchased", Map.of("courseId", course.getId(), "amount", invoice.getAmount()));
         Receipt receipt = latestReceipt(org.getId(), invoice.getId());
-        return purchaseSession(user, course, invoice, receipt, false);
+        return purchaseSession(user, course, invoice, receipt, false, false);
     }
 
     @Transactional
@@ -491,13 +493,34 @@ public class StorefrontService {
         redeemCouponFromInvoice(org, invoice);
     }
 
-    private Map<String, Object> purchaseSession(AppUser user, Course course, Invoice invoice, Receipt receipt, boolean already) {
+    private void emailPurchaseReceipt(AppUser user, Course course, Invoice invoice, Receipt receipt) {
+        if (user == null || course == null || invoice == null || receipt == null) {
+            return;
+        }
+        try {
+            String email = user.getEmail();
+            if (email != null && !email.isBlank()) {
+                mailService.sendPurchaseReceipt(
+                        email,
+                        receipt.getReceiptNo(),
+                        invoice.getInvoiceNo(),
+                        "₹" + receipt.getAmount(),
+                        course.getName());
+            }
+        } catch (Exception ignored) {
+            /* best-effort */
+        }
+    }
+
+    private Map<String, Object> purchaseSession(AppUser user, Course course, Invoice invoice, Receipt receipt, boolean already, boolean includeLoginHint) {
         Map<String, Object> session = new LinkedHashMap<>(sessions.issue(user));
         session.put("alreadyEnrolled", already);
         session.put("checkout", false);
         session.put("course", publicCourse(course));
         session.put("phone", user.getPhone());
-        session.put("loginHint", loginHint(user.getPhone()));
+        if (includeLoginHint) {
+            session.put("loginHint", loginHint(user.getPhone()));
+        }
         if (invoice != null) {
             session.put("invoiceId", invoice.getId());
             session.put("invoiceNo", invoice.getInvoiceNo());
@@ -620,13 +643,15 @@ public class StorefrontService {
             return List.of(row);
         }
         return rows.stream()
-                .filter(StorefrontService::enrollmentActive)
+                .filter(e -> !"CANCELLED".equals(e.getStatus()))
                 .map(e -> {
                     Course course = store.getOwned(Course.class, e.getCourseId(), orgId);
                     Map<String, Object> stats = courseProgressPct(orgId, course.getId(), submittedExams, submittedAsg, viewedContent);
+                    boolean active = enrollmentActive(e);
                     Map<String, Object> row = new LinkedHashMap<>();
                     row.put("id", e.getId());
-                    row.put("status", e.getStatus());
+                    row.put("status", active ? e.getStatus() : "EXPIRED");
+                    row.put("expired", !active);
                     row.put("source", e.getSource());
                     row.put("expiresAt", e.getExpiresAt());
                     row.put("course", publicCourse(course));
@@ -646,6 +671,7 @@ public class StorefrontService {
             return out;
         }
         Set<UUID> courseIds = myCourses(orgId, userId).stream()
+                .filter(row -> !Boolean.TRUE.equals(row.get("expired")))
                 .map(row -> {
                     Object course = row.get("course");
                     if (course instanceof Map<?, ?> map) {
@@ -1054,6 +1080,10 @@ public class StorefrontService {
         if (course == null) {
             return null;
         }
+        String validityType = course.getValidityType();
+        if (validityType != null && "LIFETIME".equalsIgnoreCase(validityType.trim())) {
+            return null;
+        }
         Integer value;
         String unit;
         if ("b".equalsIgnoreCase(validityOption)
@@ -1065,16 +1095,38 @@ public class StorefrontService {
             value = course.getValidityValue();
             unit = course.getValidityUnit();
         }
+        if (validityType != null && "EXPIRY_DATE".equalsIgnoreCase(validityType.trim())) {
+            return expiryEndOfCalendarDayIst(value);
+        }
         if (value == null || value <= 0) {
             return null;
         }
         String u = unit == null ? "MONTH" : unit.trim().toUpperCase();
+        if ("DATE".equals(u)) {
+            return expiryEndOfCalendarDayIst(value);
+        }
         Instant from = Instant.now();
         return switch (u) {
             case "DAY", "DAYS" -> from.plus(value, ChronoUnit.DAYS);
             case "YEAR", "YEARS" -> from.plus(value * 365L, ChronoUnit.DAYS);
             default -> from.plus(value, ChronoUnit.MONTHS);
         };
+    }
+
+    /** Calendar date YYYYMMDD — access through end of that day IST (exclusive start of next day). */
+    private static Instant expiryEndOfCalendarDayIst(Integer yyyymmdd) {
+        if (yyyymmdd == null || yyyymmdd <= 0) {
+            return null;
+        }
+        int raw = yyyymmdd;
+        int y = raw / 10000;
+        int m = (raw / 100) % 100;
+        int d = raw % 100;
+        if (y < 1970 || m < 1 || m > 12 || d < 1 || d > 31) {
+            return null;
+        }
+        ZoneId ist = ZoneId.of("Asia/Kolkata");
+        return LocalDate.of(y, m, d).plusDays(1).atStartOfDay(ist).toInstant();
     }
 
     private String validityOptionFromInvoice(Invoice invoice) {
