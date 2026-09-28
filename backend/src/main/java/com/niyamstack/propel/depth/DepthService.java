@@ -550,8 +550,8 @@ public class DepthService {
         en.put("dashboard", "Dashboard");
         en.put("grow", "Grow");
         en.put("website", "Website");
-        en.put("your_app", "Your App");
-        en.put("mobile_apps", "Mobile apps");
+        en.put("your_app", "Mobile site");
+        en.put("mobile_apps", "Mobile site");
         en.put("landing_pages", "Landing Pages");
         en.put("campaigns", "Campaigns");
         en.put("courses", "Courses");
@@ -615,8 +615,8 @@ public class DepthService {
         hi.put("dashboard", "डैशबोर्ड");
         hi.put("grow", "विकास");
         hi.put("website", "वेबसाइट");
-        hi.put("your_app", "आपका ऐप");
-        hi.put("mobile_apps", "मोबाइल ऐप्स");
+        hi.put("your_app", "मोबाइल साइट");
+        hi.put("mobile_apps", "मोबाइल साइट");
         hi.put("landing_pages", "लैंडिंग पेज");
         hi.put("campaigns", "अभियान");
         hi.put("courses", "कोर्स");

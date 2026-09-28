@@ -70,7 +70,7 @@ export function CommsPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-navy">Communication</h1>
-      <p className="text-sm text-slate-500">WhatsApp and email go out when those keys are saved in Integrations. In-app notices stay on the student website.</p>
+      <p className="text-sm text-slate-500">WhatsApp and email go out when those keys are saved in Integrations. Site notices stay on the student website.</p>
       {canSend && (
       <Card title="Send announcement">
         <FormGrid>

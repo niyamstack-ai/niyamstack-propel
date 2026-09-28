@@ -86,7 +86,7 @@ function MyFees() {
             (plans.data ?? []).find((p) => p.id === inv.feePlanId)?.name || "Course fees",
             `₹${Math.max(0, Number(inv.amount || 0) - Number(inv.paidAmount || 0))}`,
             formatDay(inv.dueDate) || "—",
-            inv.status,
+            prettyLabel(inv.status),
             inv.status === "PAID" || inv.status === "CANCELLED" || inv.status === "VOID" ? (
               inv.status === "PAID" ? "Paid" : prettyLabel(inv.status)
             ) : (

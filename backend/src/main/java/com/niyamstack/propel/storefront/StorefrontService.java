@@ -139,7 +139,7 @@ public class StorefrontService {
         out.put("phone", org.getPhone());
         out.put("email", org.getEmail());
         out.put("appShareUrl", org.getAppShareUrl() == null ? "" : org.getAppShareUrl());
-        out.put("hasApp", org.getAppShareUrl() != null && !org.getAppShareUrl().isBlank());
+        out.put("hasApp", true);
         out.put("hasOneToOne", !store.list(com.niyamstack.propel.domain.Model.OneToOneSession.class, org.getId()).isEmpty());
         out.put("hasJobs", !store.list(com.niyamstack.propel.domain.Model.Drive.class, org.getId()).isEmpty()
                 || !store.list(com.niyamstack.propel.domain.Model.AlumniJob.class, org.getId()).isEmpty());

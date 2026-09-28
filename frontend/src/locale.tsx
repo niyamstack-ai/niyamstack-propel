@@ -96,6 +96,8 @@ export function labelKey(label: string) {
     Dashboard: "dashboard",
     Grow: "grow",
     Website: "website",
+    "Mobile site": "your_app",
+    "Phone layout": "mobile_apps",
     "Your App": "your_app",
     "Mobile apps": "mobile_apps",
     "Landing Pages": "landing_pages",

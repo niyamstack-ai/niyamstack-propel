@@ -135,7 +135,7 @@ export function CampaignsPage() {
                 { value: "PUSH", label: "Push" },
                 { value: "EMAIL", label: "Email" },
                 { value: "WHATSAPP", label: "WhatsApp" },
-                { value: "IN_APP", label: "In-app" },
+                { value: "IN_APP", label: "On website" },
               ]}
             />
             <Select

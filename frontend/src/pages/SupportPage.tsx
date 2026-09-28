@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { prettyLabel } from "../labels";
 import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, TextArea, useApi } from "../ui";
 
 type Ticket = {
@@ -27,7 +28,13 @@ export function SupportPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-navy">Support</h1>
-        <p className="text-sm text-slate-500">Raise tickets for product help, billing, or operations issues.</p>
+        <p className="text-sm text-slate-500">
+          Ops tickets for your team. For product or billing with Niyamstack, email{" "}
+          <a className="font-medium text-brand underline" href="mailto:support@niyamstack.com">
+            support@niyamstack.com
+          </a>
+          .
+        </p>
       </div>
       <ErrorText error={error} />
       <Card title="New ticket">
@@ -75,8 +82,8 @@ export function SupportPage() {
           columns={["Subject", "Category", "Status", "Raised by", ""]}
           rows={(tickets.data ?? []).map((t) => [
             t.subject ?? "—",
-            t.category ?? "—",
-            t.status ?? "—",
+            prettyLabel(t.category),
+            prettyLabel(t.status),
             t.raisedBy ?? "—",
             owner && t.status === "OPEN" ? (
               <LinkButton
@@ -101,9 +108,14 @@ export function SupportPage() {
             ),
           ])}
         />
-        <Link className="mt-3 inline-block text-sm text-brand hover:underline" to="/help">
-          Open help center
-        </Link>
+        <div className="mt-3 flex flex-wrap gap-3 text-sm">
+          <Link className="text-brand hover:underline" to="/help">
+            Open help center
+          </Link>
+          <a className="text-brand hover:underline" href="mailto:support@niyamstack.com">
+            Email Niyamstack
+          </a>
+        </div>
       </Card>
     </div>
   );

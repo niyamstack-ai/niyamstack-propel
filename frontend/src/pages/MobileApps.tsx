@@ -208,7 +208,7 @@ function StudentLearn({ data }: { data?: Home }) {
       <ul className="text-sm">
         {(data?.content ?? []).map((c) => (
           <li key={c.id}>
-            {c.title} {c.contentType ? `· ${c.contentType}` : ""}
+            {c.title} {c.contentType ? `· ${prettyLabel(c.contentType)}` : ""}
           </li>
         ))}
         {(data?.content ?? []).length === 0 && <li className="text-slate-500">No published content yet.</li>}

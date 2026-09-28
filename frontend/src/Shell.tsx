@@ -241,7 +241,10 @@ export function Shell() {
             </NavLink>
           )}
           {canOpen(user?.role, "/help", user?.modules, user?.capabilities) && (
-            <NavLink to="/help" className="block rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-white/5 hover:text-white">
+            <NavLink
+              to={`/help?page=${encodeURIComponent(location.pathname.split("/").filter(Boolean)[0] || "dashboard")}`}
+              className="block rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-white/5 hover:text-white"
+            >
               {t("help_center", "Help center")}
             </NavLink>
           )}

@@ -66,7 +66,7 @@ export function HelpPage() {
               </PrimaryButton>
             </div>
             <p className="mt-2 text-xs text-slate-400">
-              Step {Math.min(step + 1, steps.length)} / {steps.length} · page: {page}
+              Step {Math.min(step + 1, steps.length)} / {steps.length}
             </p>
           </div>
         )}
@@ -78,14 +78,24 @@ export function HelpPage() {
         ) : articles.error ? (
           <p className="text-sm text-red-600">{articles.error}</p>
         ) : (articles.data ?? []).length === 0 ? (
-          <p className="text-sm text-slate-500">No articles yet.</p>
+          <div className="space-y-2 text-sm text-slate-500">
+            <p>No articles yet.</p>
+            <p>
+              <Link className="font-medium text-brand hover:underline" to="/support">
+                Open support
+              </Link>
+              {" · "}
+              <a className="font-medium text-brand hover:underline" href="mailto:support@niyamstack.com">
+                Email Niyamstack
+              </a>
+            </p>
+          </div>
         ) : (
           <ul className="space-y-4 text-sm">
             {(articles.data ?? []).map((a, i) => (
               <li key={i} className="border-b border-line pb-3 last:border-0">
                 <p className="font-medium text-navy">{a.title}</p>
                 <p className="mt-1 text-slate-600">{a.body}</p>
-                <p className="mt-1 text-xs text-slate-400">{a.pageKey}</p>
               </li>
             ))}
           </ul>

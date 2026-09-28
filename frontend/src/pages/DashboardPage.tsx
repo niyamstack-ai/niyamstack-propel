@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
 import { hasGrowthTier, pathAllowed } from "../packs";
+import { prettyLabel } from "../labels";
 import { Card, formatInr, formatWhen, useApi } from "../ui";
 import { OnboardingWizard } from "./OnboardingWizard";
 
@@ -113,7 +114,7 @@ function ParentHome() {
         <ul className="text-sm">
           {(kids.data ?? []).map((s) => (
             <li key={s.id}>
-              {s.fullName} ({s.studentCode}) — {s.status}
+              {s.fullName} ({s.studentCode}) — {prettyLabel(s.status)}
             </li>
           ))}
         </ul>
@@ -122,7 +123,7 @@ function ParentHome() {
         <ul className="text-sm">
           {(att.data ?? []).slice(0, 20).map((a, i) => (
             <li key={i}>
-              {a.sessionDate || "—"} — {a.status}
+              {a.sessionDate || "—"} — {prettyLabel(a.status)}
             </li>
           ))}
           {(att.data ?? []).length === 0 && <li className="text-slate-500">No attendance marked yet.</li>}

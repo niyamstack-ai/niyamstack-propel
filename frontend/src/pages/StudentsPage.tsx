@@ -130,7 +130,7 @@ export function MyStudentRecord() {
                     >
                       {s.fullName}
                       <span className="ml-2 text-xs font-normal text-slate-400">
-                        {s.studentCode} · {s.status}
+                        {s.studentCode} · {prettyLabel(s.status)}
                       </span>
                     </button>
                   </li>
@@ -159,7 +159,7 @@ export function MyStudentRecord() {
         </div>
         {!isParent && record && (
           <p className="mt-3 text-xs text-slate-400">
-            {record.studentCode} · {record.status}
+            {record.studentCode} · {prettyLabel(record.status)}
             {record.enrollmentDate ? ` · enrolled ${formatDay(record.enrollmentDate)}` : ""}
           </p>
         )}
@@ -200,7 +200,7 @@ export function MyStudentRecord() {
             <ul className="text-sm">
               {childAttendance.slice(0, 20).map((a, i) => (
                 <li key={i}>
-                  {formatDay(a.sessionDate) || a.sessionDate} — {a.status}
+                  {formatDay(a.sessionDate) || a.sessionDate} — {prettyLabel(a.status)}
                 </li>
               ))}
             </ul>

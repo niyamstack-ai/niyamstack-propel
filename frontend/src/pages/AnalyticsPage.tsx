@@ -494,8 +494,14 @@ export function AnalyticsPage() {
         </ul>
       </Card>
 
-      <Card title="Ask Niyamstack for help">
-        <p className="mb-3 text-sm text-slate-500">Tickets here go to your institute support queue. For product help email support@niyamstack.com.</p>
+      <Card title="Institute support ticket">
+        <p className="mb-3 text-sm text-slate-500">
+          Tickets here go to your institute support queue. For product or billing with Niyamstack, email{" "}
+          <a className="font-medium text-brand underline" href="mailto:support@niyamstack.com">
+            support@niyamstack.com
+          </a>
+          .
+        </p>
         <FormGrid>
           <Field label="Subject" value={subject} onChange={setSubject} />
           <Field label="Details" value={body} onChange={setBody} />

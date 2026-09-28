@@ -532,7 +532,7 @@ function StorefrontShell() {
                     : path.includes("/register")
                       ? "Register"
                       : path.includes("/app")
-                        ? "Install app"
+                        ? "Install site"
                         : path.includes("/one-to-one") || path.includes("/1-1")
                           ? "1:1 booking"
                           : path.includes("/l/")
@@ -626,11 +626,9 @@ function StorefrontShell() {
                 1:1
               </Link>
             )}
-            {(site.hasApp || !!site.appShareUrl) && (
-              <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/app`} tabIndex={examLock ? -1 : 0}>
-                Get the app
+            <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/app`} tabIndex={examLock ? -1 : 0}>
+                Install site
               </Link>
-            )}
             {student ? (
               <>
                 <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/learn`} tabIndex={examLock ? -1 : 0}>
