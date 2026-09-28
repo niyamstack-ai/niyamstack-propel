@@ -441,7 +441,7 @@ function StaffFees() {
       <Card title="Invoices & collection">
         <p className="mb-3 text-xs text-slate-500">Tax invoices show GSTIN, SAC 999293, place of supply, and CGST/SGST or IGST. Same-state uses CGST+SGST; other state uses IGST when you set GST state in Integrations.</p>
         <Table
-          empty="No invoices yet."
+          empty="No invoices yet. Schedule a fee plan above, or enrol a lead under CRM with a fee plan."
           columns={["Invoice", "Student", "Amount", "Paid", "Tax", "Status", ""]}
           rows={(invoices.data ?? []).map((inv) => [
             inv.invoiceNo,
@@ -632,7 +632,14 @@ function StaffFees() {
         />
       </Card>
       <Card title="Refunds (owner approval)">
-        <p className="mb-2 text-xs text-slate-500">Approve issues a credit note and updates the invoice ledger. Razorpay refunds run when the original payment id starts with pay_.</p>
+        <p className="mb-2 text-xs text-slate-500">
+          Approve issues a credit note and updates the invoice ledger. It also posts a pending settlement clawback (negative net) for the next institute payout. Razorpay refunds run when the original payment id starts with pay_.
+        </p>
+        {(refunds.data ?? []).length === 0 && (
+          <p className="mb-2 rounded-xl border border-dashed border-line bg-mist/40 px-3 py-4 text-center text-sm text-slate-500">
+            No refund requests yet. Request from a payment row above when a student needs money back.
+          </p>
+        )}
         <ul className="space-y-2 text-sm">
           {(refunds.data ?? []).map((r) => (
             <li key={r.id}>

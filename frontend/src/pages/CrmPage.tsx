@@ -75,6 +75,7 @@ export function CrmPage() {
   const [schAmt, setSchAmt] = useState("2000");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [enrolHandoff, setEnrolHandoff] = useState<{ studentId?: string; feeScheduled?: boolean } | null>(null);
 
   async function run(fn: () => Promise<void>) {
     setError(null);
@@ -116,7 +117,7 @@ export function CrmPage() {
     }
     if (!window.confirm("Enrol this lead as a student? Fee plan will be scheduled if one matches the course.")) return;
     await run(async () => {
-      const out = await api<{ feeScheduled?: boolean; installments?: number; feeError?: string; loginWarning?: string }>(
+      const out = await api<{ id?: string; feeScheduled?: boolean; installments?: number; feeError?: string; loginWarning?: string }>(
         `/api/actions/inquiries/${convertId}/convert`,
         {
           method: "POST",
@@ -142,6 +143,7 @@ export function CrmPage() {
         out.loginWarning,
       ].filter(Boolean);
       setNotice(`Enrolled. ${bits.join(" ")}`);
+      setEnrolHandoff({ studentId: out.id, feeScheduled: !!out.feeScheduled });
     });
   }
 
@@ -189,6 +191,26 @@ export function CrmPage() {
       </div>
       <ErrorText error={error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      {enrolHandoff && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+          <span className="font-medium">Next:</span>
+          {enrolHandoff.feeScheduled ? (
+            <Link className="font-semibold text-brand underline" to="/fees">
+              Open invoices &amp; collect
+            </Link>
+          ) : (
+            <Link className="font-semibold text-brand underline" to="/fees">
+              Schedule fee plan on Fees
+            </Link>
+          )}
+          <Link className="font-semibold text-brand underline" to="/people/students">
+            Open students
+          </Link>
+          <button type="button" className="text-xs text-slate-600 underline" onClick={() => setEnrolHandoff(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
       {(() => {
         const linked = new Set((employees.data ?? []).map((e) => e.userId).filter(Boolean));
         const missing = (staff.data ?? []).filter((s) => s.role === "COUNSELOR" && !linked.has(s.id));

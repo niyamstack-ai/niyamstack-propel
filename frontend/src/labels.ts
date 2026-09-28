@@ -99,6 +99,17 @@ const STATUS_LABELS: Record<string, string> = {
   CONVERSION: "Conversion",
   INCOMPLETE: "Incomplete",
   INACTIVE: "Inactive",
+  PARTIAL: "Partially paid",
+  REQUESTED: "Awaiting approval",
+  REFUNDED: "Refunded",
+  VOID: "Void",
+  PROCESSING: "Processing payout",
+  HOLD_NO_BANK: "On hold — bank details missing",
+  READY: "Ready (manual)",
+  READY_AUTO: "Ready for RazorpayX",
+  FAILED_AUTO: "RazorpayX failed",
+  AUTOMATIC: "Automatic",
+  INHERIT: "Inherit global",
 };
 
 export function prettyLabel(value?: string | null) {

@@ -23,6 +23,7 @@ function StudentJobs() {
   const drives = useApi<Drive[]>("/api/drives");
   const apps = useApi<Application[]>("/api/applications");
   const offers = useApi<Offer[]>("/api/offers");
+  const interviewsForStudent = useApi<{ roundName: string; outcome?: string; applicationId?: string }[]>("/api/interviews");
   const me = useApi<{ id: string }[]>("/api/students");
   const [error, setError] = useState<string | null>(null);
   const [letter, setLetter] = useState<string | null>(null);
@@ -48,7 +49,19 @@ function StudentJobs() {
           Your student profile is missing, so Apply stays unavailable. Ask the institute to link your login to a student record.
         </p>
       )}
-      {letter && <pre className="whitespace-pre-wrap rounded-lg border border-line bg-slate-50 p-3 text-sm">{letter}</pre>}
+      {letter && (
+        <div className="rounded-xl border border-line bg-mist/40 p-3">
+          <div className="mb-2 flex flex-wrap gap-2">
+            <button type="button" className="text-sm font-medium text-brand" onClick={() => window.print()}>
+              Print
+            </button>
+            <button type="button" className="text-sm text-slate-600" onClick={() => setLetter(null)}>
+              Close
+            </button>
+          </div>
+          <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-sm">{letter}</pre>
+        </div>
+      )}
       <Card title="Open drives">
         {(drives.data ?? []).length === 0 && !drives.loading && (
           <div className="mb-3 rounded-xl border border-dashed border-line bg-mist/40 px-4 py-6 text-center">
@@ -88,14 +101,30 @@ function StudentJobs() {
         />
       </Card>
       <Card title="My applications">
-        {(apps.data ?? []).length === 0 && <p className="text-sm text-slate-500">You have not applied yet.</p>}
-        <ul className="text-sm">
+        {(apps.data ?? []).length === 0 && (
+          <p className="mb-2 rounded-xl border border-dashed border-line bg-mist/40 px-3 py-4 text-center text-sm text-slate-500">
+            You have not applied yet. Open drives above when placement publishes one.
+          </p>
+        )}
+        <ul className="space-y-3 text-sm">
           {(apps.data ?? []).map((a) => {
             const drive = (drives.data ?? []).find((d) => d.id === a.driveId);
+            const roundsForApp = (interviewsForStudent.data ?? []).filter((n) => n.applicationId === a.id);
             return (
               <li key={a.id}>
-                {drive?.title || "Drive"} — {prettyLabel(a.status)}
-                {a.currentRound ? ` · ${a.currentRound}` : ""} {a.eligibilityPassed === false ? "· not eligible" : ""}
+                <p>
+                  {drive?.title || "Drive"} — {prettyLabel(a.status)}
+                  {a.currentRound ? ` · ${a.currentRound}` : ""} {a.eligibilityPassed === false ? "· not eligible" : ""}
+                </p>
+                {roundsForApp.length > 0 && (
+                  <ul className="mt-1 space-y-0.5 text-xs text-slate-500">
+                    {roundsForApp.map((n, i) => (
+                      <li key={i}>
+                        Round {n.roundName}: {prettyLabel(n.outcome) || "pending"}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </li>
             );
           })}
@@ -103,10 +132,27 @@ function StudentJobs() {
       </Card>
       <Card title="Offers">
         {(offers.data ?? []).length === 0 && <p className="text-sm text-slate-500">No offer yet.</p>}
+        {letter && (
+          <div className="mb-3 rounded-xl border border-line bg-mist/40 p-3">
+            <div className="mb-2 flex flex-wrap gap-2">
+              <button type="button" className="text-sm font-medium text-brand" onClick={() => window.print()}>
+                Print
+              </button>
+              <button type="button" className="text-sm text-slate-600" onClick={() => setLetter(null)}>
+                Close
+              </button>
+            </div>
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs">{letter}</pre>
+          </div>
+        )}
         <ul className="space-y-2 text-sm">
-          {(offers.data ?? []).map((o) => (
+          {(offers.data ?? []).map((o) => {
+            const app = (apps.data ?? []).find((a) => a.id === o.applicationId);
+            const drive = (drives.data ?? []).find((d) => d.id === app?.driveId);
+            return (
             <li key={o.id} className="flex flex-wrap items-center gap-2">
               <span>
+                {drive?.title ? `${drive.title} · ` : ""}
                 {o.packageLpa} LPA — {prettyLabel(o.status)}
                 {o.joiningDate ? ` · join ${formatDay(o.joiningDate)}` : ""}
               </span>
@@ -121,20 +167,36 @@ function StudentJobs() {
                 Letter
               </PrimaryButton>
               {o.status === "OFFERED" && (
-                <PrimaryButton
-                  onClick={() =>
-                    run(async () => {
-                      await api(`/api/actions/offers/${o.id}/accept`, { method: "POST", body: JSON.stringify({ accept: true }) });
-                      offers.reload();
-                      apps.reload();
-                    })
-                  }
-                >
-                  Accept
-                </PrimaryButton>
+                <>
+                  <PrimaryButton
+                    onClick={() =>
+                      run(async () => {
+                        await api(`/api/actions/offers/${o.id}/accept`, { method: "POST", body: JSON.stringify({ accept: true }) });
+                        offers.reload();
+                        apps.reload();
+                      })
+                    }
+                  >
+                    Accept
+                  </PrimaryButton>
+                  <button
+                    type="button"
+                    className="text-sm text-red-600"
+                    onClick={() =>
+                      run(async () => {
+                        await api(`/api/actions/offers/${o.id}/accept`, { method: "POST", body: JSON.stringify({ accept: false }) });
+                        offers.reload();
+                        apps.reload();
+                      })
+                    }
+                  >
+                    Decline
+                  </button>
+                </>
               )}
             </li>
-          ))}
+            );
+          })}
         </ul>
       </Card>
     </div>
@@ -147,7 +209,7 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
   const drives = useApi<Drive[]>("/api/drives");
   const apps = useApi<Application[]>("/api/applications");
   const rounds = useApi<{ roundName: string; roundType: string }[]>(recruiter ? "" : "/api/drive-rounds");
-  const interviews = useApi<{ roundName: string; outcome?: string }[]>("/api/interviews");
+  const interviews = useApi<{ roundName: string; outcome?: string; applicationId?: string; studentId?: string; driveId?: string }[]>("/api/interviews");
   const offers = useApi<Offer[]>(recruiter ? "" : "/api/offers");
   const internships = useApi<Internship[]>(recruiter ? "" : "/api/internships");
   const students = useApi<Student[]>("/api/students");
@@ -176,6 +238,7 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
   const [checkStudentId, setCheckStudentId] = useState("");
   const [roundName, setRoundName] = useState("HR");
   const [offerPkg, setOfferPkg] = useState("");
+  const [roundOutcome, setRoundOutcome] = useState("PASS");
 
   async function run(fn: () => Promise<void>) {
     setError(null);
@@ -198,7 +261,19 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
       </div>
       <ErrorText error={error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
-      {letter && <pre className="whitespace-pre-wrap rounded-lg border border-line bg-slate-50 p-3 text-sm">{letter}</pre>}
+      {letter && (
+        <div className="rounded-xl border border-line bg-mist/40 p-3">
+          <div className="mb-2 flex flex-wrap gap-2">
+            <button type="button" className="text-sm font-medium text-brand" onClick={() => window.print()}>
+              Print
+            </button>
+            <button type="button" className="text-sm text-slate-600" onClick={() => setLetter(null)}>
+              Close
+            </button>
+          </div>
+          <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-sm">{letter}</pre>
+        </div>
+      )}
       <Card title={`Calendar — ${now.toLocaleString("en-IN", { month: "long", year: "numeric" })}`}>
         {(calendar.data ?? []).length === 0 && <p className="text-sm text-slate-500">No drive deadlines, interviews, or joining dates this month.</p>}
         <ul className="text-sm">
@@ -358,6 +433,17 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
           <div className="mb-3 grid max-w-xl gap-3 sm:grid-cols-2">
             <Field label="Round name for Record" value={roundName} onChange={setRoundName} placeholder="HR / Technical" />
             <Field label="Offer package LPA (blank = drive package)" value={offerPkg} onChange={setOfferPkg} placeholder="e.g. 6.5" />
+            <Select
+              label="Record round outcome"
+              value={roundOutcome}
+              onChange={setRoundOutcome}
+              options={[
+                { value: "PASS", label: "Pass" },
+                { value: "FAIL", label: "Fail" },
+                { value: "HOLD", label: "Hold" },
+              ]}
+              allowEmpty={false}
+            />
           </div>
         )}
         <Table
@@ -392,7 +478,7 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
                       method: "POST",
                       body: JSON.stringify({
                         roundName: roundName || "HR",
-                        outcome: "PASS",
+                        outcome: roundOutcome || "PASS",
                         feedback: "",
                         panel: "",
                         scheduledAt: new Date().toISOString(),
@@ -404,7 +490,7 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
                   })
                 }
               >
-                Record {roundName || "round"}
+                Record {roundName || "round"} ({prettyLabel(roundOutcome)})
               </PrimaryButton>
               {!recruiter && (
                 <PrimaryButton
@@ -436,20 +522,47 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="Interview outcomes">
           <ul className="text-sm">
-            {(interviews.data ?? []).map((n, i) => (
-              <li key={i}>
-                {n.roundName} — {prettyLabel(n.outcome) || "pending"}
+            {(interviews.data ?? []).length === 0 && (
+              <li className="rounded-xl border border-dashed border-line bg-mist/40 px-3 py-4 text-center text-slate-500">
+                No rounds recorded yet. Shortlist an application, then Record round with Pass / Fail / Hold.
               </li>
-            ))}
+            )}
+            {(interviews.data ?? []).map((n, i) => {
+              const app = (apps.data ?? []).find((a) => a.id === n.applicationId);
+              const student = (students.data ?? []).find((s) => s.id === app?.studentId || s.id === n.studentId);
+              const drive = (drives.data ?? []).find((d) => d.id === app?.driveId || d.id === n.driveId);
+              return (
+                <li key={i}>
+                  {student?.fullName || "Candidate"} · {drive?.title || "Drive"} · {n.roundName} — {prettyLabel(n.outcome) || "pending"}
+                </li>
+              );
+            })}
           </ul>
         </Card>
         <Card title="Offers">
+          {letter && (
+            <div className="mb-3 rounded-xl border border-line bg-mist/40 p-3">
+              <div className="mb-2 flex flex-wrap gap-2">
+                <button type="button" className="text-sm font-medium text-brand" onClick={() => window.print()}>
+                  Print
+                </button>
+                <button type="button" className="text-sm text-slate-600" onClick={() => setLetter(null)}>
+                  Close
+                </button>
+              </div>
+              <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs">{letter}</pre>
+            </div>
+          )}
           <ul className="space-y-2 text-sm">
-            {(offers.data ?? []).length === 0 && <li className="text-slate-500">No offers yet.</li>}
-            {(offers.data ?? []).map((o) => (
+            {(offers.data ?? []).length === 0 && <li className="text-slate-500">No offers yet. Record rounds, then Make offer on ATS.</li>}
+            {(offers.data ?? []).map((o) => {
+              const app = (apps.data ?? []).find((a) => a.id === o.applicationId);
+              const student = (students.data ?? []).find((s) => s.id === app?.studentId);
+              const drive = (drives.data ?? []).find((d) => d.id === app?.driveId);
+              return (
               <li key={o.id} className="space-y-1">
                 <div>
-                  {o.packageLpa} LPA — {prettyLabel(o.status)}
+                  {student?.fullName || "Student"} · {drive?.title || "Drive"} · {o.packageLpa} LPA — {prettyLabel(o.status)}
                   {o.joiningDate ? ` · ${formatDay(o.joiningDate)}` : ""}
                 </div>
                 {!recruiter && (
@@ -483,7 +596,8 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
                   </span>
                 )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         </Card>
         <Card title="Internships">

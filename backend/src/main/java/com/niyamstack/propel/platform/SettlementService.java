@@ -437,14 +437,27 @@ public class SettlementService {
             BigDecimal fee = BigDecimal.ZERO;
             BigDecimal net = BigDecimal.ZERO;
             BigDecimal pendingNet = BigDecimal.ZERO;
+            BigDecimal clawbackGross = BigDecimal.ZERO;
+            BigDecimal clawbackNet = BigDecimal.ZERO;
             int txns = 0;
+            int refundEntries = 0;
             for (SettlementEntry e : store.list(SettlementEntry.class, org.getId())) {
                 txns++;
-                gross = gross.add(nvl(e.getGrossAmount()));
-                fee = fee.add(nvl(e.getPlatformFeeAmount()));
-                net = net.add(nvl(e.getNetToInstitute()));
+                BigDecimal g = nvl(e.getGrossAmount());
+                BigDecimal f = nvl(e.getPlatformFeeAmount());
+                BigDecimal n = nvl(e.getNetToInstitute());
+                gross = gross.add(g);
+                fee = fee.add(f);
+                net = net.add(n);
+                boolean clawback = g.signum() < 0
+                        || (e.getNotes() != null && e.getNotes().startsWith("refund:"));
+                if (clawback) {
+                    clawbackGross = clawbackGross.add(g.abs());
+                    clawbackNet = clawbackNet.add(n.abs());
+                    refundEntries++;
+                }
                 if ("PENDING".equalsIgnoreCase(e.getStatus()) || "IN_BATCH".equalsIgnoreCase(e.getStatus())) {
-                    pendingNet = pendingNet.add(nvl(e.getNetToInstitute()));
+                    pendingNet = pendingNet.add(n);
                 }
             }
             Map<String, Object> row = new LinkedHashMap<>();
@@ -459,6 +472,9 @@ public class SettlementService {
             row.put("platformFeeAmount", fee);
             row.put("netToInstitute", net);
             row.put("pendingPayout", pendingNet);
+            row.put("clawbackGross", clawbackGross);
+            row.put("clawbackNet", clawbackNet);
+            row.put("refundEntryCount", refundEntries);
             row.put("hasBank", OrgAccess.hasBankDetails(org));
             row.put("bankAccountName", org.getBankAccountName());
             row.put("bankIfsc", org.getBankIfsc());

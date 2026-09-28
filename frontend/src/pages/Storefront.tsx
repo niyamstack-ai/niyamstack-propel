@@ -1628,10 +1628,12 @@ function MyLearningPage() {
             </Link>
           ))}
           {(today.tests ?? []).filter((t) => !t.done).slice(0, 2).map((t, i) => (
-            <Link key={`t-${i}`} to={`${sitePath(slug)}/learn/${t.courseId}`} className="rounded-2xl border border-line bg-white p-4">
+            <Link key={`t-${i}`} to={`${sitePath(slug)}/learn/${t.courseId}?tab=tests`} className="rounded-2xl border border-line bg-white p-4">
               <p className="text-xs uppercase text-slate-400">Test</p>
               <p className="mt-1 font-medium text-navy">{t.title}</p>
-              <p className="text-sm text-slate-500">{t.attemptsLeft == null ? "Open" : `${t.attemptsLeft} attempt(s) left`}</p>
+              <p className="text-sm text-slate-500">
+                {t.lastScore != null ? `Last score ${t.lastScore}` : t.attemptsLeft == null ? "Open" : `${t.attemptsLeft} attempt(s) left`}
+              </p>
             </Link>
           ))}
           {(today.fees?.count ?? 0) > 0 && (
@@ -1717,13 +1719,37 @@ function StudyPage() {
   const slug = useSlug();
   const { courseId } = useParams();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const purchaseState = (location.state as StudyLocationState | null) ?? {};
   const [course, setCourse] = useState<PublicCourse | null>(null);
   const [enrolled, setEnrolled] = useState<boolean | null>(null);
   const [expiredEnrollment, setExpiredEnrollment] = useState<MyCourse | null>(null);
+  const [studyProgress, setStudyProgress] = useState<MyCourse["progress"] | null>(null);
+  const [progressPct, setProgressPct] = useState(0);
   const [printError, setPrintError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [tab, setTab] = useState<StudySection>("contents");
+  const tabParam = (searchParams.get("tab") || "").toLowerCase();
+  const initialTab: StudySection =
+    tabParam === "tests" || tabParam === "practice" || tabParam === "live" || tabParam === "recordings" || tabParam === "assignments" || tabParam === "doubts" || tabParam === "timetable" || tabParam === "contents"
+      ? (tabParam as StudySection)
+      : "contents";
+  const [tab, setTab] = useState<StudySection>(initialTab);
+
+  useEffect(() => {
+    const next = (searchParams.get("tab") || "").toLowerCase();
+    if (
+      next === "tests" ||
+      next === "practice" ||
+      next === "live" ||
+      next === "recordings" ||
+      next === "assignments" ||
+      next === "doubts" ||
+      next === "timetable" ||
+      next === "contents"
+    ) {
+      setTab(next as StudySection);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (!course) return;
@@ -1749,6 +1775,8 @@ function StudyPage() {
           (r) => r.course.id === courseId || (r.course as { shareSlug?: string }).shareSlug === courseId,
         );
         setCourse(match?.course || null);
+        setStudyProgress(match?.progress || null);
+        setProgressPct(Number(match?.progressPct || match?.progress?.pct || 0));
         if (match?.expired) {
           setExpiredEnrollment(match);
           setEnrolled(false);
@@ -1834,6 +1862,19 @@ function StudyPage() {
         ← My learning
       </Link>
       <h1 className="text-2xl font-bold text-navy">{course?.name || "Course"}</h1>
+      {studyProgress && (
+        <div className="rounded-xl border border-line bg-white px-4 py-3">
+          <p className="text-sm text-slate-600">
+            {progressPct >= 100 ? "Completed" : studyProgress.resume ? `Next: ${studyProgress.resume}` : `${progressPct}% complete`}
+          </p>
+          <p className="mt-1 text-xs text-slate-400">
+            {`${studyProgress.filesDone ?? 0}/${studyProgress.filesTotal ?? 0} lessons · ${studyProgress.homeworkDone ?? 0}/${studyProgress.homeworkTotal ?? 0} homework · ${studyProgress.testsDone ?? 0}/${studyProgress.testsTotal ?? 0} tests`}
+          </p>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-mist">
+            <div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(100, progressPct)}%` }} />
+          </div>
+        </div>
+      )}
       {purchaseState.purchaseSuccess && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
           <p className="font-medium">Purchase complete</p>

@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../api";
+import { prettyLabel } from "../../labels";
 import { hasCap, usePlatformAuth } from "../../platformAuth";
 import { Card, ErrorText, Field, useApi } from "../../ui";
 
@@ -23,6 +24,9 @@ type SettlementRow = {
   platformFeeAmount: number;
   netToInstitute: number;
   pendingPayout: number;
+  clawbackGross?: number;
+  clawbackNet?: number;
+  refundEntryCount?: number;
   hasBank: boolean;
 };
 
@@ -306,6 +310,7 @@ export function PlatformSettingsPage() {
                     <th className="py-2 pr-3">Gross</th>
                     <th className="py-2 pr-3">Platform fee</th>
                     <th className="py-2 pr-3">Net</th>
+                    <th className="py-2 pr-3">Clawbacks</th>
                     <th className="py-2 pr-3">Pending payout</th>
                     <th className="py-2">Bank</th>
                   </tr>
@@ -316,15 +321,22 @@ export function PlatformSettingsPage() {
                       <td className="py-2 pr-3 font-medium text-navy">{row.name}</td>
                       <td className="py-2 pr-3">₹{Number(row.grossAmount || 0).toLocaleString("en-IN")}</td>
                       <td className="py-2 pr-3">₹{Number(row.platformFeeAmount || 0).toLocaleString("en-IN")}</td>
-                      <td className="py-2 pr-3">₹{Number(row.netToInstitute || 0).toLocaleString("en-IN")}</td>
+                      <td className={`py-2 pr-3 ${Number(row.netToInstitute || 0) < 0 ? "text-amber-800" : ""}`}>
+                        ₹{Number(row.netToInstitute || 0).toLocaleString("en-IN")}
+                      </td>
+                      <td className="py-2 pr-3 text-amber-900">
+                        {(row.refundEntryCount ?? 0) > 0
+                          ? `${row.refundEntryCount} · −₹${Number(row.clawbackNet || 0).toLocaleString("en-IN")}`
+                          : "—"}
+                      </td>
                       <td className="py-2 pr-3">₹{Number(row.pendingPayout || 0).toLocaleString("en-IN")}</td>
                       <td className="py-2">{row.hasBank ? "Yes" : "Missing"}</td>
                     </tr>
                   ))}
                   {(settlement.data?.length ?? 0) === 0 && (
                     <tr>
-                      <td className="py-3 text-slate-500" colSpan={6}>
-                        No student settlements yet.
+                      <td className="py-3 text-slate-500" colSpan={7}>
+                        No institute settlement entries yet.
                       </td>
                     </tr>
                   )}
@@ -352,10 +364,16 @@ export function PlatformSettingsPage() {
                       </td>
                       <td className="py-2 pr-3">₹{Number(batch.netAmount || 0).toLocaleString("en-IN")}</td>
                       <td className="py-2 pr-3">
-                        <span className="font-medium">{batch.status}</span>
-                        {batch.mode ? <span className="mt-0.5 block text-xs text-slate-500">Mode: {batch.mode}</span> : null}
+                        <span className="font-medium">{prettyLabel(batch.status)}</span>
+                        {batch.mode ? <span className="mt-0.5 block text-xs text-slate-500">Mode: {prettyLabel(batch.mode)}</span> : null}
                         {batch.status === "PROCESSING" ? (
                           <span className="mt-0.5 block text-xs text-amber-800">RazorpayX submitted — wait for settlement before marking paid</span>
+                        ) : null}
+                        {batch.status === "HOLD_NO_BANK" ? (
+                          <span className="mt-0.5 block text-xs text-amber-800">Institute must add bank/UPI under Institute settings</span>
+                        ) : null}
+                        {batch.status === "FAILED_AUTO" ? (
+                          <span className="mt-0.5 block text-xs text-red-700">Auto payout failed — retry or mark paid manually</span>
                         ) : null}
                         {batch.failureReason ? <span className="mt-0.5 block text-xs text-slate-500">{batch.failureReason}</span> : null}
                       </td>
