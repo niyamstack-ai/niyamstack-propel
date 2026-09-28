@@ -6,6 +6,7 @@ import com.niyamstack.propel.domain.Model.AppUser;
 import com.niyamstack.propel.domain.Model.Organization;
 import com.niyamstack.propel.domain.Model.Payment;
 import com.niyamstack.propel.domain.Model.PayoutBatch;
+import com.niyamstack.propel.domain.Model.Refund;
 import com.niyamstack.propel.domain.Model.PlatformRole;
 import com.niyamstack.propel.domain.Model.PlatformUserRole;
 import com.niyamstack.propel.domain.Model.SettlementEntry;
@@ -117,6 +118,56 @@ public class SettlementService {
         entry.setFeeMode(mode);
         entry.setNetToInstitute(net);
         entry.setStatus("PENDING");
+        return store.save(entry);
+    }
+
+    @Transactional
+    public SettlementEntry recordRefund(Organization org, Payment payment, Refund refund) {
+        if (payment == null || refund == null) {
+            return null;
+        }
+        BigDecimal refundAmt = refund.getAmount() == null ? BigDecimal.ZERO : refund.getAmount();
+        if (refundAmt.signum() <= 0) {
+            return null;
+        }
+        String note = "refund:" + refund.getId();
+        boolean already = store.listBy(SettlementEntry.class, org.getId(), "paymentId", payment.getId()).stream()
+                .anyMatch(e -> note.equals(e.getNotes()));
+        if (already) {
+            return null;
+        }
+        SettlementEntry original = store.listBy(SettlementEntry.class, org.getId(), "paymentId", payment.getId()).stream()
+                .filter(e -> e.getNotes() == null || !e.getNotes().startsWith("refund:"))
+                .filter(e -> nvl(e.getGrossAmount()).signum() > 0)
+                .findFirst()
+                .orElse(null);
+        if (original == null) {
+            return null;
+        }
+        BigDecimal payAmt = payment.getAmount() == null ? BigDecimal.ZERO : payment.getAmount();
+        if (payAmt.signum() <= 0) {
+            return null;
+        }
+        BigDecimal ratio = refundAmt.divide(payAmt, 8, RoundingMode.HALF_UP);
+        if (ratio.compareTo(BigDecimal.ONE) > 0) {
+            ratio = BigDecimal.ONE;
+        }
+        BigDecimal gross = nvl(original.getGrossAmount()).multiply(ratio).setScale(2, RoundingMode.HALF_UP).negate();
+        BigDecimal fee = nvl(original.getPlatformFeeAmount()).multiply(ratio).setScale(2, RoundingMode.HALF_UP).negate();
+        BigDecimal net = nvl(original.getNetToInstitute()).multiply(ratio).setScale(2, RoundingMode.HALF_UP).negate();
+        SettlementEntry entry = new SettlementEntry();
+        entry.setOrganizationId(org.getId());
+        entry.setPaymentId(payment.getId());
+        entry.setInvoiceId(original.getInvoiceId());
+        entry.setStudentId(original.getStudentId());
+        entry.setCourseId(original.getCourseId());
+        entry.setGrossAmount(gross);
+        entry.setPlatformFeePercent(original.getPlatformFeePercent());
+        entry.setPlatformFeeAmount(fee);
+        entry.setFeeMode(original.getFeeMode() != null ? original.getFeeMode() : feeMode(org));
+        entry.setNetToInstitute(net);
+        entry.setStatus("PENDING");
+        entry.setNotes(note);
         return store.save(entry);
     }
 

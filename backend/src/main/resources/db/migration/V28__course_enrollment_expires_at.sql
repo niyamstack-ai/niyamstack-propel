@@ -1,0 +1,1 @@
+ALTER TABLE course_enrollments ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE;

@@ -335,6 +335,7 @@ public final class Model {
         private String status = "ACTIVE";
         private String source = "WEBSITE";
         private Instant purchasedAt;
+        private Instant expiresAt;
     }
 
     @Entity(name = "StudentDocument") @Table(name = "student_documents") @Getter @Setter

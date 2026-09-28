@@ -345,6 +345,8 @@ public class FeeService {
             credit.setStatus("REFUNDED");
             credit.setReceiptNo(refund.getCreditNoteNo());
             store.save(credit);
+            Organization org = store.get(Organization.class, user.organizationId());
+            settlements.recordRefund(org, payment, refund);
         }
         refund = store.save(refund);
         audit.log(approve ? "REFUND_APPROVE" : "REFUND_REJECT", "Refund", refund.getId(), null);

@@ -54,6 +54,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -304,7 +305,7 @@ public class StorefrontService {
             student = store.listBy(Student.class, org.getId(), "userId", user.getId()).stream().findFirst().orElse(null);
             if (student != null) {
                 CourseEnrollment prior = store.listBy(CourseEnrollment.class, org.getId(), "studentId", student.getId()).stream()
-                        .filter(e -> course.getId().equals(e.getCourseId()) && !"CANCELLED".equals(e.getStatus()))
+                        .filter(e -> course.getId().equals(e.getCourseId()) && enrollmentActive(e))
                         .findFirst()
                         .orElse(null);
                 if (prior != null) {
@@ -533,6 +534,8 @@ public class StorefrontService {
     }
 
     private void enroll(Organization org, Student student, Course course, Invoice invoice, Coupon applied) {
+        String validityOption = validityOptionFromInvoice(invoice);
+        Instant expiresAt = expiryFor(course, validityOption);
         CourseEnrollment cancelled = store.listBy(CourseEnrollment.class, org.getId(), "studentId", student.getId()).stream()
                 .filter(e -> course.getId().equals(e.getCourseId()) && "CANCELLED".equals(e.getStatus()))
                 .findFirst()
@@ -541,6 +544,7 @@ public class StorefrontService {
             cancelled.setStatus("ACTIVE");
             cancelled.setInvoiceId(invoice.getId());
             cancelled.setPurchasedAt(Instant.now());
+            cancelled.setExpiresAt(expiresAt);
             cancelled.setSource("WEBSITE");
             store.save(cancelled);
             if (student.getCourseId() == null) {
@@ -555,6 +559,20 @@ public class StorefrontService {
                 .findFirst()
                 .orElse(null);
         if (existing != null) {
+            if (enrollmentActive(existing)) {
+                return;
+            }
+            existing.setInvoiceId(invoice.getId());
+            existing.setPurchasedAt(Instant.now());
+            existing.setExpiresAt(expiresAt);
+            existing.setStatus("ACTIVE");
+            existing.setSource("WEBSITE");
+            store.save(existing);
+            if (student.getCourseId() == null) {
+                student.setCourseId(course.getId());
+                student.setStatus("ENROLLED");
+                store.save(student);
+            }
             return;
         }
         CourseEnrollment enrollment = new CourseEnrollment();
@@ -565,6 +583,7 @@ public class StorefrontService {
         enrollment.setStatus("ACTIVE");
         enrollment.setSource("WEBSITE");
         enrollment.setPurchasedAt(Instant.now());
+        enrollment.setExpiresAt(expiresAt);
         store.save(enrollment);
         if (student.getCourseId() == null) {
             student.setCourseId(course.getId());
@@ -601,7 +620,7 @@ public class StorefrontService {
             return List.of(row);
         }
         return rows.stream()
-                .filter(e -> !"CANCELLED".equals(e.getStatus()))
+                .filter(StorefrontService::enrollmentActive)
                 .map(e -> {
                     Course course = store.getOwned(Course.class, e.getCourseId(), orgId);
                     Map<String, Object> stats = courseProgressPct(orgId, course.getId(), submittedExams, submittedAsg, viewedContent);
@@ -609,6 +628,7 @@ public class StorefrontService {
                     row.put("id", e.getId());
                     row.put("status", e.getStatus());
                     row.put("source", e.getSource());
+                    row.put("expiresAt", e.getExpiresAt());
                     row.put("course", publicCourse(course));
                     row.put("progressPct", stats.get("pct"));
                     row.put("progress", stats);
@@ -1021,6 +1041,54 @@ public class StorefrontService {
             next = price.subtract(coupon.getDiscountValue());
         }
         return next.signum() < 0 ? BigDecimal.ZERO : next;
+    }
+
+    public static boolean enrollmentActive(CourseEnrollment e) {
+        if (e == null || "CANCELLED".equals(e.getStatus())) {
+            return false;
+        }
+        return e.getExpiresAt() == null || e.getExpiresAt().isAfter(Instant.now());
+    }
+
+    static Instant expiryFor(Course course, String validityOption) {
+        if (course == null) {
+            return null;
+        }
+        Integer value;
+        String unit;
+        if ("b".equalsIgnoreCase(validityOption)
+                && course.getValidityAltValue() != null
+                && course.getValidityAltValue() > 0) {
+            value = course.getValidityAltValue();
+            unit = course.getValidityAltUnit();
+        } else {
+            value = course.getValidityValue();
+            unit = course.getValidityUnit();
+        }
+        if (value == null || value <= 0) {
+            return null;
+        }
+        String u = unit == null ? "MONTH" : unit.trim().toUpperCase();
+        Instant from = Instant.now();
+        return switch (u) {
+            case "DAY", "DAYS" -> from.plus(value, ChronoUnit.DAYS);
+            case "YEAR", "YEARS" -> from.plus(value * 365L, ChronoUnit.DAYS);
+            default -> from.plus(value, ChronoUnit.MONTHS);
+        };
+    }
+
+    private String validityOptionFromInvoice(Invoice invoice) {
+        if (invoice == null || invoice.getNotes() == null) {
+            return "a";
+        }
+        String notes = invoice.getNotes();
+        if (notes.startsWith("pending:")) {
+            String vo = parseCheckoutPending(notes).get("vo");
+            if (vo != null && !vo.isBlank()) {
+                return vo.trim();
+            }
+        }
+        return "a";
     }
 
     private static BigDecimal payable(Course course) {

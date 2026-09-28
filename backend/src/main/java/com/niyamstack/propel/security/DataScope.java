@@ -4,6 +4,7 @@ import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.*;
 import com.niyamstack.propel.domain.TenantEntity;
+import com.niyamstack.propel.storefront.StorefrontService;
 import org.springframework.stereotype.Component;
 
 import java.util.HashSet;
@@ -368,7 +369,7 @@ public class DataScope {
             ids.add(me.getCourseId());
         }
         store.listBy(CourseEnrollment.class, me.getOrganizationId(), "studentId", me.getId()).stream()
-                .filter(e -> !"CANCELLED".equals(e.getStatus()))
+                .filter(StorefrontService::enrollmentActive)
                 .map(CourseEnrollment::getCourseId)
                 .filter(Objects::nonNull)
                 .forEach(ids::add);

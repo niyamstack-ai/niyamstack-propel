@@ -799,7 +799,8 @@ public class SchemaPatch {
                     updated_at TIMESTAMP WITH TIME ZONE NOT NULL
                 )
                 """,
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_flows_key ON pending_flows (flow_key)"
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_flows_key ON pending_flows (flow_key)",
+                "ALTER TABLE course_enrollments ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE"
         );
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
             for (String sql : statements) {

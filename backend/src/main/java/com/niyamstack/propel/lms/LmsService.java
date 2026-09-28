@@ -13,6 +13,7 @@ import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.PropelUser;
 import com.niyamstack.propel.security.Roles;
+import com.niyamstack.propel.storefront.StorefrontService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -773,19 +774,20 @@ public class LmsService {
             return;
         }
         if (courseId != null) {
-            Set<UUID> courses = new HashSet<>();
-            if (student.getCourseId() != null) {
-                courses.add(student.getCourseId());
+            CourseEnrollment enrollment = store.listBy(CourseEnrollment.class, student.getOrganizationId(), "studentId", student.getId()).stream()
+                    .filter(e -> courseId.equals(e.getCourseId()))
+                    .findFirst()
+                    .orElse(null);
+            if (enrollment != null) {
+                if (!StorefrontService.enrollmentActive(enrollment)) {
+                    throw new ApiException(HttpStatus.FORBIDDEN, "Your access to this course has expired");
+                }
+                return;
             }
-            store.listBy(CourseEnrollment.class, student.getOrganizationId(), "studentId", student.getId()).stream()
-                    .filter(e -> !"CANCELLED".equals(e.getStatus()))
-                    .map(CourseEnrollment::getCourseId)
-                    .filter(id -> id != null)
-                    .forEach(courses::add);
-            if (!courses.contains(courseId)) {
-                throw new ApiException(HttpStatus.FORBIDDEN, "You are not enrolled in this course");
+            if (student.getCourseId() != null && student.getCourseId().equals(courseId)) {
+                return;
             }
-            return;
+            throw new ApiException(HttpStatus.FORBIDDEN, "You are not enrolled in this course");
         }
         if (batchId != null && student.getBatchId() != null && !batchId.equals(student.getBatchId())) {
             throw new ApiException(HttpStatus.FORBIDDEN, "You are not in this batch");
