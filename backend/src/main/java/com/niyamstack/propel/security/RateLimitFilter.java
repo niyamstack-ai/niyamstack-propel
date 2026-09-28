@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
     private static final int LOGIN_LIMIT = 20;
+    private static final int OTP_LIMIT = 12;
     private static final int EXPORT_LIMIT = 30;
     private static final int COMPLIANCE_LIMIT = 40;
     private static final long WINDOW_MS = 60_000L;
@@ -43,11 +44,30 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     private static int limitFor(String path, String method) {
-        if ("POST".equalsIgnoreCase(method) && path.startsWith("/api/auth/login")) {
+        if (!"POST".equalsIgnoreCase(method)) {
+            if ("GET".equalsIgnoreCase(method) && path.startsWith("/api/actions/export/")) {
+                return EXPORT_LIMIT;
+            }
+            if (path.startsWith("/api/actions/compliance/")) {
+                return COMPLIANCE_LIMIT;
+            }
+            return 0;
+        }
+        if (path.startsWith("/api/auth/login")) {
             return LOGIN_LIMIT;
         }
-        if ("GET".equalsIgnoreCase(method) && path.startsWith("/api/actions/export/")) {
-            return EXPORT_LIMIT;
+        if (path.equals("/api/auth/signup")
+                || path.startsWith("/api/auth/signup/")
+                || path.startsWith("/api/auth/otp/")
+                || path.startsWith("/api/auth/forgot/")
+                || path.startsWith("/api/auth/reset/")) {
+            return OTP_LIMIT;
+        }
+        if (path.contains("/purchase/otp") || path.contains("/register/otp")) {
+            return OTP_LIMIT;
+        }
+        if (path.contains("/verify/email/request") || path.contains("/verify/phone/request")) {
+            return OTP_LIMIT;
         }
         if (path.startsWith("/api/actions/compliance/")) {
             return COMPLIANCE_LIMIT;

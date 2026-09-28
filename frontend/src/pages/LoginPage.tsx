@@ -478,7 +478,7 @@ function ForgotView() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-navy">Forgot password</h1>
-      <p className="mt-2 text-sm text-slate-500">Reset with email or mobile OTP.</p>
+      <p className="mt-2 text-sm text-slate-500">Reset with email or an OTP sent to the email on your account (mobile identifies your account).</p>
       <div className="mt-4 flex gap-2">
         <button type="button" className={`rounded-full px-3 py-1 text-sm ${method === "email" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => { setMethod("email"); setSent(null); }}>
           Email

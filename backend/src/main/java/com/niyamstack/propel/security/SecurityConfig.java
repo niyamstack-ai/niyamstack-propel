@@ -43,6 +43,7 @@ public class SecurityConfig {
                                 "/api/auth/otp/**",
                                 "/api/auth/forgot/**",
                                 "/api/auth/reset/**",
+                                "/api/auth/logout",
                                 "/api/platform/login",
                                 "/api/public/**",
                                 "/actuator/health"

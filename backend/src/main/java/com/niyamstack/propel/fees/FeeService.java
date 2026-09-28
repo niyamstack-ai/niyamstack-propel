@@ -554,6 +554,11 @@ public class FeeService {
         return payment;
     }
 
+    @Transactional
+    public void completeCapturedPayment(Organization org, Invoice invoice, Payment payment) {
+        finishPaid(org, invoice, payment);
+    }
+
     private void finishPaid(Organization org, Invoice invoice, Payment payment) {
         if (payment.getReceiptNo() == null) {
             payment.setReceiptNo("RCPT-" + Instant.now().toEpochMilli());

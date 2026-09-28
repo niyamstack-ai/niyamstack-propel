@@ -31,6 +31,7 @@ import com.niyamstack.propel.integration.PaymentGateway;
 import com.niyamstack.propel.domain.Model.Inquiry;
 import com.niyamstack.propel.platform.SettlementService;
 import com.niyamstack.propel.security.Auth;
+import com.niyamstack.propel.security.IpRateLimiter;
 import com.niyamstack.propel.security.LicenseService;
 import com.niyamstack.propel.security.OrgAccess;
 import com.niyamstack.propel.security.OtpService;
@@ -42,6 +43,7 @@ import com.niyamstack.propel.security.SessionService;
 import com.niyamstack.propel.sis.StudentAccountService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -77,11 +79,12 @@ public class StorefrontService {
     private final MailService mailService;
     private final PendingFlowService pendingFlows;
     private final ObjectMapper json;
+    private final IpRateLimiter ipRateLimiter;
 
     public StorefrontService(Store store, PaymentGateway payments, PasswordEncoder encoder, SessionService sessions,
                              EventHook hooks, FeeService fees, OtpService otp, StudentAccountService studentAccounts,
                              LicenseService licenses, GrowService grow, SettlementService settlements, MailService mailService,
-                             PendingFlowService pendingFlows, ObjectMapper json) {
+                             PendingFlowService pendingFlows, ObjectMapper json, IpRateLimiter ipRateLimiter) {
         this.store = store;
         this.payments = payments;
         this.encoder = encoder;
@@ -96,6 +99,11 @@ public class StorefrontService {
         this.mailService = mailService;
         this.pendingFlows = pendingFlows;
         this.json = json;
+        this.ipRateLimiter = ipRateLimiter;
+    }
+
+    public void guardPublicOtp(HttpServletRequest request) {
+        ipRateLimiter.guard(request);
     }
 
     public Organization orgBySlug(String slug) {
@@ -432,18 +440,11 @@ public class StorefrontService {
         invoice.setPaidAmount(price);
         invoice.setStatus("PAID");
         store.save(invoice);
-        Receipt receipt = new Receipt();
-        receipt.setOrganizationId(org.getId());
-        receipt.setPaymentId(payment.getId());
-        receipt.setInvoiceId(invoice.getId());
-        receipt.setReceiptNo(payment.getReceiptNo());
-        receipt.setAmount(price);
-        receipt.setIssuedAt(Instant.now());
-        store.save(receipt);
         redeemCoupon(applied);
         enroll(org, student, course, invoice, applied);
-        settlements.recordCapture(org, payment, invoice.getId(), student.getId(), course.getId());
+        fees.completeCapturedPayment(org, invoice, payment);
         hooks.fire(org.getId(), "course.purchased", Map.of("courseId", course.getId(), "amount", price));
+        Receipt receipt = latestReceipt(org.getId(), invoice.getId());
         return purchaseSession(user, course, invoice, receipt, false);
     }
 
@@ -529,6 +530,23 @@ public class StorefrontService {
     }
 
     private void enroll(Organization org, Student student, Course course, Invoice invoice, Coupon applied) {
+        CourseEnrollment cancelled = store.listBy(CourseEnrollment.class, org.getId(), "studentId", student.getId()).stream()
+                .filter(e -> course.getId().equals(e.getCourseId()) && "CANCELLED".equals(e.getStatus()))
+                .findFirst()
+                .orElse(null);
+        if (cancelled != null) {
+            cancelled.setStatus("ACTIVE");
+            cancelled.setInvoiceId(invoice.getId());
+            cancelled.setPurchasedAt(Instant.now());
+            cancelled.setSource("WEBSITE");
+            store.save(cancelled);
+            if (student.getCourseId() == null) {
+                student.setCourseId(course.getId());
+                student.setStatus("ENROLLED");
+                store.save(student);
+            }
+            return;
+        }
         CourseEnrollment existing = store.listBy(CourseEnrollment.class, org.getId(), "studentId", student.getId()).stream()
                 .filter(e -> course.getId().equals(e.getCourseId()) && !"CANCELLED".equals(e.getStatus()))
                 .findFirst()
@@ -937,7 +955,7 @@ public class StorefrontService {
         return rows;
     }
 
-    public Map<String, Object> applyCoupon(String slug, UUID courseId, String code) {
+    public Map<String, Object> applyCoupon(String slug, UUID courseId, String code, String validityOption) {
         Organization org = liveOrg(slug);
         Course course = store.getOwned(Course.class, courseId, org.getId());
         if (!course.isActive() || !course.isPublished()) {
@@ -947,7 +965,8 @@ public class StorefrontService {
         if (coupon == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "This coupon is not valid for this course.");
         }
-        BigDecimal original = payable(course);
+        String option = validityOption == null || validityOption.isBlank() ? "a" : validityOption.trim();
+        BigDecimal original = payable(course, option);
         BigDecimal list = discounted(original, coupon);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("valid", true);

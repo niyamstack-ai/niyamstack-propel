@@ -29,8 +29,13 @@ public class JwtFilter extends OncePerRequestFilter {
         String token = null;
         if (header != null && header.startsWith("Bearer ")) {
             token = header.substring(7);
-        } else if (request.getParameter("access_token") != null && !request.getParameter("access_token").isBlank()) {
-            token = request.getParameter("access_token");
+        } else if (request.getCookies() != null) {
+            for (var cookie : request.getCookies()) {
+                if (SessionCookies.INSTITUTE.equals(cookie.getName()) && cookie.getValue() != null && !cookie.getValue().isBlank()) {
+                    token = cookie.getValue();
+                    break;
+                }
+            }
         }
         if (token != null) {
             try {

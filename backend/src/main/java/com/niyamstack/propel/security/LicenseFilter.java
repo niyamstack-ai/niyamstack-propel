@@ -57,8 +57,9 @@ public class LicenseFilter extends OncePerRequestFilter {
                     reject(response, HttpServletResponse.SC_FORBIDDEN, OrgAccess.writeBlockMessage(org));
                     return;
                 }
-            } catch (Exception ignored) {
-                /* keep the JWT principal if the org row cannot be loaded */
+            } catch (Exception e) {
+                reject(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Could not load institute access");
+                return;
             }
         }
         chain.doFilter(request, response);

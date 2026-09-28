@@ -144,6 +144,7 @@ public class EssService {
         }
         ensureUniqueCode(orgId(), e.getEmployeeCode(), e.getId());
         e = store.save(e);
+        syncLoginPhoneFromEmployee(e, body);
         return employeeView(e, store.list(Center.class, orgId()));
     }
 
@@ -1390,6 +1391,23 @@ public class EssService {
         out.put("tempPassword", temp);
         out.put("userId", user.getId());
         return out;
+    }
+
+    private void syncLoginPhoneFromEmployee(Employee e, Map<String, Object> body) {
+        if (e.getUserId() == null || body == null || !body.containsKey("phone")) {
+            return;
+        }
+        AppUser user = store.get(AppUser.class, e.getUserId());
+        if (user == null) {
+            return;
+        }
+        String next = Phones.normalize(str(body, "phone"));
+        String prior = Phones.normalize(user.getPhone() == null ? "" : user.getPhone());
+        if (!next.equals(prior)) {
+            user.setPhone(next);
+            user.setPhoneVerified(false);
+            store.save(user);
+        }
     }
 
     private void applyEmployee(Employee e, Map<String, Object> body) {

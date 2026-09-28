@@ -8,7 +8,9 @@ import com.niyamstack.propel.domain.Model.Organization;
 import com.niyamstack.propel.foundation.FoundationService;
 import com.niyamstack.propel.integration.MailService;
 import com.niyamstack.propel.security.Auth;
+import com.niyamstack.propel.security.IpRateLimiter;
 import com.niyamstack.propel.security.OtpService;
+import com.niyamstack.propel.security.SessionCookies;
 import com.niyamstack.propel.security.PasswordPolicy;
 import com.niyamstack.propel.security.PendingFlowService;
 import com.niyamstack.propel.security.Phones;
@@ -32,7 +34,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import jakarta.servlet.http.HttpServletResponse;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -50,7 +52,7 @@ public class AuthController {
     private final boolean demoAliases;
     private final PendingFlowService pendingFlows;
     private final ObjectMapper json;
-    private final ConcurrentHashMap<String, Integer> ipFailures = new ConcurrentHashMap<>();
+    private final IpRateLimiter ipRateLimiter;
 
     public AuthController(
             Store store,
@@ -64,6 +66,7 @@ public class AuthController {
             Environment environment,
             PendingFlowService pendingFlows,
             ObjectMapper json,
+            IpRateLimiter ipRateLimiter,
             @Value("${propel.demo-aliases:false}") boolean demoAliases
     ) {
         this.store = store;
@@ -77,6 +80,7 @@ public class AuthController {
         this.environment = environment;
         this.pendingFlows = pendingFlows;
         this.json = json;
+        this.ipRateLimiter = ipRateLimiter;
         this.demoAliases = demoAliases;
     }
 
@@ -114,9 +118,9 @@ public class AuthController {
 
     @PostMapping("/login")
     @Transactional
-    public Map<String, Object> login(@Valid @RequestBody LoginRequest body, jakarta.servlet.http.HttpServletRequest request) {
-        String ip = clientIp(request);
-        guardIp(ip);
+    public Map<String, Object> login(@Valid @RequestBody LoginRequest body, jakarta.servlet.http.HttpServletRequest request, HttpServletResponse response) {
+        String ip = IpRateLimiter.clientIp(request);
+        ipRateLimiter.guard(ip);
         AppUser user = store.findUserByEmail(body.email() == null ? "" : body.email().trim());
         if (user == null && allowDemoAliases()) {
             String email = body.email() == null ? "" : body.email().trim();
@@ -139,14 +143,16 @@ public class AuthController {
         requireEmailVerified(user);
         clearLock(user, ip);
         audit.log("LOGIN", "AppUser", user.getId(), user.getEmail());
-        return sessions.issue(user);
+        Map<String, Object> session = sessions.issue(user);
+        SessionCookies.attachInstitute(response, session);
+        return session;
     }
 
     @PostMapping("/login/phone")
     @Transactional
-    public Map<String, Object> loginPhone(@Valid @RequestBody PhoneLoginRequest body, jakarta.servlet.http.HttpServletRequest request) {
-        String ip = clientIp(request);
-        guardIp(ip);
+    public Map<String, Object> loginPhone(@Valid @RequestBody PhoneLoginRequest body, jakarta.servlet.http.HttpServletRequest request, HttpServletResponse response) {
+        String ip = IpRateLimiter.clientIp(request);
+        ipRateLimiter.guard(ip);
         AppUser user = requirePhoneUser(body.phone());
         if (Roles.isPlatform(user.getRole())) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid mobile or password");
@@ -159,12 +165,15 @@ public class AuthController {
         requireEmailVerified(user);
         clearLock(user, ip);
         audit.log("LOGIN_PHONE", "AppUser", user.getId(), user.getPhone());
-        return sessions.issue(user);
+        Map<String, Object> session = sessions.issue(user);
+        SessionCookies.attachInstitute(response, session);
+        return session;
     }
 
     @PostMapping("/otp/request")
     @Transactional
-    public Map<String, Object> requestLoginOtp(@Valid @RequestBody PhoneRequest body) {
+    public Map<String, Object> requestLoginOtp(@Valid @RequestBody PhoneRequest body, jakarta.servlet.http.HttpServletRequest request) {
+        ipRateLimiter.guard(request);
         AppUser user = requirePhoneUser(body.phone());
         ensureActive(user);
         requireOrgAccess(user);
@@ -186,7 +195,8 @@ public class AuthController {
 
     @PostMapping("/otp/verify")
     @Transactional
-    public Map<String, Object> verifyLoginOtp(@Valid @RequestBody OtpVerifyRequest body) {
+    public Map<String, Object> verifyLoginOtp(@Valid @RequestBody OtpVerifyRequest body, jakarta.servlet.http.HttpServletRequest request, HttpServletResponse response) {
+        ipRateLimiter.guard(request);
         AppUser user = requirePhoneUser(body.phone());
         ensureActive(user);
         requireOrgAccess(user);
@@ -197,11 +207,14 @@ public class AuthController {
         }
         clearLock(user, "otp");
         audit.log("LOGIN_OTP", "AppUser", user.getId(), user.getPhone());
-        return sessions.issue(user);
+        Map<String, Object> session = sessions.issue(user);
+        SessionCookies.attachInstitute(response, session);
+        return session;
     }
 
     @PostMapping("/signup")
-    public Map<String, Object> signup(@Valid @RequestBody SignupRequest body) {
+    public Map<String, Object> signup(@Valid @RequestBody SignupRequest body, jakarta.servlet.http.HttpServletRequest request) {
+        ipRateLimiter.guard(request);
         String email = body.email().trim().toLowerCase();
         String phone = requireMobile(body.phone());
         if (!mail.canDeliver(email)) {
@@ -247,7 +260,8 @@ public class AuthController {
 
     @PostMapping("/signup/verify")
     @Transactional
-    public Map<String, Object> signupVerify(@Valid @RequestBody SignupVerifyRequest body) {
+    public Map<String, Object> signupVerify(@Valid @RequestBody SignupVerifyRequest body, jakarta.servlet.http.HttpServletRequest request, HttpServletResponse response) {
+        ipRateLimiter.guard(request);
         String phone = requireMobile(body.phone());
         String raw = pendingFlows.getPayload("SIGNUP:" + phone);
         if (raw == null) {
@@ -303,17 +317,30 @@ public class AuthController {
         if (mail.live() && mail.canDeliver(email)) {
             mail.sendWelcome(email, user.getFullName());
         }
-        return sessions.issue(user);
+        Map<String, Object> session = sessions.issue(user);
+        SessionCookies.attachInstitute(response, session);
+        return session;
     }
 
     @PostMapping("/forgot/otp")
     @Transactional
-    public Map<String, Object> forgotOtp(@Valid @RequestBody PhoneRequest body) {
+    public Map<String, Object> forgotOtp(@Valid @RequestBody PhoneRequest body, jakarta.servlet.http.HttpServletRequest request) {
+        ipRateLimiter.guard(request);
         AppUser user = requirePhoneUser(body.phone());
         ensureActive(user);
+        if (user.getEmail() == null || user.getEmail().isBlank() || !mail.canDeliver(user.getEmail())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Add a real email on your profile to receive OTP.");
+        }
         var issued = otp.issue(user.getPhone(), OtpService.RESET);
-        emailOtp(user, OtpService.RESET, issued.code());
-        return otp.publicIssue(issued);
+        Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
+        if (mail.live() && mail.canDeliver(user.getEmail())) {
+            mail.sendOtp(user.getEmail(), OtpService.RESET, issued.code());
+        } else if (!otp.reveal()) {
+            out.put("devOtp", issued.code());
+        }
+        out.put("emailMasked", maskEmail(user.getEmail()));
+        out.put("channel", "email");
+        return out;
     }
 
     @PostMapping("/reset/otp")
@@ -371,9 +398,15 @@ public class AuthController {
         return Map.of("status", "updated");
     }
 
+    @PostMapping("/logout")
+    public Map<String, Object> logout(HttpServletResponse response) {
+        SessionCookies.clearInstitute(response);
+        return Map.of("ok", true);
+    }
+
     @PatchMapping("/profile")
     @Transactional
-    public Map<String, Object> updateProfile(@RequestBody ProfileUpdateRequest body) {
+    public Map<String, Object> updateProfile(@RequestBody ProfileUpdateRequest body, HttpServletResponse response) {
         AppUser user = store.get(AppUser.class, Auth.current().userId());
         if (body != null && body.name() != null && !body.name().isBlank()) {
             user.setFullName(body.name().trim());
@@ -398,7 +431,11 @@ public class AuthController {
             if (other != null && !other.getId().equals(user.getId())) {
                 throw new ApiException(HttpStatus.CONFLICT, "An account with this mobile already exists");
             }
-            user.setPhone(phone);
+            String prior = Phones.normalize(user.getPhone() == null ? "" : user.getPhone());
+            if (!phone.equals(prior)) {
+                user.setPhone(phone);
+                user.setPhoneVerified(false);
+            }
         }
         store.save(user);
         if (user.getOrganizationId() != null) {
@@ -410,7 +447,9 @@ public class AuthController {
             }
         }
         audit.log("PROFILE_UPDATE", "AppUser", user.getId(), user.getEmail());
-        return sessions.issue(user);
+        Map<String, Object> session = sessions.issue(user);
+        SessionCookies.attachInstitute(response, session);
+        return session;
     }
 
     @PostMapping("/password")
@@ -432,13 +471,6 @@ public class AuthController {
         return Map.of("status", "updated");
     }
 
-    private void emailOtp(AppUser user, String purpose, String code) {
-        if (user == null || !mail.live() || !mail.canDeliver(user.getEmail())) {
-            return;
-        }
-        mail.sendOtp(user.getEmail(), purpose, code);
-    }
-
     private static String maskEmail(String email) {
         if (email == null || !email.contains("@")) {
             return "";
@@ -454,7 +486,7 @@ public class AuthController {
             throw new ApiException(HttpStatus.LOCKED, "Account temporarily locked");
         }
         if (user == null || !user.isActive() || !encoder.matches(password, user.getPasswordHash())) {
-            ipFailures.merge(ip, 1, Integer::sum);
+            ipRateLimiter.recordFailure(ip);
             if (user != null) {
                 user.setFailedLogins(user.getFailedLogins() + 1);
                 if (user.getFailedLogins() >= MAX_FAILURES) {
@@ -472,13 +504,7 @@ public class AuthController {
         user.setFailedLogins(0);
         user.setLockedUntil(null);
         store.save(user);
-        ipFailures.remove(ip);
-    }
-
-    private void guardIp(String ip) {
-        if (ipFailures.getOrDefault(ip, 0) > 30) {
-            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "Too many attempts. Try again later.");
-        }
+        ipRateLimiter.clear(ip);
     }
 
     private AppUser requirePhoneUser(String raw) {
@@ -555,7 +581,4 @@ public class AuthController {
                 .anyMatch(p -> "seed".equalsIgnoreCase(p) || "demo".equalsIgnoreCase(p) || "local".equalsIgnoreCase(p));
     }
 
-    private static String clientIp(jakarta.servlet.http.HttpServletRequest request) {
-        return request.getRemoteAddr() == null ? "unknown" : request.getRemoteAddr();
-    }
 }

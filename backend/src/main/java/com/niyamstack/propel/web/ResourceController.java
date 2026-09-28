@@ -13,6 +13,7 @@ import com.niyamstack.propel.fees.FeeService;
 import com.niyamstack.propel.lms.LmsService;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
+import com.niyamstack.propel.security.IpRateLimiter;
 import com.niyamstack.propel.security.DataScope;
 import com.niyamstack.propel.security.Gstins;
 import com.niyamstack.propel.security.PropelUser;
@@ -61,12 +62,13 @@ public class ResourceController {
     private final OtpService otp;
     private final MailService mail;
     private final SettlementService settlements;
+    private final IpRateLimiter ipRateLimiter;
 
     public ResourceController(Store store, DataScope scope, LmsService lms, PasswordEncoder encoder, FeeService fees,
                               StudentAccountService studentAccounts, SessionService sessions, LicenseService licenses,
                               EssService ess, SisService sis, GrowService grow, FoundationService foundation,
                               CompensationService compensation, OtpService otp, MailService mail,
-                              SettlementService settlements) {
+                              SettlementService settlements, IpRateLimiter ipRateLimiter) {
         this.store = store;
         this.scope = scope;
         this.lms = lms;
@@ -83,6 +85,7 @@ public class ResourceController {
         this.otp = otp;
         this.mail = mail;
         this.settlements = settlements;
+        this.ipRateLimiter = ipRateLimiter;
     }
 
     @GetMapping("/features")
@@ -554,7 +557,7 @@ public class ResourceController {
 
     public record StaffInvite(String fullName, String email, String phone, String role, String capabilitiesCsv, List<String> capabilities) {}
 
-    public record StaffUpdate(String capabilitiesCsv, List<String> capabilities, String role) {}
+    public record StaffUpdate(String capabilitiesCsv, List<String> capabilities, String role, String phone) {}
 
     public record StaffVerifyRequest(@jakarta.validation.constraints.NotBlank String otp) {}
 
@@ -647,11 +650,26 @@ public class ResourceController {
             user.setRole(role);
         }
         user.setCapabilitiesCsv(Packs.sanitizeCapsCsv(body.capabilitiesCsv(), body.capabilities()));
+        if (body.phone() != null && !body.phone().isBlank()) {
+            String phone = Phones.normalize(body.phone());
+            if (!phone.isBlank()) {
+                AppUser other = store.findUserByPhone(phone);
+                if (other != null && !other.getId().equals(user.getId())) {
+                    throw new ApiException(HttpStatus.CONFLICT, "That mobile already has an account");
+                }
+                String prior = Phones.normalize(user.getPhone() == null ? "" : user.getPhone());
+                if (!phone.equals(prior)) {
+                    user.setPhone(phone);
+                    user.setPhoneVerified(false);
+                }
+            }
+        }
         return staffView(store.save(user));
     }
 
     @PostMapping("/staff/{id}/verify/email/request")
-    public Map<String, Object> requestStaffEmailOtp(@PathVariable UUID id) {
+    public Map<String, Object> requestStaffEmailOtp(@PathVariable UUID id, jakarta.servlet.http.HttpServletRequest request) {
+        ipRateLimiter.guard(request);
         AppUser user = requireStaffMember(id);
         String email = user.getEmail() == null ? "" : user.getEmail().trim().toLowerCase();
         if (email.isBlank()) {
@@ -686,7 +704,8 @@ public class ResourceController {
     }
 
     @PostMapping("/staff/{id}/verify/phone/request")
-    public Map<String, Object> requestStaffPhoneOtp(@PathVariable UUID id) {
+    public Map<String, Object> requestStaffPhoneOtp(@PathVariable UUID id, jakarta.servlet.http.HttpServletRequest request) {
+        ipRateLimiter.guard(request);
         AppUser user = requireStaffMember(id);
         String phone = user.getPhone() == null ? "" : Phones.normalize(user.getPhone());
         if (phone.isBlank()) {

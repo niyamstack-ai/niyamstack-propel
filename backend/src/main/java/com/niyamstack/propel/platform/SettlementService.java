@@ -1,14 +1,20 @@
 package com.niyamstack.propel.platform;
 
+import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
+import com.niyamstack.propel.domain.Model.AppUser;
 import com.niyamstack.propel.domain.Model.Organization;
 import com.niyamstack.propel.domain.Model.Payment;
 import com.niyamstack.propel.domain.Model.PayoutBatch;
+import com.niyamstack.propel.domain.Model.PlatformRole;
+import com.niyamstack.propel.domain.Model.PlatformUserRole;
 import com.niyamstack.propel.domain.Model.SettlementEntry;
 import com.niyamstack.propel.integration.RazorpayXClient;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.OrgAccess;
+import com.niyamstack.propel.security.Roles;
+import org.springframework.http.HttpStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -22,7 +28,9 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -386,7 +394,32 @@ public class SettlementService {
     }
 
     private void requirePlatformFinance() {
+        requireCap(PlatformCaps.MANAGE_RIGHTS);
+    }
+
+    private void requireCap(String cap) {
         Access.requirePlatform(Auth.current());
+        AppUser user = store.get(AppUser.class, Auth.current().userId());
+        if (!capsForUser(user).contains(cap)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "This role cannot " + PlatformCaps.label(cap).toLowerCase());
+        }
+    }
+
+    private List<String> capsForUser(AppUser user) {
+        if (Roles.PLATFORM_OWNER.equals(user.getRole())) {
+            return PlatformCaps.ALL;
+        }
+        LinkedHashSet<String> caps = new LinkedHashSet<>();
+        for (PlatformUserRole link : store.listUserRoles(user.getId())) {
+            PlatformRole role = store.get(PlatformRole.class, link.getRoleId());
+            if (role.getCapabilitiesCsv() != null) {
+                caps.addAll(Arrays.stream(role.getCapabilitiesCsv().split(","))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .toList());
+            }
+        }
+        return new ArrayList<>(caps);
     }
 
     private static BigDecimal nvl(BigDecimal v) {

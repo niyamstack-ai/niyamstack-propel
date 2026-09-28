@@ -687,7 +687,7 @@ function CoursePage() {
     try {
       const res = await api<{ price: number; code: string }>(`/api/public/sites/${slug}/coupons/apply`, {
         method: "POST",
-        body: JSON.stringify({ courseId: course.id, code: coupon.trim() }),
+        body: JSON.stringify({ courseId: course.id, code: coupon.trim(), validityOption }),
       });
       setPrice(Number(res.price));
       setCouponOk(res.code);
@@ -1905,10 +1905,10 @@ function StudentForgotPage() {
         </>
       ) : (
         <>
-          <p className="mt-1 text-sm text-slate-500">Reset with the mobile or email on your purchase.</p>
+          <p className="mt-1 text-sm text-slate-500">Reset with email, or enter your mobile — we send the OTP to the email on your account.</p>
           <div className="mt-4 flex gap-2">
             <button type="button" className={`rounded-full px-3 py-1 text-sm ${method === "otp" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => { setMethod("otp"); setSent(null); }}>
-              Mobile OTP
+              Email OTP
             </button>
             <button type="button" className={`rounded-full px-3 py-1 text-sm ${method === "email" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => { setMethod("email"); setSent(null); }}>
               Email

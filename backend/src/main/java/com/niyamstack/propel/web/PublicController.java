@@ -10,6 +10,7 @@ import com.niyamstack.propel.integration.PaymentGateway;
 import com.niyamstack.propel.depth.DepthService;
 import com.niyamstack.propel.grow.GrowService;
 import com.niyamstack.propel.storefront.StorefrontService;
+import com.niyamstack.propel.security.SessionCookies;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -56,7 +57,7 @@ public class PublicController {
 
     public record PurchaseRequest(String fullName, String email, String phone, UUID courseId, String couponCode, String validityOption, String otp) {}
     public record ConfirmRequest(UUID invoiceId, String orderId, String paymentId, String signature) {}
-    public record CouponRequest(UUID courseId, String code) {}
+    public record CouponRequest(UUID courseId, String code, String validityOption) {}
     public record RegisterRequest(String fullName, String email, String phone, UUID courseId) {}
     public record RegisterVerifyRequest(String phone, String otp) {}
     public record EnquireRequest(String fullName, String email, String phone, String message, UUID courseId, String landingSlug, String referralCode, java.util.Map<String, String> answers) {}
@@ -155,15 +156,7 @@ public class PublicController {
         if (!dest.startsWith(filesRoot) || !Files.isRegularFile(dest)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "No cover image");
         }
-        String type = MediaType.APPLICATION_OCTET_STREAM_VALUE;
-        try {
-            String probed = Files.probeContentType(dest);
-            if (probed != null) {
-                type = probed;
-            }
-        } catch (Exception ignored) {
-            /* keep default */
-        }
+        String type = FileController.guessContentType(dest, name);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + name.replace("\"", "") + "\"")
                 .contentType(MediaType.parseMediaType(type))
@@ -175,33 +168,50 @@ public class PublicController {
         if (body.courseId() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Course is required");
         }
-        return storefront.applyCoupon(slug, body.courseId(), body.code());
+        return storefront.applyCoupon(slug, body.courseId(), body.code(), body.validityOption());
     }
 
     @PostMapping("/sites/{slug}/purchase/otp")
-    public Map<String, Object> purchaseOtp(@PathVariable String slug, @RequestBody PurchaseRequest body) {
+    public Map<String, Object> purchaseOtp(
+            @PathVariable String slug,
+            @RequestBody PurchaseRequest body,
+            jakarta.servlet.http.HttpServletRequest request
+    ) {
         if (body.courseId() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Course is required");
         }
+        storefront.guardPublicOtp(request);
         return storefront.purchaseOtp(
                 slug, body.fullName(), body.email(), body.phone(), body.courseId(), body.couponCode(), body.validityOption());
     }
 
     @PostMapping("/sites/{slug}/purchase")
-    public Map<String, Object> purchase(@PathVariable String slug, @RequestBody PurchaseRequest body) {
+    public Map<String, Object> purchase(
+            @PathVariable String slug,
+            @RequestBody PurchaseRequest body,
+            jakarta.servlet.http.HttpServletResponse response
+    ) {
         if (body.courseId() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Course is required");
         }
-        return storefront.purchase(
+        Map<String, Object> out = storefront.purchase(
                 slug, body.fullName(), body.email(), body.phone(), body.courseId(), body.couponCode(), body.validityOption(), body.otp());
+        SessionCookies.attachInstitute(response, out);
+        return out;
     }
 
     @PostMapping("/sites/{slug}/purchase/confirm")
-    public Map<String, Object> confirmPurchase(@PathVariable String slug, @RequestBody ConfirmRequest body) {
+    public Map<String, Object> confirmPurchase(
+            @PathVariable String slug,
+            @RequestBody ConfirmRequest body,
+            jakarta.servlet.http.HttpServletResponse response
+    ) {
         if (body.invoiceId() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Invoice is required");
         }
-        return storefront.confirmPurchase(slug, body.invoiceId(), body.orderId(), body.paymentId(), body.signature());
+        Map<String, Object> out = storefront.confirmPurchase(slug, body.invoiceId(), body.orderId(), body.paymentId(), body.signature());
+        SessionCookies.attachInstitute(response, out);
+        return out;
     }
 
     @PostMapping("/payments/razorpay")
@@ -316,13 +326,24 @@ public class PublicController {
     }
 
     @PostMapping("/sites/{slug}/register/otp")
-    public Map<String, Object> registerOtp(@PathVariable String slug, @RequestBody RegisterRequest body) {
+    public Map<String, Object> registerOtp(
+            @PathVariable String slug,
+            @RequestBody RegisterRequest body,
+            jakarta.servlet.http.HttpServletRequest request
+    ) {
+        storefront.guardPublicOtp(request);
         return storefront.registerOtp(slug, body.fullName(), body.email(), body.phone(), body.courseId());
     }
 
     @PostMapping("/sites/{slug}/register/verify")
-    public Map<String, Object> registerVerify(@PathVariable String slug, @RequestBody RegisterVerifyRequest body) {
-        return storefront.registerVerify(slug, body.phone(), body.otp());
+    public Map<String, Object> registerVerify(
+            @PathVariable String slug,
+            @RequestBody RegisterVerifyRequest body,
+            jakarta.servlet.http.HttpServletResponse response
+    ) {
+        Map<String, Object> out = storefront.registerVerify(slug, body.phone(), body.otp());
+        SessionCookies.attachInstitute(response, out);
+        return out;
     }
 
     @PostMapping("/sites/{slug}/enquire")
@@ -367,15 +388,7 @@ public class PublicController {
         if (!dest.startsWith(filesRoot) || !Files.isRegularFile(dest)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "File not found");
         }
-        String type = MediaType.APPLICATION_OCTET_STREAM_VALUE;
-        try {
-            String probed = Files.probeContentType(dest);
-            if (probed != null) {
-                type = probed;
-            }
-        } catch (Exception ignored) {
-            /* keep default */
-        }
+        String type = FileController.guessContentType(dest, name);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + name.replace("\"", "") + "\"")
                 .contentType(MediaType.parseMediaType(type))

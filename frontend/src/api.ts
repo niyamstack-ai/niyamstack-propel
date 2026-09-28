@@ -10,9 +10,7 @@ export function fileSrc(url?: string) {
   if (!url) return "";
   const path = url.startsWith("/files/") ? `/api${url}` : url;
   if (/^https?:\/\//i.test(path)) return path;
-  const token = getToken();
-  if (!token) return path;
-  return `${path}${path.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}`;
+  return path;
 }
 
 export function setToken(token: string | null) {
@@ -32,6 +30,7 @@ export function setPlatformToken(token: string | null) {
 export function clearInstituteSession() {
   setToken(null);
   localStorage.removeItem("propel.user");
+  void fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => undefined);
 }
 
 export function clearPlatformSession() {
@@ -88,7 +87,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (token) headers.set("Authorization", `Bearer ${token}`);
   let res: Response;
   try {
-    res = await fetch(path, { ...init, headers });
+    res = await fetch(path, { ...init, headers, credentials: "include" });
   } catch {
     throw new Error("Cannot reach the API. Start the backend, then try again.");
   }

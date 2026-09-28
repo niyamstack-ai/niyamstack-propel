@@ -120,6 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem("propel.user");
         setTok(null);
         setUser(null);
+        void fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => undefined);
       },
     }),
     [token, user, ready]

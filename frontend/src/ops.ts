@@ -79,7 +79,7 @@ export async function uploadContentFile<T = { id: string; url?: string; title?: 
   if (token) headers.set("Authorization", `Bearer ${token}`);
   let res: Response;
   try {
-    res = await fetch("/api/actions/content/upload", { method: "POST", headers, body: form });
+    res = await fetch("/api/actions/content/upload", { method: "POST", headers, body: form, credentials: "include" });
   } catch {
     throw new Error("Cannot reach the API. Start the backend, then try again.");
   }
@@ -117,7 +117,7 @@ async function uploadTo(path: string, file: File): Promise<{ url: string; fileNa
   if (token) headers.set("Authorization", `Bearer ${token}`);
   let res: Response;
   try {
-    res = await fetch(path, { method: "POST", headers, body: form });
+    res = await fetch(path, { method: "POST", headers, body: form, credentials: "include" });
   } catch {
     throw new Error("Cannot reach the API. Start the backend, then try again.");
   }
