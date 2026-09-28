@@ -75,7 +75,6 @@ public class StorefrontService {
     private final MailService mailService;
     private final ConcurrentHashMap<String, PendingRegister> pendingRegisters = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, PendingPurchase> pendingPurchases = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, PendingPurchase> pendingPurchases = new ConcurrentHashMap<>();
 
     public StorefrontService(Store store, PaymentGateway payments, PasswordEncoder encoder, SessionService sessions,
                              EventHook hooks, FeeService fees, OtpService otp, StudentAccountService studentAccounts,
