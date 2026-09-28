@@ -138,6 +138,11 @@ public class StorefrontService {
         out.put("live", isLive(org));
         out.put("phone", org.getPhone());
         out.put("email", org.getEmail());
+        out.put("appShareUrl", org.getAppShareUrl() == null ? "" : org.getAppShareUrl());
+        out.put("hasApp", org.getAppShareUrl() != null && !org.getAppShareUrl().isBlank());
+        out.put("hasOneToOne", !store.list(com.niyamstack.propel.domain.Model.OneToOneSession.class, org.getId()).isEmpty());
+        out.put("hasJobs", !store.list(com.niyamstack.propel.domain.Model.Drive.class, org.getId()).isEmpty()
+                || !store.list(com.niyamstack.propel.domain.Model.AlumniJob.class, org.getId()).isEmpty());
         out.putAll(hooks.tracking(org.getId()));
         try {
             out.put("pages", publicPages(org));
@@ -975,6 +980,7 @@ public class StorefrontService {
     public List<Map<String, Object>> courseOutline(Organization org, String courseKey) {
         Course published = resolvePublishedCourse(org, courseKey);
         UUID courseId = published.getId();
+        boolean previewsOpen = published.isAllowPreview();
         List<Map<String, Object>> rows = new java.util.ArrayList<>();
         for (ContentItem item : store.listBy(ContentItem.class, org.getId(), "courseId", courseId)) {
             if (!item.isPublished()) {
@@ -986,6 +992,17 @@ public class StorefrontService {
             row.put("type", item.getContentType());
             row.put("parentFolderId", item.getParentFolderId());
             row.put("sortOrder", item.getSortOrder() == null ? 0 : item.getSortOrder());
+            String visibility = item.getVisibility() == null ? "COURSE" : item.getVisibility();
+            row.put("visibility", visibility);
+            boolean previewable = previewsOpen && "PREVIEW".equalsIgnoreCase(visibility);
+            row.put("preview", previewable);
+            if (previewable) {
+                row.put("contentType", item.getContentType());
+                row.put("url", publicContentUrl(item.getUrl()));
+                if (item.getBody() != null && !item.getBody().isBlank()) {
+                    row.put("body", item.getBody());
+                }
+            }
             rows.add(row);
         }
         for (Assessment exam : store.listBy(Assessment.class, org.getId(), "courseId", courseId)) {
@@ -998,10 +1015,22 @@ public class StorefrontService {
             row.put("type", "TEST");
             row.put("parentFolderId", exam.getParentFolderId());
             row.put("sortOrder", exam.getSortOrder() == null ? 0 : exam.getSortOrder());
+            row.put("visibility", "COURSE");
+            row.put("preview", false);
             rows.add(row);
         }
         rows.sort((a, b) -> Integer.compare((Integer) a.get("sortOrder"), (Integer) b.get("sortOrder")));
         return rows;
+    }
+
+    private static String publicContentUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return "";
+        }
+        if (url.contains("/api/files/")) {
+            return url.replace("/api/files/", "/api/public/media/");
+        }
+        return url;
     }
 
     public Map<String, Object> applyCoupon(String slug, UUID courseId, String code, String validityOption) {

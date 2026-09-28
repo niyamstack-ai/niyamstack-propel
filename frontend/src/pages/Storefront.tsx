@@ -33,6 +33,10 @@ type Site = {
   live?: boolean;
   phone?: string;
   email?: string;
+  appShareUrl?: string;
+  hasApp?: boolean;
+  hasOneToOne?: boolean;
+  hasJobs?: boolean;
   facebookPixelId?: string;
   googleAnalyticsId?: string;
   googleAdsId?: string;
@@ -214,7 +218,82 @@ type OutlineItem = {
   type: string;
   parentFolderId?: string | null;
   sortOrder?: number;
+  visibility?: string;
+  preview?: boolean;
+  contentType?: string;
+  url?: string;
+  body?: string;
 };
+
+function OutlineLessonRow({ row, onPreview }: { row: OutlineItem; onPreview: (row: OutlineItem) => void }) {
+  const previewable = !!row.preview;
+  const kind = (row.contentType || row.type || "").toLowerCase();
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 text-sm text-navy hover:bg-mist/60">
+      <div className="min-w-0">
+        <p className="truncate font-medium">{row.title}</p>
+        <p className="text-xs uppercase tracking-wide text-slate-400">
+          {kind}
+          {previewable ? " · free preview" : ""}
+        </p>
+      </div>
+      {previewable ? (
+        <button type="button" className="shrink-0 text-sm font-semibold text-brand hover:underline" onClick={() => onPreview(row)}>
+          Preview
+        </button>
+      ) : (
+        <span className="shrink-0 text-xs text-slate-400">After enrol</span>
+      )}
+    </div>
+  );
+}
+
+function StorefrontPreviewModal({ item, onClose }: { item: OutlineItem; onClose: () => void }) {
+  const src = item.url || "";
+  const type = (item.contentType || item.type || "").toUpperCase();
+  const isVideo = type === "VIDEO" || type.includes("VIDEO");
+  const isImage = type === "IMAGE" || type.includes("IMAGE") || type === "PNG" || type === "JPG" || type === "JPEG";
+  const remote = /^https?:\/\//i.test(src);
+  const isPdf = !remote && (type === "PDF" || type === "DOCUMENT" || /\.pdf($|\?)/i.test(src));
+  return (
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/50 p-4" onClick={onClose}>
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-2xl bg-white p-4" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="font-semibold text-navy">{item.title}</h3>
+          <div className="flex items-center gap-3">
+            {src && (
+              <a className="text-sm font-medium text-brand" href={src} target="_blank" rel="noreferrer">
+                Open
+              </a>
+            )}
+            <button type="button" className="text-sm text-slate-600" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </div>
+        {isVideo && src && <video src={src} controls className="w-full rounded-lg bg-black" />}
+        {isImage && src && <img src={src} alt={item.title} className="max-h-[70vh] w-full object-contain" />}
+        {isPdf && src && <iframe title={item.title} src={src} className="h-[70vh] w-full rounded-lg border" />}
+        {!isVideo && !isImage && !isPdf && item.body && <RichHtml html={item.body} className="prose max-w-none text-sm text-slate-700" />}
+        {!isVideo && !isImage && !isPdf && !item.body && src && (
+          <>
+            <iframe title={item.title} src={src} className="h-[70vh] w-full rounded-lg border" />
+            {remote && (
+              <p className="mt-2 text-xs text-slate-400">
+                If the page is blank, the site blocks embedding.{" "}
+                <a className="text-brand" href={src} target="_blank" rel="noreferrer">
+                  Open in a new tab
+                </a>
+                .
+              </p>
+            )}
+          </>
+        )}
+        {!src && !item.body && <p className="text-sm text-slate-500">This preview has no file attached yet.</p>}
+      </div>
+    </div>
+  );
+}
 
 type MyCourse = {
   id?: string;
@@ -527,12 +606,16 @@ function StorefrontShell() {
                   {p.title}
                 </Link>
               ))}
-            <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/one-to-one`} tabIndex={examLock ? -1 : 0}>
-              1:1
-            </Link>
-            <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/app`} tabIndex={examLock ? -1 : 0}>
-              Get the app
-            </Link>
+            {site.hasOneToOne && (
+              <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/one-to-one`} tabIndex={examLock ? -1 : 0}>
+                1:1
+              </Link>
+            )}
+            {(site.hasApp || !!site.appShareUrl) && (
+              <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/app`} tabIndex={examLock ? -1 : 0}>
+                Get the app
+              </Link>
+            )}
             {student ? (
               <>
                 <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/learn`} tabIndex={examLock ? -1 : 0}>
@@ -541,9 +624,11 @@ function StorefrontShell() {
                 <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/fees`} tabIndex={examLock ? -1 : 0}>
                   Fees
                 </Link>
-                <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/jobs`} tabIndex={examLock ? -1 : 0}>
-                  Jobs
-                </Link>
+                {site.hasJobs && (
+                  <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/jobs`} tabIndex={examLock ? -1 : 0}>
+                    Jobs
+                  </Link>
+                )}
                 <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/notices`} tabIndex={examLock ? -1 : 0}>
                   Notices
                 </Link>
@@ -557,10 +642,10 @@ function StorefrontShell() {
                     showName
                     extraLinks={[
                       { label: "Fees", to: `${sitePath(slug)}/fees` },
-                      { label: "Jobs", to: `${sitePath(slug)}/jobs` },
+                      ...(site.hasJobs ? [{ label: "Jobs", to: `${sitePath(slug)}/jobs` }] : []),
                       { label: "Notices", to: `${sitePath(slug)}/notices` },
                       { label: "Chat", to: `${sitePath(slug)}/chats` },
-                      { label: "1:1 sessions", to: `${sitePath(slug)}/one-to-one` },
+                      ...(site.hasOneToOne ? [{ label: "1:1 sessions", to: `${sitePath(slug)}/one-to-one` }] : []),
                     ]}
                   />
                 </span>
@@ -755,6 +840,7 @@ function CoursePage() {
   const [validityOption, setValidityOption] = useState("a");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState<{ emailMasked?: string; devOtp?: string } | null>(null);
+  const [previewItem, setPreviewItem] = useState<OutlineItem | null>(null);
   const needsEmailVerify = !(token && user?.role === "STUDENT" && user?.emailVerified);
 
   useEffect(() => {
@@ -1045,19 +1131,24 @@ function CoursePage() {
                 <p className="text-xs text-slate-500">
                   {outline.filter((row) => row.parentFolderId === folder.id).length} item(s)
                 </p>
+                <div className="mt-2 space-y-1">
+                  {outline
+                    .filter((row) => row.parentFolderId === folder.id && row.type !== "FOLDER")
+                    .map((row) => (
+                      <OutlineLessonRow key={row.id} row={row} onPreview={setPreviewItem} />
+                    ))}
+                </div>
               </div>
             ))}
             {outline
               .filter((row) => !row.parentFolderId && row.type !== "FOLDER")
               .map((row) => (
-                <div key={row.id} className="px-4 py-3 text-sm text-navy">
-                  {row.title}
-                  <span className="ml-2 text-xs uppercase text-slate-400">{row.type.toLowerCase()}</span>
-                </div>
+                <OutlineLessonRow key={row.id} row={row} onPreview={setPreviewItem} />
               ))}
           </div>
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}
+        {previewItem && <StorefrontPreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />}
       </div>
 
       <aside className="sticky top-4 overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
