@@ -30,7 +30,11 @@ public final class OrgSettings {
             }
         }
         if (!completed) {
-            completed = steps.values().stream().allMatch(v -> Boolean.TRUE.equals(v));
+            completed = Boolean.TRUE.equals(steps.get("profile"))
+                    && Boolean.TRUE.equals(steps.get("course"))
+                    && Boolean.TRUE.equals(steps.get("website"))
+                    && Boolean.TRUE.equals(steps.get("student"))
+                    && Boolean.TRUE.equals(steps.get("payment"));
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("completed", completed);
@@ -73,10 +77,12 @@ public final class OrgSettings {
     private static Map<String, Object> defaultSteps(Organization org) {
         Map<String, Object> steps = new LinkedHashMap<>();
         steps.put("profile", org != null && org.getName() != null && !org.getName().isBlank());
-        steps.put("center", false);
         steps.put("course", false);
-        steps.put("staff", false);
         steps.put("website", false);
+        steps.put("student", false);
+        steps.put("payment", false);
+        steps.put("center", false);
+        steps.put("staff", false);
         return steps;
     }
 }

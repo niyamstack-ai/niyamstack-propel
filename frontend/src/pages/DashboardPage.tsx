@@ -296,25 +296,51 @@ function OwnerHome() {
       <OnboardingWizard />
       <div>
         <h1 className="text-2xl font-bold text-navy">Dashboard</h1>
-        <p className="text-sm text-slate-500">Your institute website, courses, admissions, and fees — in one place.</p>
+        <p className="text-sm text-slate-500">
+          Week-one path: student website → course → enrol → fees. All other modules stay in the menu when you need them.
+        </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {pathAllowed("/website", user?.modules) && (
-          <HomeLink to="/website" title="Student website" text="Build pages, then connect your domain. Students log in there." />
+          <HomeLink to="/website" title="1. Student website" text="Publish pages, then open /s/your-slug so students can browse." />
         )}
+        {pathAllowed("/courses", user?.modules) && <HomeLink to="/courses" title="2. Courses" text={courseCopy} />}
+        {pathAllowed("/people/students", user?.modules) && (
+          <HomeLink to="/people/students" title="3. Students" text={`${data.students ?? 0} enrolled — add one to test login`} />
+        )}
+        {pathAllowed("/fees", user?.modules) && (
+          <HomeLink to="/fees" title="4. Fees" text="Fee plan or collect a test payment; bank/UPI under Institute." />
+        )}
+      </div>
+      {user?.orgSlug && (
+        <p className="text-sm text-slate-600">
+          Student site:{" "}
+          <Link className="font-semibold text-brand underline" to={`/s/${user.orgSlug}`}>
+            /s/{user.orgSlug}
+          </Link>
+          {" · "}
+          <Link className="font-semibold text-brand underline" to={`/s/${user.orgSlug}/login`}>
+            student login
+          </Link>
+        </p>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2">
         {pathAllowed("/your-app", user?.modules) && (
-          <HomeLink to="/your-app" title="Mobile apps" text="Student and faculty phones: attendance, fees, notices, mark class." />
+          <HomeLink to="/your-app" title="Mobile site" text="Phone layout (/m) and PWA install — not a separate Play Store app." />
+        )}
+        {pathAllowed("/institute", user?.modules) && (
+          <HomeLink to="/institute" title="Institute & bank" text="Branding, GST, and payout bank/UPI details." />
         )}
       </div>
       <div>
         <h2 className="mb-3 text-lg font-semibold text-navy">Grow the institute</h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {pathAllowed("/courses", user?.modules) && <HomeLink to="/courses" title="Courses" text={courseCopy} />}
           {pathAllowed("/landing-pages", user?.modules) && (
             <HomeLink to="/landing-pages" title="Landing pages" text={`${data.landingPages ?? 0} ${(data.landingPages ?? 0) === 1 ? "page" : "pages"} for ads and webinars`} />
           )}
           {pathAllowed("/content-hub", user?.modules) && <HomeLink to="/content-hub" title="Tests" text={testCopy} />}
           {pathAllowed("/campaigns", user?.modules) && <HomeLink to="/campaigns" title="Campaigns" text={`${data.campaigns ?? 0} campaigns`} />}
+          {pathAllowed("/crm", user?.modules) && <HomeLink to="/crm" title="Admissions CRM" text={`${data.inquiries ?? 0} inquiries`} />}
         </div>
       </div>
       <div className="grid gap-4 lg:grid-cols-[1fr_280px]">

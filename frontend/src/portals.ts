@@ -118,8 +118,8 @@ function roleNav(role?: string): NavEntry[] {
           label: "Grow",
           items: [
             { to: "/website", label: "Website" },
-            { to: "/your-app", label: "Your App" },
-            { to: "/m", label: "Mobile apps" },
+            { to: "/your-app", label: "Mobile site" },
+            { to: "/m", label: "Phone layout" },
             { to: "/landing-pages", label: "Landing Pages" },
             { to: "/campaigns", label: "Campaigns" },
           ],

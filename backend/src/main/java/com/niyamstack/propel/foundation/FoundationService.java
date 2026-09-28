@@ -8,6 +8,7 @@ import com.niyamstack.propel.domain.Model.*;
 import com.niyamstack.propel.platform.OrgSettings;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
+import com.niyamstack.propel.security.OrgAccess;
 import com.niyamstack.propel.security.Phones;
 import com.niyamstack.propel.security.Roles;
 import org.springframework.http.HttpStatus;
@@ -39,19 +40,44 @@ public class FoundationService {
         requireOwner();
         Organization org = org();
         Map<String, Object> status = OrgSettings.onboarding(org);
-        status.put("centers", store.list(Center.class, org.getId()).size());
-        status.put("courses", store.list(Course.class, org.getId()).size());
-        status.put("staff", staffCount(org.getId()));
+        int centers = store.list(Center.class, org.getId()).size();
+        int courses = store.list(Course.class, org.getId()).size();
+        int publishedCourses = (int) store.list(Course.class, org.getId()).stream()
+                .filter(Course::isPublished)
+                .count();
+        int staff = staffCount(org.getId());
+        int students = store.list(Student.class, org.getId()).size();
+        boolean hasPaymentPath = OrgAccess.hasBankDetails(org)
+                || !store.list(Payment.class, org.getId()).isEmpty()
+                || !store.list(FeePlan.class, org.getId()).isEmpty();
+        status.put("centers", centers);
+        status.put("courses", courses);
+        status.put("coursesPublished", publishedCourses);
+        status.put("staff", staff);
+        status.put("students", students);
         status.put("websitePublished", org.isWebsitePublished());
-        Map<String, Object> steps = new LinkedHashMap<>((Map<String, Object>) status.get("steps"));
+        status.put("hasBank", OrgAccess.hasBankDetails(org));
+        status.put("slug", org.getSlug() == null ? "" : org.getSlug());
+        status.put("accessStatus", org.getAccessStatus() == null ? "" : org.getAccessStatus());
+        status.put("sitePath", org.getSlug() == null || org.getSlug().isBlank() ? "" : "/s/" + org.getSlug());
+        Map<String, Object> steps = new LinkedHashMap<>();
+        // Week-1 core (blocks "done" until complete or dismissed)
         steps.put("profile", org.getName() != null && !org.getName().isBlank());
-        steps.put("center", ((Number) status.get("centers")).intValue() > 0);
-        steps.put("course", ((Number) status.get("courses")).intValue() > 0);
-        steps.put("staff", ((Number) status.get("staff")).intValue() > 0);
+        steps.put("course", publishedCourses > 0 || courses > 0);
         steps.put("website", org.isWebsitePublished());
+        steps.put("student", students > 0);
+        steps.put("payment", hasPaymentPath);
+        // Optional after week 1 — still tracked, not required
+        steps.put("center", centers > 0);
+        steps.put("staff", staff > 0);
         status.put("steps", steps);
-        boolean completed = steps.values().stream().allMatch(v -> Boolean.TRUE.equals(v));
-        status.put("completed", completed || Boolean.TRUE.equals(status.get("completed")));
+        boolean week1 = Boolean.TRUE.equals(steps.get("profile"))
+                && Boolean.TRUE.equals(steps.get("course"))
+                && Boolean.TRUE.equals(steps.get("website"))
+                && Boolean.TRUE.equals(steps.get("student"))
+                && Boolean.TRUE.equals(steps.get("payment"));
+        status.put("week1Complete", week1);
+        status.put("completed", week1 || Boolean.TRUE.equals(status.get("completed")));
         return status;
     }
 
@@ -232,7 +258,7 @@ public class FoundationService {
         tip.setLocale("en");
         tip.setPageKey("dashboard");
         tip.setTitle("Welcome to your institute");
-        tip.setBody("Complete onboarding: publish website, invite staff, and add students.");
+        tip.setBody("First week: publish website, create a course, add a student, and set a fee or bank path. Staff and centers can wait.");
         tip.setSortOrder(1);
         store.save(tip);
 
