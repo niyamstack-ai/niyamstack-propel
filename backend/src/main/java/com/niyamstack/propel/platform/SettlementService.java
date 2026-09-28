@@ -163,6 +163,7 @@ public class SettlementService {
         List<Map<String, Object>> created = new ArrayList<>();
         for (Organization org : store.listOrganizations()) {
             releaseHoldsForOrg(org.getId());
+            retryReadyAutoForOrg(org.getId());
             Map<String, Object> batch = buildBatch(org, start, end);
             if (batch != null) {
                 created.add(batch);
@@ -189,6 +190,22 @@ public class SettlementService {
             batch.setStatus("AUTOMATIC".equals(mode) ? "READY_AUTO" : "READY");
             batch = store.save(batch);
             if ("READY_AUTO".equals(batch.getStatus())) {
+                attemptAutomaticPayout(org, batch);
+            }
+        }
+    }
+
+    /** Retry automatic payout for batches waiting on RazorpayX once keys/account are live. */
+    @Transactional
+    public void retryReadyAutoForOrg(UUID orgId) {
+        if (!razorpayX.live()) {
+            return;
+        }
+        Organization org = store.get(Organization.class, orgId);
+        for (PayoutBatch batch : store.list(PayoutBatch.class, orgId)) {
+            String st = batch.getStatus() == null ? "" : batch.getStatus().trim().toUpperCase();
+            if ("READY_AUTO".equals(st) || "FAILED_AUTO".equals(st)) {
+                org = store.get(Organization.class, orgId);
                 attemptAutomaticPayout(org, batch);
             }
         }
@@ -289,13 +306,30 @@ public class SettlementService {
             return store.save(batch);
         }
         if (result.ok()) {
-            batch.setStatus("PAID");
-            batch.setPaidAt(Instant.now());
+            String payoutStatus = result.status() == null ? "" : result.status().trim().toLowerCase();
+            if (isPayoutSettled(payoutStatus)) {
+                batch.setStatus("PAID");
+                batch.setPaidAt(Instant.now());
+                batch.setGatewayRef(result.payoutId());
+                batch.setFailureReason(null);
+                batch = store.save(batch);
+                markEntriesPaid(batch);
+                return batch;
+            }
+            if ("failed".equals(payoutStatus) || "reversed".equals(payoutStatus) || "cancelled".equals(payoutStatus)) {
+                batch.setStatus("FAILED_AUTO");
+                batch.setFailureReason(trimReason(result.message()));
+                if (result.payoutId() != null && !result.payoutId().isBlank()) {
+                    batch.setGatewayRef(result.payoutId());
+                }
+                log.warn("RazorpayX payout terminal failure for batch {}: {}", batch.getId(), result.status());
+                return store.save(batch);
+            }
+            batch.setStatus("PROCESSING");
             batch.setGatewayRef(result.payoutId());
             batch.setFailureReason(null);
-            batch = store.save(batch);
-            markEntriesPaid(batch);
-            return batch;
+            log.info("RazorpayX payout in flight for batch {}: {}", batch.getId(), result.status());
+            return store.save(batch);
         }
         batch.setStatus("FAILED_AUTO");
         batch.setFailureReason(trimReason(result.message()));
@@ -307,6 +341,16 @@ public class SettlementService {
     public Map<String, Object> markBatchPaid(UUID batchId, String gatewayRef) {
         requirePlatformFinance();
         PayoutBatch batch = store.get(PayoutBatch.class, batchId);
+        Organization org = store.get(Organization.class, batch.getOrganizationId());
+        if ("PAID".equalsIgnoreCase(batch.getStatus())) {
+            return batchView(batch, org);
+        }
+        String st = batch.getStatus() == null ? "" : batch.getStatus().trim().toUpperCase();
+        if (!"READY".equals(st) && !"READY_AUTO".equals(st) && !"FAILED_AUTO".equals(st)
+                && !"HOLD_NO_BANK".equals(st) && !"PROCESSING".equals(st)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "Cannot mark batch paid from status " + batch.getStatus());
+        }
         batch.setStatus("PAID");
         batch.setPaidAt(Instant.now());
         batch.setFailureReason(null);
@@ -315,7 +359,6 @@ public class SettlementService {
         }
         store.save(batch);
         markEntriesPaid(batch);
-        Organization org = store.get(Organization.class, batch.getOrganizationId());
         return batchView(batch, org);
     }
 
@@ -450,5 +493,9 @@ public class SettlementService {
             return null;
         }
         return message.length() <= 500 ? message : message.substring(0, 500);
+    }
+
+    private static boolean isPayoutSettled(String payoutStatus) {
+        return "processed".equals(payoutStatus) || "paid".equals(payoutStatus);
     }
 }

@@ -184,9 +184,11 @@ public class AuthController {
         Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
         if (mail.live() && mail.canDeliver(user.getEmail())) {
             mail.sendOtp(user.getEmail(), OtpService.LOGIN, issued.code());
-        } else if (!otp.reveal()) {
-            // Local without SMTP: expose code only when reveal is off so login still works in dev.
+        } else if (otp.reveal()) {
             out.put("devOtp", issued.code());
+        } else if (!mail.live() || !mail.canDeliver(user.getEmail())) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Email delivery is not configured. Configure SMTP or enable OTP reveal for local testing.");
         }
         out.put("emailMasked", maskEmail(user.getEmail()));
         out.put("channel", "email");
@@ -249,8 +251,11 @@ public class AuthController {
         Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
         if (mail.live() && mail.canDeliver(email)) {
             mail.sendOtp(email, OtpService.SIGNUP, issued.code());
-        } else if (!otp.reveal()) {
+        } else if (otp.reveal()) {
             out.put("devOtp", issued.code());
+        } else if (!mail.live() || !mail.canDeliver(email)) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Email delivery is not configured. Configure SMTP or enable OTP reveal for local testing.");
         }
         out.put("emailMasked", maskEmail(email));
         out.put("channel", "email");
@@ -335,8 +340,11 @@ public class AuthController {
         Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
         if (mail.live() && mail.canDeliver(user.getEmail())) {
             mail.sendOtp(user.getEmail(), OtpService.RESET, issued.code());
-        } else if (!otp.reveal()) {
+        } else if (otp.reveal()) {
             out.put("devOtp", issued.code());
+        } else if (!mail.live() || !mail.canDeliver(user.getEmail())) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Email delivery is not configured. Configure SMTP or enable OTP reveal for local testing.");
         }
         out.put("emailMasked", maskEmail(user.getEmail()));
         out.put("channel", "email");

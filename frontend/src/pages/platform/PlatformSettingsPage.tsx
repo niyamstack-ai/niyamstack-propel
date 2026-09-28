@@ -238,7 +238,7 @@ export function PlatformSettingsPage() {
           <Card title="Institute settlements">
             <p className="text-sm text-slate-500">
               Default platform fee is 5% (editable per institute). Weekly cron (Monday 06:15 IST) and this button create batches.
-              AUTOMATIC mode pays via RazorpayX when keys + account number are set; otherwise batches stay READY_AUTO.
+              AUTOMATIC mode pays via RazorpayX when keys + account number are set. Submitted payouts stay PROCESSING until settled; otherwise batches stay READY_AUTO.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <p className="text-sm text-navy">

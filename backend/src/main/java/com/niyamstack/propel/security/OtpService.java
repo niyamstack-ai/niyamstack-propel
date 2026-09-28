@@ -87,7 +87,7 @@ public class OtpService {
     }
 
     public Map<String, Object> publicIssue(Issued issued) {
-        if (issued.reveal && issued.code != null) {
+        if (reveal && issued.reveal && issued.code != null) {
             return Map.of("status", "otp_sent", "phone", issued.phone, "devOtp", issued.code);
         }
         return Map.of("status", "otp_sent", "phone", issued.phone);

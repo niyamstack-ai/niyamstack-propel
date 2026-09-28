@@ -243,8 +243,11 @@ public class StorefrontService {
         Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
         if (mailService.live() && mailService.canDeliver(mail)) {
             mailService.sendOtp(mail, OtpService.VERIFY_EMAIL, issued.code());
-        } else if (!otp.reveal()) {
+        } else if (otp.reveal()) {
             out.put("devOtp", issued.code());
+        } else if (!mailService.live() || !mailService.canDeliver(mail)) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Email delivery is not configured. Configure SMTP or enable OTP reveal for local testing.");
         }
         out.put("emailMasked", maskEmail(mail));
         out.put("channel", "email");
@@ -1092,8 +1095,11 @@ public class StorefrontService {
         Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
         if (mailService.live() && mailService.canDeliver(mail)) {
             mailService.sendOtp(mail, OtpService.STUDENT_REGISTER, issued.code());
-        } else if (!otp.reveal()) {
+        } else if (otp.reveal()) {
             out.put("devOtp", issued.code());
+        } else if (!mailService.live() || !mailService.canDeliver(mail)) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Email delivery is not configured. Configure SMTP or enable OTP reveal for local testing.");
         }
         out.put("emailMasked", maskEmail(mail));
         out.put("channel", "email");

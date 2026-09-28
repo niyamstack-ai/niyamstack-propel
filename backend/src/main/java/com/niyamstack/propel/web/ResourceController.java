@@ -133,14 +133,34 @@ public class ResourceController {
         if (body.getSettingsJson() != null) {
             existing.setSettingsJson(body.getSettingsJson());
         }
+        boolean bankChanged = false;
         if (body.getBankAccountName() != null) {
-            existing.setBankAccountName(body.getBankAccountName().trim());
+            String next = body.getBankAccountName().trim();
+            String prev = existing.getBankAccountName() == null ? "" : existing.getBankAccountName().trim();
+            if (!next.equals(prev)) {
+                bankChanged = true;
+            }
+            existing.setBankAccountName(next);
         }
         if (body.getBankAccountNumber() != null) {
-            existing.setBankAccountNumber(body.getBankAccountNumber().trim());
+            String next = body.getBankAccountNumber().trim();
+            String prev = existing.getBankAccountNumber() == null ? "" : existing.getBankAccountNumber().trim();
+            if (!next.equals(prev)) {
+                bankChanged = true;
+            }
+            existing.setBankAccountNumber(next);
         }
         if (body.getBankIfsc() != null) {
-            existing.setBankIfsc(body.getBankIfsc().trim().toUpperCase());
+            String next = body.getBankIfsc().trim().toUpperCase();
+            String prev = existing.getBankIfsc() == null ? "" : existing.getBankIfsc().trim().toUpperCase();
+            if (!next.equals(prev)) {
+                bankChanged = true;
+            }
+            existing.setBankIfsc(next);
+        }
+        if (bankChanged) {
+            existing.setRazorpayContactId(null);
+            existing.setRazorpayFundAccountId(null);
         }
         if (body.getBankUpi() != null) {
             existing.setBankUpi(body.getBankUpi().trim());
@@ -153,6 +173,7 @@ public class ResourceController {
         Organization saved = store.save(existing);
         if (OrgAccess.hasBankDetails(saved)) {
             settlements.releaseHoldsForOrg(saved.getId());
+            settlements.retryReadyAutoForOrg(saved.getId());
         }
         return saved;
     }
@@ -716,16 +737,14 @@ public class ResourceController {
         }
         var issued = otp.issue(phone, OtpService.VERIFY_PHONE);
         String email = user.getEmail() == null ? "" : user.getEmail().trim().toLowerCase();
-        if (!email.isBlank() && mail.canDeliver(email)) {
-            try {
-                mail.sendOtp(email, OtpService.VERIFY_PHONE, issued.code());
-            } catch (Exception ignored) {
-                /* still return OTP for testing when SMTP fails */
-            }
-        }
         Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
-        if (!otp.reveal() && (email.isBlank() || !mail.live() || !mail.canDeliver(email))) {
+        if (mail.live() && !email.isBlank() && mail.canDeliver(email)) {
+            mail.sendOtp(email, OtpService.VERIFY_PHONE, issued.code());
+        } else if (otp.reveal()) {
             out.put("devOtp", issued.code());
+        } else if (email.isBlank() || !mail.live() || !mail.canDeliver(email)) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Email delivery is not configured. Configure SMTP or enable OTP reveal for local testing.");
         }
         out.put("channel", "phone");
         return out;
