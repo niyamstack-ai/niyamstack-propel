@@ -10,9 +10,32 @@ type Catalog = { capabilities: Cap[]; roles: Role[] };
 type PaymentGateway = {
   razorpay?: boolean;
   webhook?: boolean;
+  razorpayxAccount?: boolean;
   keyIdMasked?: string;
   mode?: string;
   webhookPath?: string;
+};
+
+type SettlementRow = {
+  organizationId: string;
+  name: string;
+  grossAmount: number;
+  platformFeeAmount: number;
+  netToInstitute: number;
+  pendingPayout: number;
+  hasBank: boolean;
+};
+
+type PayoutBatch = {
+  id: string;
+  organizationName: string;
+  periodStart: string;
+  periodEnd: string;
+  netAmount: number;
+  status: string;
+  mode: string;
+  gatewayRef?: string;
+  failureReason?: string;
 };
 
 export function PlatformSettingsPage() {
@@ -31,11 +54,11 @@ export function PlatformSettingsPage() {
     razorpayKeyId: "",
     razorpayKeySecret: "",
     razorpayWebhookSecret: "",
+    razorpayxAccountNumber: "",
   });
-  const payoutMode = useApi<{ payoutMode: string }>(canManageRights ? "/api/platform/settlement/payout-mode" : "");
-  const settlement = useApi<
-    { organizationId: string; name: string; grossAmount: number; platformFeeAmount: number; netToInstitute: number; pendingPayout: number; hasBank: boolean }[]
-  >(canManageRights ? "/api/platform/settlement/report" : "");
+  const payoutMode = useApi<{ payoutMode: string; configured?: boolean }>(canManageRights ? "/api/platform/settlement/payout-mode" : "");
+  const settlement = useApi<SettlementRow[]>(canManageRights ? "/api/platform/settlement/report" : "");
+  const batches = useApi<PayoutBatch[]>(canManageRights ? "/api/platform/settlement/batches" : "");
   const [payoutBusy, setPayoutBusy] = useState(false);
 
   async function createRole(e: FormEvent) {
@@ -132,8 +155,9 @@ export function PlatformSettingsPage() {
         method: "PUT",
         body: JSON.stringify(payKeys),
       });
-      setPayKeys({ razorpayKeyId: "", razorpayKeySecret: "", razorpayWebhookSecret: "" });
+      setPayKeys({ razorpayKeyId: "", razorpayKeySecret: "", razorpayWebhookSecret: "", razorpayxAccountNumber: "" });
       paymentGateway.reload();
+      payoutMode.reload();
       setDone("Razorpay keys saved. All institutes on this portal will use these keys.");
     } catch (err) {
       setError((err as Error).message);
@@ -197,6 +221,12 @@ export function PlatformSettingsPage() {
                 type="password"
                 placeholder={pay?.webhook ? "Saved — paste to replace" : "From Razorpay dashboard"}
               />
+              <Field
+                label="RazorpayX account number (for auto payouts)"
+                value={payKeys.razorpayxAccountNumber}
+                onChange={(v) => setPayKeys((p) => ({ ...p, razorpayxAccountNumber: v }))}
+                placeholder={pay?.razorpayxAccount ? "Saved — paste to replace" : "Current account number from RazorpayX"}
+              />
               <p className="text-xs text-slate-500">
                 Webhook URL: {typeof window !== "undefined" ? `${window.location.origin}${pay?.webhookPath || "/api/public/payments/razorpay"}` : pay?.webhookPath || "/api/public/payments/razorpay"}
               </p>
@@ -207,11 +237,17 @@ export function PlatformSettingsPage() {
           </Card>
           <Card title="Institute settlements">
             <p className="text-sm text-slate-500">
-              Default platform fee is 5% (editable per institute on the institute deal). Weekly batches pay institutes after deduction. Automatic queues READY_AUTO batches for RazorpayX later.
+              Default platform fee is 5% (editable per institute). Weekly cron (Monday 06:15 IST) and this button create batches.
+              AUTOMATIC mode pays via RazorpayX when keys + account number are set; otherwise batches stay READY_AUTO.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <p className="text-sm text-navy">
                 Global payout mode: <span className="font-semibold">{payoutMode.data?.payoutMode || "MANUAL"}</span>
+                {payoutMode.data?.configured != null && (
+                  <span className="ml-2 text-xs text-slate-500">
+                    ({payoutMode.data.configured ? "RazorpayX ready" : "RazorpayX not configured yet"})
+                  </span>
+                )}
               </p>
               <button
                 type="button"
@@ -245,6 +281,7 @@ export function PlatformSettingsPage() {
                     try {
                       const rows = await api<unknown[]>("/api/platform/settlement/weekly", { method: "POST", body: "{}" });
                       settlement.reload();
+                      batches.reload();
                       setDone(`Weekly settlement created ${rows.length} batch(es).`);
                     } catch (err) {
                       setError((err as Error).message);
@@ -284,6 +321,100 @@ export function PlatformSettingsPage() {
                     <tr>
                       <td className="py-3 text-slate-500" colSpan={6}>
                         No student settlements yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <h3 className="mt-6 text-sm font-semibold text-navy">Payout batches</h3>
+            <div className="mt-2 overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-line text-slate-500">
+                    <th className="py-2 pr-3">Institute</th>
+                    <th className="py-2 pr-3">Period</th>
+                    <th className="py-2 pr-3">Net</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(batches.data ?? []).map((batch) => (
+                    <tr key={batch.id} className="border-b border-line/70">
+                      <td className="py-2 pr-3 font-medium text-navy">{batch.organizationName}</td>
+                      <td className="py-2 pr-3">
+                        {batch.periodStart} → {batch.periodEnd}
+                      </td>
+                      <td className="py-2 pr-3">₹{Number(batch.netAmount || 0).toLocaleString("en-IN")}</td>
+                      <td className="py-2 pr-3">
+                        <span className="font-medium">{batch.status}</span>
+                        {batch.failureReason ? <span className="mt-0.5 block text-xs text-slate-500">{batch.failureReason}</span> : null}
+                      </td>
+                      <td className="py-2">
+                        <div className="flex flex-wrap gap-2">
+                          {batch.status !== "PAID" && (
+                            <button
+                              type="button"
+                              className="rounded-full border border-line px-2.5 py-1 text-xs"
+                              disabled={payoutBusy}
+                              onClick={() =>
+                                void (async () => {
+                                  setPayoutBusy(true);
+                                  try {
+                                    await api(`/api/platform/settlement/batches/${batch.id}/mark-paid`, {
+                                      method: "POST",
+                                      body: JSON.stringify({}),
+                                    });
+                                    batches.reload();
+                                    settlement.reload();
+                                    setDone(`Marked batch paid for ${batch.organizationName}.`);
+                                  } catch (err) {
+                                    setError((err as Error).message);
+                                  } finally {
+                                    setPayoutBusy(false);
+                                  }
+                                })()
+                              }
+                            >
+                              Mark paid
+                            </button>
+                          )}
+                          {(batch.status === "READY_AUTO" || batch.status === "FAILED_AUTO") && (
+                            <button
+                              type="button"
+                              className="rounded-full border border-line px-2.5 py-1 text-xs"
+                              disabled={payoutBusy}
+                              onClick={() =>
+                                void (async () => {
+                                  setPayoutBusy(true);
+                                  try {
+                                    await api(`/api/platform/settlement/batches/${batch.id}/retry-auto`, {
+                                      method: "POST",
+                                      body: "{}",
+                                    });
+                                    batches.reload();
+                                    settlement.reload();
+                                    setDone(`Retried RazorpayX for ${batch.organizationName}.`);
+                                  } catch (err) {
+                                    setError((err as Error).message);
+                                  } finally {
+                                    setPayoutBusy(false);
+                                  }
+                                })()
+                              }
+                            >
+                              Retry RazorpayX
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {(batches.data?.length ?? 0) === 0 && (
+                    <tr>
+                      <td className="py-3 text-slate-500" colSpan={5}>
+                        No payout batches yet.
                       </td>
                     </tr>
                   )}

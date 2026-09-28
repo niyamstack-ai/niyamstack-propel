@@ -1,14 +1,19 @@
 package com.niyamstack.propel.security;
 
 import com.niyamstack.propel.common.ApiException;
+import com.niyamstack.propel.data.Store;
+import com.niyamstack.propel.domain.Model.OtpChallenge;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class OtpService {
@@ -18,45 +23,62 @@ public class OtpService {
     public static final String VERIFY_EMAIL = "VERIFY_EMAIL";
     public static final String VERIFY_PHONE = "VERIFY_PHONE";
 
+    private final Store store;
     private final String devCode;
     private final boolean reveal;
     private final SecureRandom random = new SecureRandom();
-    private final ConcurrentHashMap<String, Challenge> challenges = new ConcurrentHashMap<>();
 
     public OtpService(
+            Store store,
             @Value("${app.otp.dev-code:123456}") String devCode,
             @Value("${app.otp.reveal:false}") boolean reveal
     ) {
+        this.store = store;
         this.devCode = devCode == null || devCode.isBlank() ? "123456" : devCode.trim();
         this.reveal = reveal;
     }
 
     public record Issued(String phone, boolean reveal, String code) {}
 
+    @Transactional
     public Issued issue(String phone, String purpose) {
         String code = reveal ? devCode : randomCode();
-        Challenge challenge = new Challenge(code, purpose, Instant.now().plusSeconds(300), 0);
-        challenges.put(key(phone, purpose), challenge);
+        String challengeKey = key(phone, purpose);
+        OtpChallenge challenge = store.findOtpChallenge(challengeKey);
+        if (challenge == null) {
+            challenge = new OtpChallenge();
+            challenge.setChallengeKey(challengeKey);
+        }
+        challenge.setPurpose(purpose);
+        challenge.setCodeHash(hash(code));
+        challenge.setExpiresAt(Instant.now().plusSeconds(300));
+        challenge.setTries(0);
+        store.save(challenge);
         return new Issued(phone, reveal, code);
     }
 
+    @Transactional
     public void verify(String phone, String purpose, String otp) {
         String k = key(phone, purpose);
-        Challenge challenge = challenges.get(k);
-        if (challenge == null || challenge.expires.isBefore(Instant.now())) {
+        OtpChallenge challenge = store.findOtpChallenge(k);
+        if (challenge == null || challenge.getExpiresAt() == null || challenge.getExpiresAt().isBefore(Instant.now())) {
+            if (challenge != null) {
+                store.deleteOtpChallenge(challenge);
+            }
             throw new ApiException(HttpStatus.BAD_REQUEST, "OTP expired. Request a new one.");
         }
-        if (challenge.tries >= 5) {
-            challenges.remove(k);
+        if (challenge.getTries() >= 5) {
+            store.deleteOtpChallenge(challenge);
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "Too many OTP attempts. Request a new one.");
         }
-        challenge.tries++;
+        challenge.setTries(challenge.getTries() + 1);
+        store.save(challenge);
         String given = otp == null ? "" : otp.trim();
-        boolean ok = challenge.code.equals(given) || (reveal && devCode.equals(given));
+        boolean ok = hash(given).equals(challenge.getCodeHash()) || (reveal && devCode.equals(given));
         if (!ok) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid OTP");
         }
-        challenges.remove(k);
+        store.deleteOtpChallenge(challenge);
     }
 
     public boolean reveal() {
@@ -79,17 +101,13 @@ public class OtpService {
         return purpose + ":" + phone;
     }
 
-    private static final class Challenge {
-        private final String code;
-        private final String purpose;
-        private final Instant expires;
-        private int tries;
-
-        private Challenge(String code, String purpose, Instant expires, int tries) {
-            this.code = code;
-            this.purpose = purpose;
-            this.expires = expires;
-            this.tries = tries;
+    private static String hash(String code) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] dig = md.digest(code.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(dig);
+        } catch (Exception e) {
+            throw new IllegalStateException("OTP hash unavailable", e);
         }
     }
 }

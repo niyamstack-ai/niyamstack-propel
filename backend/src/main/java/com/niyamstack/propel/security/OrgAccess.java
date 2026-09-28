@@ -4,6 +4,8 @@ import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.domain.Model.Organization;
 import org.springframework.http.HttpStatus;
 
+import java.time.Instant;
+
 public final class OrgAccess {
     public static final String SUSPENDED_MESSAGE =
             "This institute is suspended. Contact Niyamstack to restore access.";
@@ -48,7 +50,15 @@ public final class OrgAccess {
         return "FAILED".equals(payment(org));
     }
 
-    /** Writes (create course, publish, etc.) only for fully active paid institutes. */
+    /** Failed renewal still writable until graceEndsAt. */
+    public static boolean inGrace(Organization org) {
+        if (org == null || org.getGraceEndsAt() == null) {
+            return false;
+        }
+        return Instant.now().isBefore(org.getGraceEndsAt());
+    }
+
+    /** Writes (create course, publish, etc.) only for fully active paid institutes (or within grace). */
     public static boolean writeBlocked(Organization org) {
         if (org == null) {
             return true;
@@ -57,7 +67,7 @@ public final class OrgAccess {
             return true;
         }
         if (paymentFailed(org)) {
-            return true;
+            return !inGrace(org);
         }
         return !active(org);
     }

@@ -5,9 +5,12 @@ import com.niyamstack.propel.domain.Model.Organization;
 import com.niyamstack.propel.domain.Model.Payment;
 import com.niyamstack.propel.domain.Model.PayoutBatch;
 import com.niyamstack.propel.domain.Model.SettlementEntry;
+import com.niyamstack.propel.integration.RazorpayXClient;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.OrgAccess;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,13 +28,16 @@ import java.util.UUID;
 
 @Service
 public class SettlementService {
+    private static final Logger log = LoggerFactory.getLogger(SettlementService.class);
     public static final String SETTING_PAYOUT_MODE = "payoutMode";
     public static final BigDecimal DEFAULT_FEE = new BigDecimal("0.0500");
 
     private final Store store;
+    private final RazorpayXClient razorpayX;
 
-    public SettlementService(Store store) {
+    public SettlementService(Store store, RazorpayXClient razorpayX) {
         this.store = store;
+        this.razorpayX = razorpayX;
     }
 
     public BigDecimal feePercent(Organization org) {
@@ -74,7 +80,6 @@ public class SettlementService {
         BigDecimal platformFee;
         BigDecimal net;
         if ("PASS_STUDENT".equals(mode)) {
-            // Student paid list + fee; institute gets list (= gross / (1+pct)), platform gets the rest.
             BigDecimal divisor = BigDecimal.ONE.add(pct);
             BigDecimal list = gross.divide(divisor, 2, RoundingMode.HALF_UP);
             platformFee = gross.subtract(list);
@@ -121,12 +126,21 @@ public class SettlementService {
 
     public Map<String, Object> payoutSettings() {
         requirePlatformFinance();
-        return Map.of("payoutMode", globalPayoutMode());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("payoutMode", globalPayoutMode());
+        out.putAll(razorpayX.status());
+        return out;
     }
 
     @Transactional
     public List<Map<String, Object>> runWeeklyPayouts() {
         requirePlatformFinance();
+        return runWeeklyPayoutsInternal();
+    }
+
+    /** Cron / internal entry — no auth principal required. */
+    @Transactional
+    public List<Map<String, Object>> runWeeklyPayoutsInternal() {
         LocalDate end = LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
         LocalDate start = end.minusDays(6);
         List<Map<String, Object>> created = new ArrayList<>();
@@ -175,7 +189,6 @@ public class SettlementService {
         if (!OrgAccess.hasBankDetails(org)) {
             batch.setStatus("HOLD_NO_BANK");
         } else if ("AUTOMATIC".equals(mode)) {
-            // v1: queue as ready for automatic transfer; actual RazorpayX call can plug in here.
             batch.setStatus("READY_AUTO");
         } else {
             batch.setStatus("READY");
@@ -186,7 +199,62 @@ public class SettlementService {
             e.setStatus("IN_BATCH");
             store.save(e);
         }
+        if ("READY_AUTO".equals(batch.getStatus())) {
+            batch = attemptAutomaticPayout(org, batch);
+        }
         return batchView(batch, org);
+    }
+
+    @Transactional
+    public Map<String, Object> retryAutomatic(UUID batchId) {
+        requirePlatformFinance();
+        PayoutBatch batch = store.get(PayoutBatch.class, batchId);
+        Organization org = store.get(Organization.class, batch.getOrganizationId());
+        if (!"READY_AUTO".equalsIgnoreCase(batch.getStatus()) && !"FAILED_AUTO".equalsIgnoreCase(batch.getStatus())) {
+            return batchView(batch, org);
+        }
+        batch = attemptAutomaticPayout(org, batch);
+        return batchView(batch, org);
+    }
+
+    private PayoutBatch attemptAutomaticPayout(Organization org, PayoutBatch batch) {
+        RazorpayXClient.PayoutResult result = razorpayX.payout(
+                org.getRazorpayContactId(),
+                org.getRazorpayFundAccountId(),
+                org.getBankAccountName(),
+                org.getBankAccountNumber(),
+                org.getBankIfsc(),
+                batch.getNetAmount(),
+                "batch-" + batch.getId(),
+                batch.getId().toString()
+        );
+        if (result.contactId() != null && !result.contactId().isBlank()) {
+            org.setRazorpayContactId(result.contactId());
+        }
+        if (result.fundAccountId() != null && !result.fundAccountId().isBlank()) {
+            org.setRazorpayFundAccountId(result.fundAccountId());
+        }
+        store.save(org);
+
+        if ("NOT_CONFIGURED".equals(result.status())) {
+            batch.setStatus("READY_AUTO");
+            batch.setFailureReason(result.message());
+            log.info("RazorpayX not ready for batch {}: {}", batch.getId(), result.message());
+            return store.save(batch);
+        }
+        if (result.ok()) {
+            batch.setStatus("PAID");
+            batch.setPaidAt(Instant.now());
+            batch.setGatewayRef(result.payoutId());
+            batch.setFailureReason(null);
+            batch = store.save(batch);
+            markEntriesPaid(batch);
+            return batch;
+        }
+        batch.setStatus("FAILED_AUTO");
+        batch.setFailureReason(trimReason(result.message()));
+        log.warn("RazorpayX payout failed for batch {}: {}", batch.getId(), result.message());
+        return store.save(batch);
     }
 
     @Transactional
@@ -195,18 +263,23 @@ public class SettlementService {
         PayoutBatch batch = store.get(PayoutBatch.class, batchId);
         batch.setStatus("PAID");
         batch.setPaidAt(Instant.now());
+        batch.setFailureReason(null);
         if (gatewayRef != null && !gatewayRef.isBlank()) {
             batch.setGatewayRef(gatewayRef.trim());
         }
         store.save(batch);
+        markEntriesPaid(batch);
+        Organization org = store.get(Organization.class, batch.getOrganizationId());
+        return batchView(batch, org);
+    }
+
+    private void markEntriesPaid(PayoutBatch batch) {
         for (SettlementEntry e : store.list(SettlementEntry.class, batch.getOrganizationId())) {
             if (batch.getId().equals(e.getPayoutBatchId())) {
                 e.setStatus("PAID");
                 store.save(e);
             }
         }
-        Organization org = store.get(Organization.class, batch.getOrganizationId());
-        return batchView(batch, org);
     }
 
     public List<Map<String, Object>> report(UUID orgId) {
@@ -282,6 +355,7 @@ public class SettlementService {
         row.put("bankIfsc", batch.getBankIfsc());
         row.put("gatewayRef", batch.getGatewayRef());
         row.put("paidAt", batch.getPaidAt());
+        row.put("failureReason", batch.getFailureReason());
         return row;
     }
 
@@ -298,5 +372,12 @@ public class SettlementService {
             return number;
         }
         return "****" + number.substring(number.length() - 4);
+    }
+
+    private static String trimReason(String message) {
+        if (message == null) {
+            return null;
+        }
+        return message.length() <= 500 ? message : message.substring(0, 500);
     }
 }

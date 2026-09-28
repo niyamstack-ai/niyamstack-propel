@@ -168,6 +168,11 @@ public class PlatformController {
         return settlements.markBatchPaid(id, ref);
     }
 
+    @PostMapping("/settlement/batches/{id}/retry-auto")
+    public Map<String, Object> retryAutoBatch(@PathVariable UUID id) {
+        return settlements.retryAutomatic(id);
+    }
+
     @GetMapping("/settlement/payout-mode")
     public Map<String, Object> payoutMode() {
         return settlements.payoutSettings();

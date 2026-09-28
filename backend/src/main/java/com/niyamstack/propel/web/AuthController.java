@@ -162,7 +162,8 @@ public class AuthController {
         Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
         if (mail.live() && mail.canDeliver(user.getEmail())) {
             mail.sendOtp(user.getEmail(), OtpService.LOGIN, issued.code());
-        } else {
+        } else if (!otp.reveal()) {
+            // Local without SMTP: expose code only when reveal is off so login still works in dev.
             out.put("devOtp", issued.code());
         }
         out.put("emailMasked", maskEmail(user.getEmail()));
@@ -223,6 +224,7 @@ public class AuthController {
         user.setRole(Roles.OWNER);
         user.setActive(true);
         user.setPasswordChangedAt(Instant.now());
+        user.setEmailVerified(false);
         user = store.save(user);
         foundation.seedStarter(org.getId(), user.getId());
         audit.log("SIGNUP", "Organization", org.getId(), email);
@@ -231,7 +233,7 @@ public class AuthController {
         if (mail.live() && mail.canDeliver(email)) {
             mail.sendOtp(email, OtpService.LOGIN, issued.code());
             mail.sendWelcome(email, user.getFullName());
-        } else {
+        } else if (!otp.reveal()) {
             // Local/demo without SMTP: still return the code so signup can complete.
             out.put("devOtp", issued.code());
         }
@@ -278,6 +280,10 @@ public class AuthController {
             mail.sendPasswordReset(user.getEmail(), token);
         }
         if (otp.reveal()) {
+            return Map.of("status", "sent", "resetToken", token);
+        }
+        // Without live SMTP in local/dev, return token so reset can be tested.
+        if (!mail.live()) {
             return Map.of("status", "sent", "resetToken", token);
         }
         return Map.of("status", "sent");

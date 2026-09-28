@@ -4,6 +4,7 @@ import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.domain.BaseEntity;
 import com.niyamstack.propel.domain.Model.AppUser;
 import com.niyamstack.propel.domain.Model.Organization;
+import com.niyamstack.propel.domain.Model.OtpChallenge;
 import com.niyamstack.propel.domain.Model.PlatformRole;
 import com.niyamstack.propel.domain.Model.PlatformSetting;
 import com.niyamstack.propel.domain.Model.PlatformUserRole;
@@ -103,6 +104,28 @@ public class Store {
                 .setMaxResults(1)
                 .getResultList();
         return rows.isEmpty() ? null : rows.getFirst();
+    }
+
+    public OtpChallenge findOtpChallenge(String challengeKey) {
+        if (challengeKey == null || challengeKey.isBlank()) {
+            return null;
+        }
+        List<OtpChallenge> rows = em.createQuery(
+                        "select o from OtpChallenge o where o.challengeKey = :k",
+                        OtpChallenge.class)
+                .setParameter("k", challengeKey)
+                .setMaxResults(1)
+                .getResultList();
+        return rows.isEmpty() ? null : rows.getFirst();
+    }
+
+    @Transactional
+    public void deleteOtpChallenge(OtpChallenge challenge) {
+        if (challenge == null) {
+            return;
+        }
+        OtpChallenge managed = em.contains(challenge) ? challenge : em.merge(challenge);
+        em.remove(managed);
     }
 
     public String settingValue(String key) {

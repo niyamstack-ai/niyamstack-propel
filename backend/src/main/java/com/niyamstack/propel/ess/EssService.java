@@ -1381,6 +1381,7 @@ public class EssService {
         user.setActive(true);
         user.setPasswordHash(encoder.encode(temp));
         user.setPasswordChangedAt(Instant.now());
+        user.setEmailVerified(false);
         user = store.save(user);
         e.setUserId(user.getId());
         store.save(e);

@@ -53,6 +53,7 @@ app:
       provider: ${PROPEL_PAYMENTS_PROVIDER:demo}
       razorpay-key-id: ${RAZORPAY_KEY_ID:}
       razorpay-key-secret: ${RAZORPAY_KEY_SECRET:}
+      razorpayx-account-number: ${RAZORPAYX_ACCOUNT_NUMBER:}
       cashfree-client-id: ${CASHFREE_CLIENT_ID:}
       cashfree-client-secret: ${CASHFREE_CLIENT_SECRET:}
     whatsapp:

@@ -69,6 +69,9 @@ public final class Model {
         private String bankUpi;
         @JsonProperty("bankVerified")
         private boolean bankVerified;
+        private String razorpayContactId;
+        private String razorpayFundAccountId;
+        private Instant graceEndsAt;
     }
 
     @Entity(name = "Center") @Table(name = "centers") @Getter @Setter
@@ -854,6 +857,19 @@ public final class Model {
         private String bankIfsc;
         private String gatewayRef;
         private Instant paidAt;
+        @Column(length = 500)
+        private String failureReason;
+    }
+
+    @Entity(name = "OtpChallenge") @Table(name = "otp_challenges") @Getter @Setter
+    public static class OtpChallenge extends BaseEntity {
+        @Column(length = 160, nullable = false)
+        private String challengeKey;
+        private String purpose;
+        @Column(length = 120, nullable = false)
+        private String codeHash;
+        private Instant expiresAt;
+        private int tries;
     }
 
     @Entity(name = "PlatformRole") @Table(name = "platform_roles") @Getter @Setter

@@ -199,8 +199,9 @@ public class PublicController {
             @RequestHeader(value = "X-Razorpay-Signature", required = false) String signature,
             @RequestBody String body
     ) {
-        String orgRaw = extractJson(body, "orgId");
-        String invoiceRaw = extractJson(body, "invoiceId");
+        // Notes may be nested under payload.payment.entity.notes — scan the whole JSON.
+        String orgRaw = firstNonBlank(extractJson(body, "orgId"), extractNestedNotes(body, "orgId"));
+        String invoiceRaw = firstNonBlank(extractJson(body, "invoiceId"), extractNestedNotes(body, "invoiceId"));
         if (orgRaw.isBlank() || invoiceRaw.isBlank()) {
             return Map.of("ok", true);
         }
@@ -210,8 +211,11 @@ public class PublicController {
             if (payments.live(orgId) && !payments.verifyWebhook(orgId, body, signature)) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid Razorpay webhook signature");
             }
-            String orderId = extractJson(body, "order_id");
-            String paymentId = extractPrefixed(body, "pay_");
+            String orderId = firstNonBlank(extractJson(body, "order_id"), extractJson(body, "orderId"));
+            String paymentId = firstNonBlank(extractPrefixed(body, "pay_"), extractJson(body, "id"));
+            if (paymentId != null && !paymentId.startsWith("pay_")) {
+                paymentId = extractPrefixed(body, "pay_");
+            }
             storefront.webhookPaid(orgId, invoiceId, orderId, paymentId);
         } catch (ApiException e) {
             throw e;
@@ -219,6 +223,25 @@ public class PublicController {
             /* ignore malformed webhook */
         }
         return Map.of("ok", true);
+    }
+
+    private static String extractNestedNotes(String json, String key) {
+        if (json == null) {
+            return "";
+        }
+        int notes = json.indexOf("\"notes\"");
+        if (notes < 0) {
+            return "";
+        }
+        String slice = json.substring(notes);
+        return extractJson(slice, key);
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        if (a != null && !a.isBlank()) {
+            return a;
+        }
+        return b == null ? "" : b;
     }
 
     private static String extractJson(String json, String key) {

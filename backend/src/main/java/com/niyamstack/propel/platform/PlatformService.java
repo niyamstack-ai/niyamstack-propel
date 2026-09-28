@@ -221,6 +221,7 @@ public class PlatformService {
         Organization org = store.get(Organization.class, id);
         org.setPaymentStatus("PAID");
         org.setPaidAt(Instant.now());
+        org.setGraceEndsAt(null);
         if (!"ACTIVE".equals(org.getAccessStatus())) {
             org.setAccessStatus("PENDING_APPROVAL");
         }
@@ -234,10 +235,8 @@ public class PlatformService {
         requireCap(PlatformCaps.MARK_PAID);
         Organization org = store.get(Organization.class, id);
         org.setPaymentStatus("FAILED");
-        // Past-due institutes lose write/sell rights until paid again.
-        if ("ACTIVE".equals(nz(org.getAccessStatus(), ""))) {
-            org.setAccessStatus("SUSPENDED");
-        }
+        // 7-day grace: writes still allowed; storefront selling stops immediately.
+        org.setGraceEndsAt(Instant.now().plus(7, java.time.temporal.ChronoUnit.DAYS));
         store.save(org);
         audit.log("PLATFORM_PAY_FAILED", "Organization", org.getId(), org.getName());
         return toView(org);
@@ -430,6 +429,7 @@ public class PlatformService {
         putSettingIfPresent(body, "razorpayKeyId");
         putSettingIfPresent(body, "razorpayKeySecret");
         putSettingIfPresent(body, "razorpayWebhookSecret");
+        putSettingIfPresent(body, "razorpayxAccountNumber");
         audit.log("PLATFORM_PAYMENT_GATEWAY", "PlatformSetting", null, "razorpay");
         return paymentGatewayStatus();
     }
@@ -438,10 +438,12 @@ public class PlatformService {
         String keyId = store.settingValue("razorpayKeyId");
         String keySecret = store.settingValue("razorpayKeySecret");
         String webhook = store.settingValue("razorpayWebhookSecret");
+        String xAccount = store.settingValue("razorpayxAccountNumber");
         boolean configured = !keyId.isBlank() && !keySecret.isBlank();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("razorpay", configured);
         out.put("webhook", !webhook.isBlank());
+        out.put("razorpayxAccount", !xAccount.isBlank());
         out.put("keyIdMasked", maskKeyId(keyId));
         out.put("mode", modeFromKeyId(keyId));
         out.put("webhookPath", "/api/public/payments/razorpay");
@@ -652,6 +654,8 @@ public class PlatformService {
         row.put("hasBank", OrgAccess.hasBankDetails(org));
         row.put("bankAccountName", org.getBankAccountName());
         row.put("bankIfsc", org.getBankIfsc());
+        row.put("graceEndsAt", org.getGraceEndsAt());
+        row.put("inGrace", OrgAccess.inGrace(org));
         return row;
     }
 
