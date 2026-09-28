@@ -133,4 +133,14 @@ public class PlatformController {
     public Map<String, Object> rights() {
         return platform.rights();
     }
+
+    @GetMapping("/payment-gateway")
+    public Map<String, Object> paymentGateway() {
+        return platform.paymentGateway();
+    }
+
+    @PutMapping("/payment-gateway")
+    public Map<String, Object> savePaymentGateway(@RequestBody Map<String, String> body) {
+        return platform.savePaymentGateway(body);
+    }
 }

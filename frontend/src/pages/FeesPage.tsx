@@ -226,7 +226,7 @@ function StaffFees() {
           {viewOnlyFaculty
             ? "View-only fees access for faculty. Collecting and plans are limited to accounts staff."
             : `${t("fees_subtitle", "Build plans, raise invoices, collect, and approve refunds.")} Gateway: ${prettyLabel(provider)}${
-                live ? " — live Razorpay Checkout opens when you Collect or Pay." : " — paste Razorpay keys in Integrations to collect live. Cash, UPI, and cheque can be recorded here without the gateway."
+                live ? " — live Razorpay Checkout opens when you Collect or Pay." : " — Niyamstack must save Razorpay keys in Platform Settings for live collect. Cash, UPI, and cheque can be recorded here without the gateway."
               }`}
         </p>
       </div>

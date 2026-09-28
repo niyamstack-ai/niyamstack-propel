@@ -2,7 +2,6 @@ package com.niyamstack.propel.integration;
 
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
-import com.niyamstack.propel.domain.Model.Organization;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,7 +47,7 @@ public class ConfigurablePaymentGateway implements PaymentGateway {
 
     @Override
     public boolean live() {
-        return !envKey.isBlank() && !envSecret.isBlank();
+        return keys(null) != null;
     }
 
     @Override
@@ -136,8 +135,7 @@ public class ConfigurablePaymentGateway implements PaymentGateway {
 
     @Override
     public boolean verifyWebhook(UUID orgId, String payload, String signature) {
-        Organization org = orgId == null ? null : store.get(Organization.class, orgId);
-        String secret = OrgSecrets.live(org, "razorpayWebhookSecret");
+        String secret = store.settingValue("razorpayWebhookSecret");
         if (secret.isBlank()) {
             String[] keys = keys(orgId);
             secret = keys == null ? "" : keys[1];
@@ -160,13 +158,10 @@ public class ConfigurablePaymentGateway implements PaymentGateway {
     }
 
     private String[] keys(UUID orgId) {
-        if (orgId != null) {
-            Organization org = store.get(Organization.class, orgId);
-            String id = OrgSecrets.live(org, "razorpayKeyId");
-            String secret = OrgSecrets.live(org, "razorpayKeySecret");
-            if (!id.isBlank() && !secret.isBlank()) {
-                return new String[] { id, secret };
-            }
+        String id = store.settingValue("razorpayKeyId");
+        String secret = store.settingValue("razorpayKeySecret");
+        if (!id.isBlank() && !secret.isBlank()) {
+            return new String[] { id, secret };
         }
         if (!envKey.isBlank() && !envSecret.isBlank()) {
             return new String[] { envKey, envSecret };

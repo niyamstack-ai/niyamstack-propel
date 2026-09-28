@@ -91,7 +91,7 @@ Interfaces exist for Razorpay/Cashfree, WhatsApp Business, Zoom/Meet, local/MinI
 | Variable | Purpose |
 |---|---|
 | `PROPEL_PAYMENTS_PROVIDER` | `demo` / `razorpay` / `cashfree` |
-| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | Live payments only when both set |
+| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | Optional env fallback; prefer Platform Settings → Payments (shared by all institutes) |
 | `CASHFREE_CLIENT_ID` / `CASHFREE_CLIENT_SECRET` | Same for Cashfree |
 | `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp Cloud |
 | `ZOOM_CLIENT_ID` / `ZOOM_CLIENT_SECRET` | Meetings |

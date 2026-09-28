@@ -105,6 +105,32 @@ public class Store {
         return rows.isEmpty() ? null : rows.getFirst();
     }
 
+    public String settingValue(String key) {
+        PlatformSetting row = findSetting(key);
+        if (row == null || row.getSettingValue() == null) {
+            return "";
+        }
+        return row.getSettingValue().trim();
+    }
+
+    @Transactional
+    public PlatformSetting putSetting(String key, String value) {
+        if (key == null || key.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Setting key is required");
+        }
+        PlatformSetting row = findSetting(key.trim());
+        if (row == null) {
+            row = new PlatformSetting();
+            row.setSettingKey(key.trim());
+        }
+        if (value == null || value.isBlank()) {
+            row.setSettingValue(null);
+        } else {
+            row.setSettingValue(value.trim());
+        }
+        return save(row);
+    }
+
     public AppUser findUserByEmail(String email) {
         List<AppUser> users = em.createQuery("select u from AppUser u where lower(u.email) = lower(:e)", AppUser.class)
                 .setParameter("e", email)

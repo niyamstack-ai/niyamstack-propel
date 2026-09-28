@@ -966,10 +966,12 @@ public class ActionsController {
         Access.requireAny(Auth.current(), Roles.OWNER);
         Organization org = store.get(Organization.class, Auth.current().organizationId());
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("razorpay", OrgSecrets.has(org, "razorpayKeyId") && OrgSecrets.has(org, "razorpayKeySecret"));
+        boolean platformRazorpay = !store.settingValue("razorpayKeyId").isBlank()
+                && !store.settingValue("razorpayKeySecret").isBlank();
+        out.put("razorpay", platformRazorpay);
         out.put("whatsapp", OrgSecrets.has(org, "whatsappToken") && OrgSecrets.has(org, "whatsappPhoneId"));
         out.put("smtp", OrgSecrets.has(org, "smtpHost") && OrgSecrets.has(org, "smtpUser"));
-        out.put("webhook", OrgSecrets.has(org, "razorpayWebhookSecret"));
+        out.put("webhook", !store.settingValue("razorpayWebhookSecret").isBlank());
         out.put("gstState", OrgSecrets.live(org, "gstState"));
         out.put("invoiceSeries", OrgSecrets.live(org, "invoiceSeries"));
         out.put("smtpHost", OrgSecrets.live(org, "smtpHost"));
@@ -996,8 +998,6 @@ public class ActionsController {
         ObjectNode live = root.has("live") && root.get("live").isObject()
                 ? (ObjectNode) root.get("live")
                 : root.putObject("live");
-        putIfPresent(live, body, "razorpayKeyId");
-        putIfPresent(live, body, "razorpayKeySecret");
         putIfPresent(live, body, "whatsappToken");
         putIfPresent(live, body, "whatsappPhoneId");
         putIfPresent(live, body, "smtpHost");
@@ -1005,7 +1005,6 @@ public class ActionsController {
         putIfPresent(live, body, "smtpUser");
         putIfPresent(live, body, "smtpPass");
         putIfPresent(live, body, "smtpFrom");
-        putIfPresent(live, body, "razorpayWebhookSecret");
         putIfPresent(live, body, "gstState");
         putIfPresent(live, body, "invoiceSeries");
         putIfPresent(live, body, "openaiApiKey");

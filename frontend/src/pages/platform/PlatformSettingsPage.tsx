@@ -7,11 +7,19 @@ import { Card, ErrorText, Field, useApi } from "../../ui";
 type Cap = { id: string; label: string };
 type Role = { id: string; name: string; capabilities: string[] };
 type Catalog = { capabilities: Cap[]; roles: Role[] };
+type PaymentGateway = {
+  razorpay?: boolean;
+  webhook?: boolean;
+  keyIdMasked?: string;
+  mode?: string;
+  webhookPath?: string;
+};
 
 export function PlatformSettingsPage() {
   const { user } = usePlatformAuth();
   const canManageRights = hasCap(user, "MANAGE_RIGHTS");
   const catalog = useApi<Catalog>(canManageRights ? "/api/platform/roles" : "");
+  const paymentGateway = useApi<PaymentGateway>(canManageRights ? "/api/platform/payment-gateway" : "");
   const [newName, setNewName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -19,6 +27,11 @@ export function PlatformSettingsPage() {
   const [currentPassword, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [payKeys, setPayKeys] = useState({
+    razorpayKeyId: "",
+    razorpayKeySecret: "",
+    razorpayWebhookSecret: "",
+  });
 
   async function createRole(e: FormEvent) {
     e.preventDefault();
@@ -100,6 +113,29 @@ export function PlatformSettingsPage() {
 
   const caps = catalog.data?.capabilities ?? [];
   const roles = catalog.data?.roles ?? [];
+  const pay = paymentGateway.data;
+  const modeLabel =
+    pay?.mode === "test" ? "Test mode" : pay?.mode === "live" ? "Live mode" : pay?.razorpay ? "Configured" : "Not configured";
+
+  async function savePaymentGateway(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setDone(null);
+    try {
+      await api("/api/platform/payment-gateway", {
+        method: "PUT",
+        body: JSON.stringify(payKeys),
+      });
+      setPayKeys({ razorpayKeyId: "", razorpayKeySecret: "", razorpayWebhookSecret: "" });
+      paymentGateway.reload();
+      setDone("Razorpay keys saved. All institutes on this portal will use these keys.");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -116,7 +152,7 @@ export function PlatformSettingsPage() {
               ) : (
                 "Employee management"
               )}{" "}
-              assign one or more of those roles to a person.
+              assign one or more of those roles to a person. Payment gateway keys below apply to every institute on this portal.
             </>
           ) : (
             "Change the password for this Niyamstack staff account."
@@ -124,10 +160,46 @@ export function PlatformSettingsPage() {
         </p>
       </div>
       {catalog.error && <p className="text-sm text-red-600">{catalog.error}</p>}
+      {paymentGateway.error && <p className="text-sm text-red-600">{paymentGateway.error}</p>}
       <ErrorText error={error} />
       {done && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{done}</p>}
       {canManageRights && (
         <>
+          <Card title="Payments (Razorpay)">
+            <p className="text-sm text-slate-500">
+              {pay?.razorpay
+                ? `${modeLabel} via Niyamstack Razorpay${pay.keyIdMasked ? ` (${pay.keyIdMasked})` : ""}. Fee collect and storefront checkout use these keys for every institute.`
+                : "Paste the Razorpay keys for this portal. Use test keys on testing.propel and live keys on production."}
+            </p>
+            <form className="mt-3 max-w-lg space-y-3" onSubmit={savePaymentGateway}>
+              <Field
+                label="Key ID"
+                value={payKeys.razorpayKeyId}
+                onChange={(v) => setPayKeys((p) => ({ ...p, razorpayKeyId: v }))}
+                placeholder={pay?.razorpay ? "Saved — paste to replace" : "rzp_test_… or rzp_live_…"}
+              />
+              <Field
+                label="Key secret"
+                value={payKeys.razorpayKeySecret}
+                onChange={(v) => setPayKeys((p) => ({ ...p, razorpayKeySecret: v }))}
+                type="password"
+                placeholder={pay?.razorpay ? "Saved — paste to replace" : "Key secret"}
+              />
+              <Field
+                label="Webhook secret (optional)"
+                value={payKeys.razorpayWebhookSecret}
+                onChange={(v) => setPayKeys((p) => ({ ...p, razorpayWebhookSecret: v }))}
+                type="password"
+                placeholder={pay?.webhook ? "Saved — paste to replace" : "From Razorpay dashboard"}
+              />
+              <p className="text-xs text-slate-500">
+                Webhook URL: {typeof window !== "undefined" ? `${window.location.origin}${pay?.webhookPath || "/api/public/payments/razorpay"}` : pay?.webhookPath || "/api/public/payments/razorpay"}
+              </p>
+              <button className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={busy}>
+                {busy ? "Saving…" : "Save payment keys"}
+              </button>
+            </form>
+          </Card>
           <Card title="Create a role">
             <form className="flex flex-wrap items-end gap-3" onSubmit={createRole}>
               <div className="w-64">

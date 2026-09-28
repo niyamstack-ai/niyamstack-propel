@@ -27,9 +27,6 @@ export function IntegrationsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [keys, setKeys] = useState({
-    razorpayKeyId: "",
-    razorpayKeySecret: "",
-    razorpayWebhookSecret: "",
     whatsappToken: "",
     whatsappPhoneId: "",
     smtpHost: "",
@@ -111,7 +108,7 @@ export function IntegrationsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-navy">Integrations</h1>
-        <p className="text-sm text-slate-500">Paste your Razorpay, WhatsApp, and SMTP keys here. Until they are saved, fees and notices stay recorded in Propel only.</p>
+        <p className="text-sm text-slate-500">Paste WhatsApp and SMTP keys here. Payments use Niyamstack Razorpay configured in Platform Settings.</p>
       </div>
       <ErrorText error={error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
@@ -119,44 +116,12 @@ export function IntegrationsPage() {
         <Card title="Payments (Razorpay / UPI)">
           <p className="text-sm text-slate-500">
             {g?.payments?.live || keyStatus?.razorpay
-              ? `Live via ${g?.payments?.provider || "razorpay"}. Collect will create a Razorpay order.`
-              : "Paste your Razorpay key ID and secret. Until then, Collect only records the fee in Propel."}
+              ? `Live via ${g?.payments?.provider || "razorpay"}. Collect and checkout create a Razorpay order through Niyamstack.`
+              : "Payments are managed by Niyamstack. Until platform Razorpay keys are saved, Collect only records the fee in Propel."}
           </p>
-          <div className="mt-3 space-y-3">
-            <Field label="Key ID" value={keys.razorpayKeyId} onChange={(v) => setKeys((p) => ({ ...p, razorpayKeyId: v }))} placeholder={keyStatus?.razorpay ? "Saved — paste to replace" : "rzp_live_…"} />
-            <Field label="Key secret" value={keys.razorpayKeySecret} onChange={(v) => setKeys((p) => ({ ...p, razorpayKeySecret: v }))} type="password" />
-            <Field
-              label="Webhook secret (optional)"
-              value={keys.razorpayWebhookSecret}
-              onChange={(v) => setKeys((p) => ({ ...p, razorpayWebhookSecret: v }))}
-              type="password"
-              placeholder={keyStatus?.webhook ? "Saved — paste to replace" : "From Razorpay dashboard"}
-            />
-            <p className="text-xs text-slate-500">Webhook URL: /api/public/payments/razorpay</p>
-          </div>
-          <div className="mt-3">
-            <PrimaryButton
-              onClick={() =>
-                void (async () => {
-                  setError(null);
-                  setNotice(null);
-                  try {
-                    const saved = await api<typeof keyStatus>("/api/actions/live-keys", {
-                      method: "PUT",
-                      body: JSON.stringify(keys),
-                    });
-                    setKeyStatus(saved);
-                    gateway.reload();
-                    setNotice("Payment keys saved.");
-                  } catch (e) {
-                    setError((e as Error).message);
-                  }
-                })()
-              }
-            >
-              Save payment keys
-            </PrimaryButton>
-          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Institute owners cannot set gateway keys. Niyamstack configures Razorpay once for this portal under Platform → Settings.
+          </p>
         </Card>
         <Card title="WhatsApp">
           <p className="text-sm text-slate-500">

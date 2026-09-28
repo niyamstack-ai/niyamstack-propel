@@ -388,6 +388,72 @@ public class PlatformService {
         return roleCatalog();
     }
 
+    public Map<String, Object> paymentGateway() {
+        requireCap(PlatformCaps.MANAGE_RIGHTS);
+        return paymentGatewayStatus();
+    }
+
+    @Transactional
+    public Map<String, Object> savePaymentGateway(Map<String, String> body) {
+        requireCap(PlatformCaps.MANAGE_RIGHTS);
+        if (body == null) {
+            body = Map.of();
+        }
+        putSettingIfPresent(body, "razorpayKeyId");
+        putSettingIfPresent(body, "razorpayKeySecret");
+        putSettingIfPresent(body, "razorpayWebhookSecret");
+        audit.log("PLATFORM_PAYMENT_GATEWAY", "PlatformSetting", null, "razorpay");
+        return paymentGatewayStatus();
+    }
+
+    private Map<String, Object> paymentGatewayStatus() {
+        String keyId = store.settingValue("razorpayKeyId");
+        String keySecret = store.settingValue("razorpayKeySecret");
+        String webhook = store.settingValue("razorpayWebhookSecret");
+        boolean configured = !keyId.isBlank() && !keySecret.isBlank();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("razorpay", configured);
+        out.put("webhook", !webhook.isBlank());
+        out.put("keyIdMasked", maskKeyId(keyId));
+        out.put("mode", modeFromKeyId(keyId));
+        out.put("webhookPath", "/api/public/payments/razorpay");
+        return out;
+    }
+
+    private void putSettingIfPresent(Map<String, String> body, String key) {
+        if (!body.containsKey(key)) {
+            return;
+        }
+        String value = body.get(key);
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        store.putSetting(key, value.trim());
+    }
+
+    private static String maskKeyId(String keyId) {
+        if (keyId == null || keyId.isBlank()) {
+            return "";
+        }
+        if (keyId.length() <= 12) {
+            return keyId.charAt(0) + "…";
+        }
+        return keyId.substring(0, 8) + "…" + keyId.substring(keyId.length() - 4);
+    }
+
+    private static String modeFromKeyId(String keyId) {
+        if (keyId == null || keyId.isBlank()) {
+            return "none";
+        }
+        if (keyId.startsWith("rzp_test_")) {
+            return "test";
+        }
+        if (keyId.startsWith("rzp_live_")) {
+            return "live";
+        }
+        return "unknown";
+    }
+
     public record EmployeeRequest(String fullName, String email, String password, List<UUID> roleIds) {}
 
     public record EmployeeUpdate(String fullName, Boolean active, String password, List<UUID> roleIds) {}

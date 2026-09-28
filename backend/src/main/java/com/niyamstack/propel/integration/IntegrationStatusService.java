@@ -42,7 +42,7 @@ public class IntegrationStatusService {
         out.put("meetings", Map.of("provider", meetings.provider(), "live", meetings.live()));
         out.put("storage", Map.of("provider", storage.provider(), "live", !"local".equals(storage.provider())));
         out.put("mail", Map.of("provider", mail.provider(), "live", mail.live()));
-        out.put("note", "Live is true only when you have saved vendor keys in Integrations, or Niyamstack has configured server keys.");
+        out.put("note", "Payments are live when Niyamstack has saved Razorpay keys in Platform Settings (or server env). WhatsApp and mail use institute Integrations keys.");
         return out;
     }
 }

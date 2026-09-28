@@ -172,7 +172,7 @@ export function PlatformInstituteDetailPage() {
           )}
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          {paid ? "Payment is already marked received." : "Mark paid first, then approve."} Student fee collect uses Razorpay keys on the institute Integrations page.
+          {paid ? "Payment is already marked received." : "Mark paid first, then approve."} Student fee collect uses the Razorpay keys saved under Platform → Settings.
         </p>
       </Card>
       )}

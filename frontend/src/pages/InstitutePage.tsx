@@ -240,7 +240,7 @@ export function InstitutePage() {
       <InstituteRoles />
       <Card title="How payments and WhatsApp run">
         <p className="text-sm text-slate-500">
-          Live Razorpay, WhatsApp, and email are switched on by Niyamstack with keys — see Settings → Integrations. This page is for institute profile, centres, and rooms.
+          Razorpay is configured by Niyamstack in Platform Settings (same keys for every institute). WhatsApp and email keys are on Settings → Integrations. This page is for institute profile, centres, and rooms.
         </p>
       </Card>
     </div>
