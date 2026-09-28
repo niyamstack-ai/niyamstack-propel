@@ -2295,6 +2295,17 @@ function OneToOneBookPage() {
       <p className="text-sm text-slate-500">Pick a mentor slot. If it is paid, a fee invoice appears under Fees.</p>
       <ErrorText error={error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      {rows.length === 0 && !error ? (
+        <div className="rounded-2xl border border-dashed border-line bg-white px-5 py-8 text-center">
+          <p className="font-semibold text-navy">No 1:1 sessions published yet</p>
+          <p className="mt-2 text-sm text-slate-500">
+            Mentors will appear here after the institute adds offerings under 1:1 sessions. This page stays available — check back later or ask the institute.
+          </p>
+          <Link className="mt-4 inline-block text-sm font-semibold text-brand" to={sitePath(slug) || "/"}>
+            Browse courses
+          </Link>
+        </div>
+      ) : (
       <div className="grid gap-4 sm:grid-cols-2">
         {rows.map((s) => (
           <Card key={s.id} title={s.title}>
@@ -2329,8 +2340,8 @@ function OneToOneBookPage() {
             </div>
           </Card>
         ))}
-        {rows.length === 0 && <p className="text-sm text-slate-500">No 1:1 offerings yet.</p>}
       </div>
+      )}
     </div>
   );
 }
@@ -2361,8 +2372,20 @@ function AppInstallPage() {
       <div className="rounded-2xl border border-line bg-white p-6">
         <h1 className="text-2xl font-bold text-navy">Install the student app</h1>
         <p className="mt-2 text-sm text-slate-500">
-          This is an installable website app (PWA) for {site?.name || "this institute"}. It is not a Play Store listing.
+          This is an installable website app (PWA) for {site?.name || "this institute"}. It is not a Play Store listing — the feature stays here so students can pin the site on their phone.
         </p>
+        {!site?.appShareUrl && (
+          <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            The institute has not added a store or share link yet. You can still install this site on your home screen below.
+          </p>
+        )}
+        {site?.appShareUrl && (
+          <p className="mt-3 text-sm">
+            <a className="font-semibold text-brand underline" href={site.appShareUrl} target="_blank" rel="noreferrer">
+              Open institute app link
+            </a>
+          </p>
+        )}
         {prompt && !installed && (
           <button
             className="mt-4 rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white"

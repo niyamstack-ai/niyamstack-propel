@@ -239,6 +239,19 @@ export function Shell() {
                 : t("pending_banner", "Payment received. Waiting for Niyamstack to activate your institute.")}
           </div>
         )}
+        {user?.role === "STUDENT" && user.orgSlug && (
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-sky-50 px-4 py-2 text-sm text-sky-950 sm:px-6">
+            <p>
+              {t(
+                "student_storefront_banner",
+                "Your student site is the best place to learn, pay fees, and apply for jobs. Institute menus below still work if you need them.",
+              )}
+            </p>
+            <a className="shrink-0 font-semibold text-brand underline" href={`/s/${user.orgSlug}/learn`}>
+              {t("open_student_site", "Open student site")}
+            </a>
+          </div>
+        )}
         {courseChrome ? (
           <div className="flex items-center justify-between gap-3 px-4 py-2 sm:hidden">
             <button

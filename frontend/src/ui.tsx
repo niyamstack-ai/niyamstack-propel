@@ -39,7 +39,7 @@ export function useApi<T>(path: string) {
   return { data, error, loading, reload: () => setTick((n) => n + 1) };
 }
 
-export function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
+export function Card({ title, children, action }: { title: React.ReactNode; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <section className="rounded-2xl border border-line bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">

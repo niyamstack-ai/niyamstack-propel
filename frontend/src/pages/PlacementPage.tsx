@@ -50,7 +50,14 @@ function StudentJobs() {
       )}
       {letter && <pre className="whitespace-pre-wrap rounded-lg border border-line bg-slate-50 p-3 text-sm">{letter}</pre>}
       <Card title="Open drives">
-        {(drives.data ?? []).length === 0 && <p className="mb-3 text-sm text-slate-500">No open drives right now.</p>}
+        {(drives.data ?? []).length === 0 && !drives.loading && (
+          <div className="mb-3 rounded-xl border border-dashed border-line bg-mist/40 px-4 py-6 text-center">
+            <p className="font-medium text-navy">No open drives right now</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Campus jobs will appear here when the placement team publishes a drive. This Jobs page stays ready — check Notices for updates.
+            </p>
+          </div>
+        )}
         <Table
           columns={["Drive", "Package", "Locations", ""]}
           rows={(drives.data ?? [])

@@ -42,8 +42,13 @@ public class ConfigurableMeetingGateway implements MeetingGateway {
         }
         String url = "https://meet.jit.si/" + room;
         if (live() && "zoom".equalsIgnoreCase(provider)) {
-            return new Meeting(url, "jitsi", true, Map.of("note", "Zoom OAuth is not completed; a Jitsi room was opened instead"));
+            // Zoom OAuth is not fully wired; still open a usable Jitsi room and mark as built-in.
+            return new Meeting(url, "jitsi", false, Map.of(
+                    "note", "Zoom OAuth is not completed; a built-in Jitsi room was opened instead",
+                    "mode", "BUILT_IN"));
         }
-        return new Meeting(url, "jitsi", true, Map.of("note", "Jitsi meeting room"));
+        return new Meeting(url, "jitsi", false, Map.of(
+                "note", "Built-in Jitsi meeting room (Zoom/Meet not connected)",
+                "mode", "BUILT_IN"));
     }
 }
