@@ -30,10 +30,12 @@ import com.niyamstack.propel.integration.MailService;
 import com.niyamstack.propel.integration.PaymentGateway;
 import com.niyamstack.propel.domain.Model.Inquiry;
 import com.niyamstack.propel.platform.SettlementService;
+import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.LicenseService;
 import com.niyamstack.propel.security.OrgAccess;
 import com.niyamstack.propel.security.OtpService;
 import com.niyamstack.propel.security.Phones;
+import com.niyamstack.propel.security.PropelUser;
 import com.niyamstack.propel.security.Roles;
 import com.niyamstack.propel.security.SessionService;
 import com.niyamstack.propel.sis.StudentAccountService;
@@ -72,6 +74,8 @@ public class StorefrontService {
     private final SettlementService settlements;
     private final MailService mailService;
     private final ConcurrentHashMap<String, PendingRegister> pendingRegisters = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, PendingPurchase> pendingPurchases = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, PendingPurchase> pendingPurchases = new ConcurrentHashMap<>();
 
     public StorefrontService(Store store, PaymentGateway payments, PasswordEncoder encoder, SessionService sessions,
                              EventHook hooks, FeeService fees, OtpService otp, StudentAccountService studentAccounts,
@@ -191,33 +195,81 @@ public class StorefrontService {
     }
 
     @Transactional
-    public Map<String, Object> purchase(String slug, String fullName, String email, String phoneRaw, UUID courseId, String couponCode, String validityOption) {
-        if (fullName == null || fullName.isBlank()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Name is required");
+    public Map<String, Object> purchaseOtp(
+            String slug,
+            String fullName,
+            String email,
+            String phoneRaw,
+            UUID courseId,
+            String couponCode,
+            String validityOption
+    ) {
+        PurchaseContext ctx = preparePurchase(slug, fullName, email, phoneRaw, courseId);
+        if (ctx.user() != null && ctx.user().isEmailVerified()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Email already verified. Continue to purchase.");
         }
-        String phone = Phones.normalize(phoneRaw);
-        if (!Phones.isMobile(phone)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a valid 10-digit Indian mobile number");
+        String mail = ctx.email();
+        String phone = ctx.phone();
+        pendingPurchases.put(phone, new PendingPurchase(
+                ctx.org().getId(),
+                ctx.fullName(),
+                mail,
+                phone,
+                courseId,
+                couponCode,
+                validityOption,
+                Instant.now().plusSeconds(600)
+        ));
+        var issued = otp.issue(phone, OtpService.VERIFY_EMAIL);
+        Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
+        if (mailService.live() && mailService.canDeliver(mail)) {
+            mailService.sendOtp(mail, OtpService.VERIFY_EMAIL, issued.code());
+        } else if (!otp.reveal()) {
+            out.put("devOtp", issued.code());
         }
-        Organization org = liveOrg(slug);
-        Course course = store.getOwned(Course.class, courseId, org.getId());
-        if (!course.isActive() || !course.isPublished()) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "This course is not published yet");
-        }
-        if (email == null || email.isBlank() || !email.contains("@") || email.toLowerCase().endsWith(".local")) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a real email address. We send login OTP to this email.");
+        out.put("emailMasked", maskEmail(mail));
+        out.put("channel", "email");
+        out.put("status", "otp_sent");
+        return out;
+    }
+
+    @Transactional
+    public Map<String, Object> purchase(
+            String slug,
+            String fullName,
+            String email,
+            String phoneRaw,
+            UUID courseId,
+            String couponCode,
+            String validityOption,
+            String otpCode
+    ) {
+        PurchaseContext ctx = preparePurchase(slug, fullName, email, phoneRaw, courseId);
+        Organization org = ctx.org();
+        Course course = ctx.course();
+        String phone = ctx.phone();
+        String mail = ctx.email();
+
+        AppUser user = ctx.user();
+        boolean needsVerify = user == null || !user.isEmailVerified();
+        if (needsVerify) {
+            PendingPurchase pending = pendingPurchases.get(phone);
+            if (pending == null || pending.expires().isBefore(Instant.now()) || !org.getId().equals(pending.orgId())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Verify your email first. Request a code, then continue.");
+            }
+            if (!mail.equalsIgnoreCase(pending.email()) || !courseId.equals(pending.courseId())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Details changed. Request a new email code.");
+            }
+            otp.verify(phone, OtpService.VERIFY_EMAIL, otpCode);
+            pendingPurchases.remove(phone);
+            fullName = pending.fullName();
+            mail = pending.email();
+            couponCode = pending.couponCode() != null ? pending.couponCode() : couponCode;
+            validityOption = pending.validityOption() != null ? pending.validityOption() : validityOption;
         }
 
-        AppUser user = store.findUserByPhone(phone);
-        if (user != null && !org.getId().equals(user.getOrganizationId())) {
-            throw new ApiException(HttpStatus.CONFLICT, "This mobile is already used on another institute");
-        }
-        if (user != null && !Roles.STUDENT.equals(user.getRole())) {
-            throw new ApiException(HttpStatus.CONFLICT, "This mobile belongs to a staff account. Use a student number.");
-        }
         if (user == null) {
             licenses.requireStudentCapacity(org);
-            String mail = email == null || email.isBlank() ? phone + "@student.local" : email.trim().toLowerCase();
             AppUser byEmail = store.findUserByEmail(mail);
             if (byEmail != null) {
                 throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
@@ -231,6 +283,12 @@ public class StorefrontService {
             user.setRole(Roles.STUDENT);
             user.setActive(true);
             user.setPasswordChangedAt(Instant.now());
+            user.setEmailVerified(true);
+            user = store.save(user);
+        } else if (!user.isEmailVerified()) {
+            user.setEmail(mail);
+            user.setFullName(fullName.trim());
+            user.setEmailVerified(true);
             user = store.save(user);
         }
 
@@ -954,7 +1012,7 @@ public class StorefrontService {
         Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
         if (mailService.live() && mailService.canDeliver(mail)) {
             mailService.sendOtp(mail, OtpService.SIGNUP, issued.code());
-        } else {
+        } else if (!otp.reveal()) {
             out.put("devOtp", issued.code());
         }
         out.put("emailMasked", maskEmail(mail));
@@ -1096,6 +1154,83 @@ public class StorefrontService {
         String visible = user.length() <= 1 ? "*" : user.charAt(0) + "***";
         return visible + "@" + domain;
     }
+
+    private PurchaseContext preparePurchase(String slug, String fullName, String email, String phoneRaw, UUID courseId) {
+        Organization org = liveOrg(slug);
+        if (courseId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Course is required");
+        }
+        Course course = store.getOwned(Course.class, courseId, org.getId());
+        if (!course.isActive() || !course.isPublished()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "This course is not published yet");
+        }
+
+        PropelUser principal = Auth.optional();
+        AppUser sessionUser = null;
+        if (principal != null && Roles.STUDENT.equals(principal.role()) && org.getId().equals(principal.organizationId())) {
+            sessionUser = store.get(AppUser.class, principal.userId());
+        }
+
+        String phone = Phones.normalize(phoneRaw);
+        if (!Phones.isMobile(phone) && sessionUser != null && Phones.isMobile(sessionUser.getPhone())) {
+            phone = sessionUser.getPhone();
+        }
+        if (!Phones.isMobile(phone)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a valid 10-digit Indian mobile number");
+        }
+
+        String name = fullName == null || fullName.isBlank()
+                ? (sessionUser == null ? "" : sessionUser.getFullName())
+                : fullName.trim();
+        if (name.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Name is required");
+        }
+
+        String mail = email == null || email.isBlank()
+                ? (sessionUser == null ? "" : sessionUser.getEmail())
+                : email.trim().toLowerCase();
+        if (mail == null || mail.isBlank() || !mail.contains("@") || !mailService.canDeliver(mail)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a real email address. We send a verification code there.");
+        }
+
+        AppUser user = store.findUserByPhone(phone);
+        if (user == null && sessionUser != null && phone.equals(sessionUser.getPhone())) {
+            user = sessionUser;
+        }
+        if (user != null && !org.getId().equals(user.getOrganizationId())) {
+            throw new ApiException(HttpStatus.CONFLICT, "This mobile is already used on another institute");
+        }
+        if (user != null && !Roles.STUDENT.equals(user.getRole())) {
+            throw new ApiException(HttpStatus.CONFLICT, "This mobile belongs to a staff account. Use a student number.");
+        }
+        if (user == null) {
+            AppUser byEmail = store.findUserByEmail(mail);
+            if (byEmail != null) {
+                throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+            }
+        }
+        return new PurchaseContext(org, course, name, mail, phone, user);
+    }
+
+    private record PurchaseContext(
+            Organization org,
+            Course course,
+            String fullName,
+            String email,
+            String phone,
+            AppUser user
+    ) {}
+
+    private record PendingPurchase(
+            UUID orgId,
+            String fullName,
+            String email,
+            String phone,
+            UUID courseId,
+            String couponCode,
+            String validityOption,
+            Instant expires
+    ) {}
 
     private record PendingRegister(UUID orgId, String fullName, String email, UUID courseId, Instant expires) {}
 }

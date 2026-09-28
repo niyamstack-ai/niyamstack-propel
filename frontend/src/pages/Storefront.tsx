@@ -636,6 +636,9 @@ function CoursePage() {
   const [owned, setOwned] = useState(false);
   const [ownedError, setOwnedError] = useState<string | null>(null);
   const [validityOption, setValidityOption] = useState("a");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState<{ emailMasked?: string; devOtp?: string } | null>(null);
+  const needsEmailVerify = !(token && user?.role === "STUDENT" && user?.emailVerified);
 
   useEffect(() => {
     if (!slug || !courseId) return;
@@ -696,9 +699,38 @@ function CoursePage() {
     }
   }
 
+  async function sendPurchaseOtp(e?: FormEvent) {
+    e?.preventDefault();
+    if (!slug || !course?.id) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api<{ emailMasked?: string; devOtp?: string }>(`/api/public/sites/${slug}/purchase/otp`, {
+        method: "POST",
+        body: JSON.stringify({
+          fullName: name,
+          email,
+          phone,
+          courseId: course.id,
+          couponCode: couponOk || undefined,
+          validityOption,
+        }),
+      });
+      setOtpSent(res);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function buy(e?: FormEvent) {
     e?.preventDefault();
     if (!slug || !course?.id) return;
+    if (needsEmailVerify && !otpSent) {
+      await sendPurchaseOtp();
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -711,7 +743,15 @@ function CoursePage() {
         `/api/public/sites/${slug}/purchase`,
         {
           method: "POST",
-          body: JSON.stringify({ fullName: name, email, phone, courseId: course.id, couponCode: couponOk || undefined, validityOption }),
+          body: JSON.stringify({
+            fullName: name,
+            email,
+            phone,
+            courseId: course.id,
+            couponCode: couponOk || undefined,
+            validityOption,
+            otp: needsEmailVerify ? otp : undefined,
+          }),
         }
       );
       let receiptNo = res.receiptNo;
@@ -941,17 +981,50 @@ function CoursePage() {
               You&apos;re signed in as institute staff. Open this page in a private window, or log out, to buy as a student.
             </p>
           )}
-          {loggedStudent ? (
-            <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy} onClick={() => buy()}>
-              {busy ? "Unlocking…" : pay === 0 ? (course.allowTrial ? "Start trial" : "Enroll free") : "Get this course"}
-            </button>
-          ) : (
-            <form className="space-y-2" onSubmit={buy}>
+          {loggedStudent && !needsEmailVerify ? (
+            <>
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy} onClick={() => void buy()}>
+                {busy ? "Unlocking…" : pay === 0 ? (course.allowTrial ? "Start trial" : "Enroll free") : "Get this course"}
+              </button>
+            </>
+          ) : !otpSent ? (
+            <form className="space-y-2" onSubmit={(e) => void sendPurchaseOtp(e)}>
               <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" required placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
               <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" required placeholder="Mobile" inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <p className="text-xs text-slate-500">We email a verification code before checkout.</p>
+              {error && <p className="text-sm text-red-600">{error}</p>}
               <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy}>
-                {busy ? "Processing…" : pay === 0 ? (course.allowTrial ? "Start trial" : "Enroll free") : "Get this course"}
+                {busy ? "Sending…" : "Send email code"}
+              </button>
+            </form>
+          ) : (
+            <form className="space-y-2" onSubmit={(e) => void buy(e)}>
+              <p className="text-xs text-slate-500">Code sent to {otpSent.emailMasked || email}.</p>
+              {otpSent.devOtp && <p className="text-xs text-slate-400">Local OTP: {otpSent.devOtp}</p>}
+              <input
+                className="w-full rounded-lg border border-line px-3 py-2 text-sm tracking-[0.3em]"
+                maxLength={6}
+                required
+                placeholder="Email OTP"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+              />
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy}>
+                {busy ? "Processing…" : pay === 0 ? (course.allowTrial ? "Verify & start trial" : "Verify & enroll") : "Verify & continue to pay"}
+              </button>
+              <button
+                type="button"
+                className="w-full text-xs text-brand"
+                disabled={busy}
+                onClick={() => {
+                  setOtpSent(null);
+                  setOtp("");
+                }}
+              >
+                Change details
               </button>
             </form>
           )}
@@ -1188,24 +1261,25 @@ function StudentRegisterPage() {
   return (
     <div className="mx-auto max-w-md rounded-2xl border border-line bg-white p-6">
       <h1 className="text-xl font-bold text-navy">Create your student account</h1>
-      <p className="mt-1 text-sm text-slate-500">Register with your mobile. You can buy a course after you log in.</p>
+      <p className="mt-1 text-sm text-slate-500">Verify your email first. The account is created only after the code is confirmed.</p>
       {!sent ? (
         <form className="mt-4 space-y-3" onSubmit={sendOtp}>
           <input className="w-full rounded-lg border border-line px-3 py-2" placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} required />
           <input className="w-full rounded-lg border border-line px-3 py-2" placeholder="Mobile" value={phone} onChange={(e) => setPhone(e.target.value)} required />
-          <input className="w-full rounded-lg border border-line px-3 py-2" type="email" placeholder="Email (optional)" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input className="w-full rounded-lg border border-line px-3 py-2" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           {error && <p className="text-sm text-red-600">{error}</p>}
-          <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy || !name.trim() || !phone.trim()}>
-            {busy ? "Sending…" : "Send OTP"}
+          <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy || !name.trim() || !phone.trim() || !email.trim()}>
+            {busy ? "Sending…" : "Send email code"}
           </button>
         </form>
       ) : (
         <form className="mt-4 space-y-3" onSubmit={verify}>
+          <p className="text-xs text-slate-500">Enter the code emailed to you.</p>
           {sent.devOtp && <p className="text-xs text-slate-400">Local OTP: {sent.devOtp}</p>}
           <input className="w-full rounded-lg border border-line px-3 py-2 tracking-[0.3em]" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="OTP" />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
-            {busy ? "Creating…" : "Create account"}
+            {busy ? "Creating…" : "Verify email & create account"}
           </button>
           <div className="flex justify-between text-xs">
             <button type="button" className="text-brand" onClick={() => { setSent(null); setOtp(""); }}>

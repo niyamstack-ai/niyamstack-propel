@@ -39,6 +39,7 @@ public class SecurityConfig {
                                 "/api/auth/login",
                                 "/api/auth/login/phone",
                                 "/api/auth/signup",
+                                "/api/auth/signup/**",
                                 "/api/auth/otp/**",
                                 "/api/auth/forgot/**",
                                 "/api/auth/reset/**",

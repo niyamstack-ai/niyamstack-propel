@@ -6,10 +6,18 @@ public final class Auth {
     private Auth() {}
 
     public static PropelUser current() {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !(auth.getPrincipal() instanceof PropelUser user)) {
+        PropelUser user = optional();
+        if (user == null) {
             throw new com.niyamstack.propel.common.ApiException(
                     org.springframework.http.HttpStatus.UNAUTHORIZED, "Sign in required");
+        }
+        return user;
+    }
+
+    public static PropelUser optional() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof PropelUser user)) {
+            return null;
         }
         return user;
     }

@@ -46,6 +46,7 @@ public class SessionService {
         profile.put("role", user.getRole());
         profile.put("organizationId", user.getOrganizationId());
         profile.put("centerId", user.getCenterId() == null ? "" : user.getCenterId());
+        profile.put("emailVerified", user.isEmailVerified());
         profile.put("packageTier", bits.tier);
         profile.put("accessStatus", bits.access);
         profile.put("paymentStatus", bits.payment);

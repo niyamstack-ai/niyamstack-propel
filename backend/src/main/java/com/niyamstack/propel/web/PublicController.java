@@ -54,7 +54,7 @@ public class PublicController {
         this.filesRoot = Path.of(dir).toAbsolutePath().normalize();
     }
 
-    public record PurchaseRequest(String fullName, String email, String phone, UUID courseId, String couponCode, String validityOption) {}
+    public record PurchaseRequest(String fullName, String email, String phone, UUID courseId, String couponCode, String validityOption, String otp) {}
     public record ConfirmRequest(UUID invoiceId, String orderId, String paymentId, String signature) {}
     public record CouponRequest(UUID courseId, String code) {}
     public record RegisterRequest(String fullName, String email, String phone, UUID courseId) {}
@@ -178,12 +178,22 @@ public class PublicController {
         return storefront.applyCoupon(slug, body.courseId(), body.code());
     }
 
+    @PostMapping("/sites/{slug}/purchase/otp")
+    public Map<String, Object> purchaseOtp(@PathVariable String slug, @RequestBody PurchaseRequest body) {
+        if (body.courseId() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Course is required");
+        }
+        return storefront.purchaseOtp(
+                slug, body.fullName(), body.email(), body.phone(), body.courseId(), body.couponCode(), body.validityOption());
+    }
+
     @PostMapping("/sites/{slug}/purchase")
     public Map<String, Object> purchase(@PathVariable String slug, @RequestBody PurchaseRequest body) {
         if (body.courseId() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Course is required");
         }
-        return storefront.purchase(slug, body.fullName(), body.email(), body.phone(), body.courseId(), body.couponCode(), body.validityOption());
+        return storefront.purchase(
+                slug, body.fullName(), body.email(), body.phone(), body.courseId(), body.couponCode(), body.validityOption(), body.otp());
     }
 
     @PostMapping("/sites/{slug}/purchase/confirm")

@@ -9,6 +9,7 @@ export type SessionUser = {
   role: string;
   organizationId: string;
   packageTier: string;
+  emailVerified?: boolean;
   accessStatus?: string;
   paymentStatus?: string;
   orgSlug?: string;

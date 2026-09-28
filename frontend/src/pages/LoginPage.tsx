@@ -1,7 +1,7 @@
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { api, clearPlatformSession } from "../api";
-import { useAuth } from "../auth";
+import { useAuth, type SessionUser } from "../auth";
 import { PACKS, type PackId } from "../packs";
 import { NiyamstackLogo } from "../brand/NiyamstackLogo";
 
@@ -265,7 +265,7 @@ function EmailLoginView() {
 }
 
 function SignupView() {
-  const { loginWithOtp } = useAuth();
+  const { applySession } = useAuth();
   const [instituteName, setInstituteName] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -304,7 +304,11 @@ function SignupView() {
     setBusy(true);
     setError(null);
     try {
-      await loginWithOtp(phone, otp);
+      const res = await api<{ token: string; user: SessionUser }>("/api/auth/signup/verify", {
+        method: "POST",
+        body: JSON.stringify({ phone, otp }),
+      });
+      applySession(res);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -315,7 +319,7 @@ function SignupView() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-navy">Create your institute</h1>
-      <p className="mt-2 text-sm text-slate-500">Create your institute. Students will later log in on your own website.</p>
+      <p className="mt-2 text-sm text-slate-500">We verify your email before creating the institute. Students later log in on your website.</p>
       {!sent ? (
         <form className="mt-6 space-y-3" onSubmit={createInstitute}>
           <Field label="Institute name" value={instituteName} onChange={setInstituteName} />
@@ -351,18 +355,23 @@ function SignupView() {
           <p className="text-xs text-slate-400">Password must be 10+ characters with upper, lower, digit, and special character.</p>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy}>
-            {busy ? "Creating…" : "Create institute"}
+            {busy ? "Sending code…" : "Send email verification"}
           </button>
         </form>
       ) : (
         <form className="mt-6" onSubmit={verify}>
-          <p className="text-sm text-slate-500">Verify your mobile to open your institute.</p>
+          <p className="text-sm text-slate-500">
+            Enter the code sent to {sent.emailMasked || "your email"}. Your institute is created only after this step.
+          </p>
           {sent.devOtp && <p className="mt-1 text-xs text-slate-400">Local OTP: {sent.devOtp}</p>}
           <label className="mt-4 block text-sm font-medium text-navy">OTP</label>
           <input className="mt-1 w-full rounded-lg border border-line px-3 py-2.5 tracking-[0.4em]" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value)} />
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
           <button className="mt-6 w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
-            {busy ? "Opening…" : "Verify OTP & open"}
+            {busy ? "Creating…" : "Verify email & create institute"}
+          </button>
+          <button type="button" className="mt-3 w-full text-sm text-brand" disabled={busy} onClick={() => { setSent(null); setOtp(""); }}>
+            Change details
           </button>
         </form>
       )}

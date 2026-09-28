@@ -46,6 +46,7 @@ public class AuthController {
     private final Environment environment;
     private final boolean demoAliases;
     private final ConcurrentHashMap<String, Integer> ipFailures = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, PendingSignup> pendingSignups = new ConcurrentHashMap<>();
 
     public AuthController(
             Store store,
@@ -90,6 +91,8 @@ public class AuthController {
             @NotBlank String password,
             String productPack
     ) {}
+
+    public record SignupVerifyRequest(@NotBlank String phone, @NotBlank String otp) {}
 
     public record ForgotEmailRequest(@NotBlank @Email String email) {}
 
@@ -188,10 +191,12 @@ public class AuthController {
     }
 
     @PostMapping("/signup")
-    @Transactional
     public Map<String, Object> signup(@Valid @RequestBody SignupRequest body) {
         String email = body.email().trim().toLowerCase();
         String phone = requireMobile(body.phone());
+        if (!mail.canDeliver(email)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a real email address. We send a verification code there.");
+        }
         if (store.findUserByEmail(email) != null) {
             throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
         }
@@ -199,47 +204,84 @@ public class AuthController {
             throw new ApiException(HttpStatus.CONFLICT, "An account with this mobile already exists");
         }
         PasswordPolicy.validate(body.password());
+        if (body.instituteName() == null || body.instituteName().isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Institute name is required");
+        }
+        if (body.fullName() == null || body.fullName().isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Your name is required");
+        }
+        pendingSignups.put(phone, new PendingSignup(
+                body.instituteName().trim(),
+                body.fullName().trim(),
+                email,
+                phone,
+                encoder.encode(body.password()),
+                com.niyamstack.propel.catalog.Packs.normalizePack(body.productPack()),
+                Instant.now().plusSeconds(600)
+        ));
+        var issued = otp.issue(phone, OtpService.SIGNUP);
+        Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
+        if (mail.live() && mail.canDeliver(email)) {
+            mail.sendOtp(email, OtpService.SIGNUP, issued.code());
+        } else if (!otp.reveal()) {
+            out.put("devOtp", issued.code());
+        }
+        out.put("emailMasked", maskEmail(email));
+        out.put("channel", "email");
+        out.put("status", "otp_sent");
+        return out;
+    }
+
+    @PostMapping("/signup/verify")
+    @Transactional
+    public Map<String, Object> signupVerify(@Valid @RequestBody SignupVerifyRequest body) {
+        String phone = requireMobile(body.phone());
+        PendingSignup pending = pendingSignups.get(phone);
+        if (pending == null || pending.expires().isBefore(Instant.now())) {
+            pendingSignups.remove(phone);
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Signup expired. Start again and verify your email.");
+        }
+        otp.verify(phone, OtpService.SIGNUP, body.otp());
+        pendingSignups.remove(phone);
+        if (store.findUserByEmail(pending.email()) != null) {
+            throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+        }
+        if (store.findUserByPhone(phone) != null) {
+            throw new ApiException(HttpStatus.CONFLICT, "An account with this mobile already exists");
+        }
 
         Organization org = new Organization();
-        org.setName(body.instituteName().trim());
-        org.setLegalName(body.instituteName().trim());
-        org.setEmail(email);
+        org.setName(pending.instituteName());
+        org.setLegalName(pending.instituteName());
+        org.setEmail(pending.email());
         org.setPhone(phone);
         org.setPackageTier("STARTER");
-        org.setProductPack(com.niyamstack.propel.catalog.Packs.normalizePack(body.productPack()));
+        org.setProductPack(pending.productPack());
         org.setAccessStatus("DEMO");
         org.setPaymentStatus("UNPAID");
         org.setModulesCsv(com.niyamstack.propel.catalog.Packs.modulesCsvForPack(org.getProductPack()));
-        org.setSlug(uniqueSlug(body.instituteName()));
+        org.setSlug(uniqueSlug(pending.instituteName()));
         org.setBrandPrimary("#0078f0");
         org.setBrandSecondary("#071a33");
         org = store.save(org);
 
         AppUser user = new AppUser();
         user.setOrganizationId(org.getId());
-        user.setFullName(body.fullName().trim());
-        user.setEmail(email);
+        user.setFullName(pending.fullName());
+        user.setEmail(pending.email());
         user.setPhone(phone);
-        user.setPasswordHash(encoder.encode(body.password()));
+        user.setPasswordHash(pending.passwordHash());
         user.setRole(Roles.OWNER);
         user.setActive(true);
         user.setPasswordChangedAt(Instant.now());
-        user.setEmailVerified(false);
+        user.setEmailVerified(true);
         user = store.save(user);
         foundation.seedStarter(org.getId(), user.getId());
-        audit.log("SIGNUP", "Organization", org.getId(), email);
-        var issued = otp.issue(phone, OtpService.LOGIN);
-        Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
-        if (mail.live() && mail.canDeliver(email)) {
-            mail.sendOtp(email, OtpService.LOGIN, issued.code());
-            mail.sendWelcome(email, user.getFullName());
-        } else if (!otp.reveal()) {
-            // Local/demo without SMTP: still return the code so signup can complete.
-            out.put("devOtp", issued.code());
+        audit.log("SIGNUP", "Organization", org.getId(), pending.email());
+        if (mail.live() && mail.canDeliver(pending.email())) {
+            mail.sendWelcome(pending.email(), user.getFullName());
         }
-        out.put("emailMasked", maskEmail(email));
-        out.put("channel", "email");
-        return out;
+        return sessions.issue(user);
     }
 
     @PostMapping("/forgot/otp")
@@ -313,14 +355,17 @@ public class AuthController {
         }
         if (body != null && body.email() != null && !body.email().isBlank()) {
             String email = body.email().trim().toLowerCase();
-            if (!email.contains("@")) {
+            if (!email.contains("@") || !mail.canDeliver(email)) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a valid email");
             }
             AppUser other = store.findUserByEmail(email);
             if (other != null && !other.getId().equals(user.getId())) {
                 throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
             }
-            user.setEmail(email);
+            if (!email.equalsIgnoreCase(user.getEmail() == null ? "" : user.getEmail())) {
+                user.setEmail(email);
+                user.setEmailVerified(false);
+            }
         }
         if (body != null && body.phone() != null && !body.phone().isBlank()) {
             String phone = requireMobile(body.phone());
@@ -473,4 +518,14 @@ public class AuthController {
     private static String clientIp(jakarta.servlet.http.HttpServletRequest request) {
         return request.getRemoteAddr() == null ? "unknown" : request.getRemoteAddr();
     }
+
+    private record PendingSignup(
+            String instituteName,
+            String fullName,
+            String email,
+            String phone,
+            String passwordHash,
+            String productPack,
+            Instant expires
+    ) {}
 }
