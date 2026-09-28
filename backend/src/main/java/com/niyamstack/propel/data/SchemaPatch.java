@@ -774,6 +774,7 @@ public class SchemaPatch {
                 "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS razorpay_fund_account_id VARCHAR(80)",
                 "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS grace_ends_at TIMESTAMP WITH TIME ZONE",
                 "ALTER TABLE payout_batches ADD COLUMN IF NOT EXISTS failure_reason VARCHAR(500)",
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_payout_batches_org_period ON payout_batches (organization_id, period_start, period_end)",
                 """
                 CREATE TABLE IF NOT EXISTS otp_challenges (
                     id UUID PRIMARY KEY,

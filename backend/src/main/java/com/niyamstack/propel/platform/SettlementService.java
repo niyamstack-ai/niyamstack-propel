@@ -96,6 +96,13 @@ public class SettlementService {
             net = list;
         } else {
             platformFee = gross.multiply(pct).setScale(2, RoundingMode.HALF_UP);
+            // Tiny ABSORB checkouts can HALF_UP to ₹0; keep a minimum 1-paisa fee when % > 0.
+            if (platformFee.signum() == 0 && pct.signum() > 0) {
+                platformFee = new BigDecimal("0.01");
+            }
+            if (platformFee.compareTo(gross) > 0) {
+                platformFee = gross;
+            }
             net = gross.subtract(platformFee);
         }
         SettlementEntry entry = new SettlementEntry();
@@ -148,11 +155,11 @@ public class SettlementService {
         return runWeeklyPayoutsInternal();
     }
 
-    /** Cron / internal entry — no auth principal required. */
+    /** Cron / internal entry — no auth principal required. Settles prior Mon–Sun IST week. */
     @Transactional
     public List<Map<String, Object>> runWeeklyPayoutsInternal() {
         LocalDate end = LocalDate.now(IST).with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY));
-        LocalDate start = end.minusDays(6);
+        LocalDate start = end.minusDays(6); // Monday of that week
         List<Map<String, Object>> created = new ArrayList<>();
         for (Organization org : store.listOrganizations()) {
             releaseHoldsForOrg(org.getId());
@@ -189,6 +196,11 @@ public class SettlementService {
 
     @Transactional
     public Map<String, Object> buildBatch(Organization org, LocalDate start, LocalDate end) {
+        boolean periodExists = store.list(PayoutBatch.class, org.getId()).stream()
+                .anyMatch(b -> start.equals(b.getPeriodStart()) && end.equals(b.getPeriodEnd()));
+        if (periodExists) {
+            return null;
+        }
         List<SettlementEntry> pending = store.list(SettlementEntry.class, org.getId()).stream()
                 .filter(e -> "PENDING".equalsIgnoreCase(e.getStatus()))
                 .filter(e -> e.getCreatedAt() != null)

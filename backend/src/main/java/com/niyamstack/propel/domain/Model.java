@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -843,7 +844,9 @@ public final class Model {
         private String notes;
     }
 
-    @Entity(name = "PayoutBatch") @Table(name = "payout_batches") @Getter @Setter
+    @Entity(name = "PayoutBatch")
+    @Table(name = "payout_batches", uniqueConstraints = @UniqueConstraint(name = "uk_payout_batches_org_period", columnNames = {"organization_id", "period_start", "period_end"}))
+    @Getter @Setter
     public static class PayoutBatch extends TenantEntity {
         private LocalDate periodStart;
         private LocalDate periodEnd;

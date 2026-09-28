@@ -17,7 +17,7 @@ public class SettlementJob {
         this.settlements = settlements;
     }
 
-    /** Every Monday 06:15 IST — settle the previous Sun–Sat week. */
+    /** Every Monday 06:15 IST — settle the previous Mon–Sun week. */
     @Scheduled(cron = "0 15 6 * * MON", zone = "Asia/Kolkata")
     public void weekly() {
         try {
