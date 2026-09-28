@@ -71,7 +71,14 @@ function MyFees() {
       {dueTotal > 0 && <p className="text-sm font-medium text-navy">Total due ₹{dueTotal}</p>}
       <ErrorText error={error} />
       <Card title="Invoices">
-        {(invoices.data ?? []).length === 0 && <p className="text-sm text-slate-500">No invoices yet.</p>}
+        {(invoices.data ?? []).length === 0 && !invoices.loading && (
+          <div className="mb-3 rounded-xl border border-dashed border-line bg-mist/40 px-4 py-6 text-center">
+            <p className="font-medium text-navy">No invoices yet</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Fee invoices appear here after the institute raises a due or you buy a paid course. This Fees page stays ready — check Notices if you expected a bill.
+            </p>
+          </div>
+        )}
         <Table
           columns={["Invoice", "For", "Amount", "Due", "Status", ""]}
           rows={(invoices.data ?? []).map((inv) => [
@@ -103,8 +110,13 @@ function MyFees() {
         />
       </Card>
       <Card title="Receipts">
-        {(receipts.data ?? []).length === 0 && (payments.data ?? []).length === 0 && (
-          <p className="text-sm text-slate-500">No receipts yet.</p>
+        {(receipts.data ?? []).length === 0 && (payments.data ?? []).length === 0 && !receipts.loading && (
+          <div className="rounded-xl border border-dashed border-line bg-mist/40 px-4 py-6 text-center">
+            <p className="font-medium text-navy">No receipts yet</p>
+            <p className="mt-1 text-sm text-slate-500">
+              After you pay an invoice or course fee, a printable receipt shows up here. Older payments may still be listed under the institute accounts desk.
+            </p>
+          </div>
         )}
         <ul className="space-y-2 text-sm">
           {(receipts.data ?? []).map((r) => (

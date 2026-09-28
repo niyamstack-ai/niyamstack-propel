@@ -69,7 +69,28 @@ function AuthShell({ children }: { children: ReactNode }) {
 function LoginViews() {
   const [params] = useSearchParams();
   const emailMode = params.get("method") === "email";
-  return emailMode ? <EmailLoginView /> : <OtpLoginView />;
+  const [logoutReason, setLogoutReason] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const reason = sessionStorage.getItem("propel.logoutReason");
+      if (reason) {
+        setLogoutReason(reason);
+        sessionStorage.removeItem("propel.logoutReason");
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  return (
+    <>
+      {logoutReason === "suspended" && (
+        <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+          This institute is suspended, so the session was ended. Contact Niyamstack to restore access, then sign in again.
+        </p>
+      )}
+      {emailMode ? <EmailLoginView /> : <OtpLoginView />}
+    </>
+  );
 }
 
 function OtpLoginView() {

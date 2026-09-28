@@ -188,8 +188,12 @@ public class SettlementService {
     public Map<String, Object> setGlobalPayoutMode(String mode) {
         requirePlatformFinance();
         String normalized = "AUTOMATIC".equalsIgnoreCase(mode) ? "AUTOMATIC" : "MANUAL";
+        if ("AUTOMATIC".equals(normalized) && !razorpayX.live()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "Set RazorpayX keys and account number before switching payouts to AUTOMATIC. Use MANUAL until then.");
+        }
         store.putSetting(SETTING_PAYOUT_MODE, normalized);
-        return Map.of("payoutMode", normalized);
+        return Map.of("payoutMode", normalized, "configured", razorpayX.live());
     }
 
     public Map<String, Object> payoutSettings() {

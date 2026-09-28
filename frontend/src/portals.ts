@@ -56,7 +56,7 @@ function roleNav(role?: string): NavEntry[] {
         { to: "/readiness", label: "Readiness" },
         { to: "/comms", label: "Notices" },
         { to: "/chats", label: "Chats" },
-        { to: "/m", label: "Mobile app" },
+        { to: "/m", label: "Mobile site" },
       ];
     case "PARENT":
       return [
@@ -73,7 +73,7 @@ function roleNav(role?: string): NavEntry[] {
         { to: "/academics", label: "Academics" },
         { to: "/comms", label: "Notices" },
         { to: "/chats", label: "Chats" },
-        { to: "/m", label: "Mobile app" },
+        { to: "/m", label: "Mobile site" },
         { to: "/ess", label: "ESS" },
       ];
     case "PLACEMENT_HEAD":

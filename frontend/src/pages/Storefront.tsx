@@ -413,8 +413,23 @@ export function StorefrontFeesPage() {
 export function StorefrontJobsPage() {
   return (
     <StudentGate>
-      <PlacementPage />
+      <StorefrontJobsGate />
     </StudentGate>
+  );
+}
+
+function StorefrontJobsGate() {
+  const slug = useSlug();
+  const { site } = useSite(slug);
+  return (
+    <div className="space-y-4">
+      {site && site.hasJobs === false && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          This institute has not published campus drives yet. The Jobs page stays available so offers can appear as soon as placement opens a drive.
+        </p>
+      )}
+      <PlacementPage />
+    </div>
   );
 }
 

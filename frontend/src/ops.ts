@@ -20,8 +20,11 @@ function writeBlockedMessage() {
       }
       return null;
     }
-    if (user.accessStatus === "DEMO" || user.accessStatus === "PENDING_APPROVAL") {
-      return "You are not a paid user. Please subscribe to use this facility.";
+    if (user.accessStatus === "PENDING_APPROVAL") {
+      return "Payment received. Waiting for Niyamstack to activate your institute before saving changes.";
+    }
+    if (user.accessStatus === "DEMO") {
+      return "This is a demo workspace. Subscribe so Niyamstack can activate live saving and selling.";
     }
     return null;
   } catch {
@@ -30,7 +33,7 @@ function writeBlockedMessage() {
 }
 
 function rejectDemoWrite(): never {
-  const message = writeBlockedMessage() || "You are not a paid user. Please subscribe to use this facility.";
+  const message = writeBlockedMessage() || "This action is locked until Niyamstack activates your institute.";
   window.dispatchEvent(new CustomEvent("propel:subscribe-required", { detail: message }));
   throw new Error(message);
 }

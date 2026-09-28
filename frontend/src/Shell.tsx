@@ -151,6 +151,7 @@ export function Shell() {
   const portal = portalTitle(user?.role);
   const [menuOpen, setMenuOpen] = useState(false);
   const [subscribeOpen, setSubscribeOpen] = useState(false);
+  const [subscribeMessage, setSubscribeMessage] = useState<string | null>(null);
   const courseChrome = isCourseChrome(location.pathname);
   const websiteBuilder = isWebsiteBuilder(location.pathname);
 
@@ -159,23 +160,41 @@ export function Shell() {
   }, [location.pathname]);
 
   useEffect(() => {
-    function onSubscribe() {
+    function onSubscribe(ev: Event) {
+      const detail = (ev as CustomEvent<string>).detail;
+      setSubscribeMessage(typeof detail === "string" && detail.trim() ? detail : null);
       setSubscribeOpen(true);
     }
     window.addEventListener("propel:subscribe-required", onSubscribe);
     return () => window.removeEventListener("propel:subscribe-required", onSubscribe);
   }, []);
 
+  const access = user?.accessStatus;
+  const lockTitle =
+    access === "PENDING_APPROVAL"
+      ? t("pending_title", "Waiting for activation")
+      : access === "SUSPENDED"
+        ? t("suspended_title", "Institute suspended")
+        : t("subscribe_title", "Demo workspace");
+  const lockBody =
+    subscribeMessage ||
+    (access === "PENDING_APPROVAL"
+      ? t(
+          "pending_body",
+          "Payment was received. You can browse menus; saving stays locked until Niyamstack activates your institute.",
+        )
+      : access === "SUSPENDED"
+        ? t("suspended_body", "This institute is suspended. Contact Niyamstack to restore access.")
+        : t(
+            "subscribe_body",
+            "You can browse every menu in this demo workspace. Saving and selling stay locked until you subscribe and Niyamstack activates the institute.",
+          ));
+
   const subscribeModal = subscribeOpen ? (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onClick={() => setSubscribeOpen(false)}>
       <div className="w-full max-w-md rounded-2xl bg-white p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-bold text-navy">{t("subscribe_title", "You are not a paid user")}</h2>
-        <p className="mt-2 text-sm text-slate-600">
-          {t(
-            "subscribe_body",
-            "Please subscribe and take this facility. You can browse the menus in this demo workspace; saving and other live actions stay locked until Niyamstack activates your institute.",
-          )}
-        </p>
+        <h2 className="text-lg font-bold text-navy">{lockTitle}</h2>
+        <p className="mt-2 text-sm text-slate-600">{lockBody}</p>
         <button type="button" className="mt-5 rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white" onClick={() => setSubscribeOpen(false)}>
           {t("ok", "OK")}
         </button>

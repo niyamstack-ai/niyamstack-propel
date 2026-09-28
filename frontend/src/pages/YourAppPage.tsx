@@ -90,15 +90,15 @@ export function YourAppPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-navy">Student and faculty apps</h1>
+          <h1 className="text-2xl font-bold text-navy">Student and faculty mobile site</h1>
           <p className="text-sm text-slate-500">
-            Phone apps for attendance, content, fees, notices, and marking class. Not a website shortcut, and not a Play Store listing unless Niyamstack publishes one.
+            Phone-shaped web app (/m) for attendance, content, fees, notices, and marking class. Students can also install the public site as a PWA. This is not a separate Play Store app unless Niyamstack publishes one.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {(
             [
-              ["configure", "Configure App"],
+              ["configure", "Share & install"],
               ["banners", "Manage Banners"],
               ["marketing", "Notifications"],
             ] as const
@@ -117,8 +117,10 @@ export function YourAppPage() {
 
       {tab === "configure" && (
         <div className="grid gap-4 lg:grid-cols-2">
-          <Card title="Configure your app">
-            <p className="mb-3 text-sm text-slate-500">Add basic details to set the theme of your app.</p>
+          <Card title="Share link & mobile site">
+            <p className="mb-3 text-sm text-slate-500">
+              Paste a share URL students use (website, PWA install page, or a store listing if you have one). Branding still comes from Institute settings.
+            </p>
             <p className="text-lg font-semibold text-navy">{org.data?.name || "Your institute"}</p>
             <FormGrid>
               <Field

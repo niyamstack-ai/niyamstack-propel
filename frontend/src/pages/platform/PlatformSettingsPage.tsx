@@ -258,6 +258,10 @@ export function PlatformSettingsPage() {
                     setPayoutBusy(true);
                     try {
                       const next = payoutMode.data?.payoutMode === "AUTOMATIC" ? "MANUAL" : "AUTOMATIC";
+                      if (next === "AUTOMATIC" && payoutMode.data?.configured === false) {
+                        setError("Save RazorpayX keys and account number before switching to AUTOMATIC.");
+                        return;
+                      }
                       await api("/api/platform/settlement/payout-mode", { method: "PUT", body: JSON.stringify({ payoutMode: next }) });
                       payoutMode.reload();
                       setDone(`Payout mode set to ${next}.`);
@@ -349,6 +353,10 @@ export function PlatformSettingsPage() {
                       <td className="py-2 pr-3">₹{Number(batch.netAmount || 0).toLocaleString("en-IN")}</td>
                       <td className="py-2 pr-3">
                         <span className="font-medium">{batch.status}</span>
+                        {batch.mode ? <span className="mt-0.5 block text-xs text-slate-500">Mode: {batch.mode}</span> : null}
+                        {batch.status === "PROCESSING" ? (
+                          <span className="mt-0.5 block text-xs text-amber-800">RazorpayX submitted — wait for settlement before marking paid</span>
+                        ) : null}
                         {batch.failureReason ? <span className="mt-0.5 block text-xs text-slate-500">{batch.failureReason}</span> : null}
                       </td>
                       <td className="py-2">
@@ -360,6 +368,13 @@ export function PlatformSettingsPage() {
                               disabled={payoutBusy}
                               onClick={() =>
                                 void (async () => {
+                                  const processing = batch.status === "PROCESSING";
+                                  const ok = window.confirm(
+                                    processing
+                                      ? `Batch for ${batch.organizationName} is still PROCESSING with RazorpayX. Mark paid only if you confirmed the payout settled outside Propel.`
+                                      : `Mark payout paid for ${batch.organizationName}?`,
+                                  );
+                                  if (!ok) return;
                                   setPayoutBusy(true);
                                   try {
                                     await api(`/api/platform/settlement/batches/${batch.id}/mark-paid`, {
@@ -377,7 +392,7 @@ export function PlatformSettingsPage() {
                                 })()
                               }
                             >
-                              Mark paid
+                              {batch.status === "PROCESSING" ? "Force mark paid" : "Mark paid"}
                             </button>
                           )}
                           {(batch.status === "READY_AUTO" || batch.status === "FAILED_AUTO") && (

@@ -34,6 +34,7 @@ export function DashboardPage() {
 }
 
 function StudentHome() {
+  const { user } = useAuth();
   const me = useApi<Student[]>("/api/students");
   const invoices = useApi<Invoice[]>("/api/invoices");
   const myCourses = useApi<{ id: string }[]>("/api/actions/my-courses");
@@ -44,17 +45,31 @@ function StudentHome() {
   );
   const due = (invoices.data ?? []).filter((i) => i.status !== "PAID" && i.status !== "CANCELLED" && i.status !== "VOID");
   const openDrives = (drives.data ?? []).filter((d) => d.status === "OPEN" || !d.status || d.status === "ACTIVE");
+  const site = user?.orgSlug ? `/s/${user.orgSlug}` : "";
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-navy">Hi {student?.fullName || "there"}</h1>
-        <p className="text-sm text-slate-500">Your classes, fees, and job drives — nothing else.</p>
+        <p className="text-sm text-slate-500">
+          Prefer the student site for learning and fees
+          {site ? (
+            <>
+              {" — "}
+              <Link className="font-semibold text-brand underline" to={`${site}/learn`}>
+                open student site
+              </Link>
+            </>
+          ) : (
+            "."
+          )}{" "}
+          Institute menus below still work.
+        </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
-        <HomeLink to="/courses" title="My courses" text={`${myCourses.data?.length ?? 0} courses`} />
-        <HomeLink to="/fees" title="Pay fees" text={`${due.length} due invoices`} />
-        <HomeLink to="/placement" title="Apply to jobs" text={`${openDrives.length} open drives`} />
-        <HomeLink to="/m" title="Student app" text="Attendance, fees, and notices on a phone" />
+        <HomeLink to={site ? `${site}/learn` : "/courses"} title="My courses" text={`${myCourses.data?.length ?? 0} courses`} />
+        <HomeLink to={site ? `${site}/fees` : "/fees"} title="Pay fees" text={`${due.length} due invoices`} />
+        <HomeLink to={site ? `${site}/jobs` : "/placement"} title="Apply to jobs" text={`${openDrives.length} open drives`} />
+        <HomeLink to="/m" title="Mobile site" text="Phone layout for attendance, fees, and notices" />
       </div>
       {progress.data && (
         <Card title="My progress">
@@ -72,7 +87,7 @@ function StudentHome() {
                 <span>
                   {i.invoiceNo} — {formatInr(i.amount)}
                 </span>
-                <Link className="font-medium text-brand hover:underline" to="/fees">
+                <Link className="font-medium text-brand hover:underline" to={site ? `${site}/fees` : "/fees"}>
                   Pay
                 </Link>
               </li>

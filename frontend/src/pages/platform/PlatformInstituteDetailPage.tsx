@@ -133,7 +133,12 @@ export function PlatformInstituteDetailPage() {
       <div>
         <h1 className="text-2xl font-bold text-navy">{org?.name || "Institute"}</h1>
         <p className="mt-1 text-sm text-slate-500">
-          {org?.email} · {org?.slug || "no slug"} · access {org?.accessStatus} · payment {org?.paymentStatus}
+          {org?.email} · {org?.slug || "no slug"}
+        </p>
+        <p className="mt-1 text-sm text-slate-600">
+          Access: <span className="font-medium text-navy">{prettyAccess(org?.accessStatus)}</span>
+          {" · "}
+          Payment: <span className="font-medium text-navy">{prettyPayment(org?.paymentStatus)}</span>
         </p>
       </div>
       {rec.error && <p className="text-sm text-red-600">{rec.error}</p>}
@@ -141,6 +146,9 @@ export function PlatformInstituteDetailPage() {
       {notice && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p>}
       {(canMarkPaid || canApprove || canSuspend) && (
       <Card title="Lifecycle">
+        <p className="mb-3 text-sm text-slate-500">
+          DEMO = browse-only until paid. PENDING_APPROVAL = paid, waiting for Approve. ACTIVE = live. SUSPENDED = all staff locked out until Restore.
+        </p>
         <div className="flex flex-wrap gap-2">
           {canMarkPaid && (
             <PrimaryButton disabled={saving || !!acting} onClick={() => action("mark-paid", "paid", paid ? "Already marked paid." : "Payment marked received. You can now approve.")}>
@@ -282,4 +290,32 @@ export function PlatformInstituteDetailPage() {
       )}
     </div>
   );
+}
+
+function prettyAccess(status?: string) {
+  switch ((status || "").toUpperCase()) {
+    case "DEMO":
+      return "Demo (browse-only)";
+    case "PENDING_APPROVAL":
+      return "Pending approval";
+    case "ACTIVE":
+      return "Active";
+    case "SUSPENDED":
+      return "Suspended";
+    default:
+      return status || "—";
+  }
+}
+
+function prettyPayment(status?: string) {
+  switch ((status || "").toUpperCase()) {
+    case "UNPAID":
+      return "Unpaid";
+    case "PAID":
+      return "Paid";
+    case "FAILED":
+      return "Failed";
+    default:
+      return status || "—";
+  }
 }

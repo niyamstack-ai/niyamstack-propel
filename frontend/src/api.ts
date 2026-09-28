@@ -60,8 +60,13 @@ function expireClientSession(path: string) {
 
 function failHttp(path: string, status: number, message: string): never {
   if (/suspended/i.test(message) && !isPublicAuthPath(path)) {
+    try {
+      sessionStorage.setItem("propel.logoutReason", "suspended");
+    } catch {
+      /* ignore */
+    }
     expireClientSession(path);
-  } else if (/not a paid user|subscribe to use this facility/i.test(message)) {
+  } else if (/not a paid user|subscribe to use this facility|demo workspace|waiting for niyamstack|payment received/i.test(message)) {
     window.dispatchEvent(new CustomEvent("propel:subscribe-required", { detail: message }));
   } else {
     const sessionGone =

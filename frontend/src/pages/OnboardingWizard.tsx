@@ -70,9 +70,16 @@ export function OnboardingWizard() {
           );
         })}
       </ol>
-      {done === total && (
+      {done === total ? (
         <div className="mt-4">
           <PrimaryButton onClick={() => void dismiss()}>Mark setup complete</PrimaryButton>
+        </div>
+      ) : (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button type="button" className="text-sm font-medium text-slate-600 underline" onClick={() => void dismiss()}>
+            I&apos;ll finish later
+          </button>
+          <p className="text-xs text-slate-400">Demo institutes can dismiss this checklist even if Publish website is still locked.</p>
         </div>
       )}
     </Card>

@@ -93,7 +93,7 @@ const ICONS: Record<SectionType, LucideIcon> = {
 
 export function WebsitePage() {
   const { user } = useAuth();
-  const demoLocked = user?.accessStatus === "DEMO";
+  const demoLocked = user?.accessStatus === "DEMO" || user?.accessStatus === "PENDING_APPROVAL" || user?.accessStatus === "SUSPENDED";
   const pages = useApi<Page[]>("/api/website-pages");
   const org = useApi<Org>("/api/organization");
   const courses = useApi<Course[]>("/api/courses");
@@ -383,7 +383,17 @@ export function WebsitePage() {
           </button>
         </nav>
         <p className="text-xs text-slate-400">
-          {demoLocked ? "Demo — subscribe to save" : status === "saving" ? "Saving…" : status === "unsaved" ? "Editing" : "Saved"}
+          {demoLocked
+            ? user?.accessStatus === "PENDING_APPROVAL"
+              ? "Waiting activation — save locked"
+              : user?.accessStatus === "SUSPENDED"
+                ? "Suspended — save locked"
+                : "Demo — subscribe to save"
+            : status === "saving"
+              ? "Saving…"
+              : status === "unsaved"
+                ? "Editing"
+                : "Saved"}
         </p>
         <button type="button" className="rounded-full border border-line px-3 py-1.5 text-sm" onClick={() => setShareOpen(true)}>
           {siteLive ? "Share website" : "Preview link"}
