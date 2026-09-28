@@ -21,16 +21,20 @@ public interface PaymentGateway {
         return "";
     }
 
+    default boolean allowsDemoCheckout() {
+        return false;
+    }
+
     default ChargeResult createOrder(UUID orgId, BigDecimal amount, String reference, Map<String, String> notes) {
         return charge(orgId, amount, "UPI", reference);
     }
 
     default boolean verifyCheckout(UUID orgId, String orderId, String paymentId, String signature) {
-        return !live(orgId);
+        return !live(orgId) && allowsDemoCheckout();
     }
 
     default boolean verifyWebhook(UUID orgId, String payload, String signature) {
-        return !live(orgId);
+        return false;
     }
 
     default String refundPayment(UUID orgId, String razorpayPaymentId, BigDecimal amount) {

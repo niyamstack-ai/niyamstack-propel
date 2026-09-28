@@ -872,6 +872,16 @@ public final class Model {
         private int tries;
     }
 
+    @Entity(name = "PendingFlow") @Table(name = "pending_flows") @Getter @Setter
+    public static class PendingFlow extends BaseEntity {
+        @Column(length = 160, nullable = false)
+        private String flowKey;
+        private String purpose;
+        @Column(columnDefinition = "TEXT", nullable = false)
+        private String payloadJson;
+        private Instant expiresAt;
+    }
+
     @Entity(name = "PlatformRole") @Table(name = "platform_roles") @Getter @Setter
     public static class PlatformRole extends BaseEntity {
         private String name;

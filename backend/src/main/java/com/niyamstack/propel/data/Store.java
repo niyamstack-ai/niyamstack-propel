@@ -5,6 +5,7 @@ import com.niyamstack.propel.domain.BaseEntity;
 import com.niyamstack.propel.domain.Model.AppUser;
 import com.niyamstack.propel.domain.Model.Organization;
 import com.niyamstack.propel.domain.Model.OtpChallenge;
+import com.niyamstack.propel.domain.Model.PendingFlow;
 import com.niyamstack.propel.domain.Model.PlatformRole;
 import com.niyamstack.propel.domain.Model.PlatformSetting;
 import com.niyamstack.propel.domain.Model.PlatformUserRole;
@@ -125,6 +126,28 @@ public class Store {
             return;
         }
         OtpChallenge managed = em.contains(challenge) ? challenge : em.merge(challenge);
+        em.remove(managed);
+    }
+
+    public PendingFlow findPendingFlow(String flowKey) {
+        if (flowKey == null || flowKey.isBlank()) {
+            return null;
+        }
+        List<PendingFlow> rows = em.createQuery(
+                        "select p from PendingFlow p where p.flowKey = :k",
+                        PendingFlow.class)
+                .setParameter("k", flowKey)
+                .setMaxResults(1)
+                .getResultList();
+        return rows.isEmpty() ? null : rows.getFirst();
+    }
+
+    @Transactional
+    public void deletePendingFlow(PendingFlow flow) {
+        if (flow == null) {
+            return;
+        }
+        PendingFlow managed = em.contains(flow) ? flow : em.merge(flow);
         em.remove(managed);
     }
 

@@ -576,6 +576,7 @@ public class DemoSeeder implements CommandLineRunner {
         u.setPasswordHash(encoder.encode("Propel@123"));
         u.setRole(role);
         u.setActive(true);
+        u.setEmailVerified(true);
         return store.save(u);
     }
 
@@ -593,6 +594,7 @@ public class DemoSeeder implements CommandLineRunner {
             owner.setFailedLogins(0);
             owner.setLockedUntil(null);
             owner.setActive(true);
+            owner.setEmailVerified(true);
             if ("owner@aarohan.demo".equalsIgnoreCase(owner.getEmail())) {
                 owner.setEmail("deepak@yopmail.com");
             }
@@ -774,8 +776,9 @@ public class DemoSeeder implements CommandLineRunner {
             if (email.endsWith("@aarohan.demo") || email.endsWith("@leads.demo") || email.endsWith("@demo.test")) {
                 String local = email.substring(0, email.indexOf('@'));
                 user.setEmail(local + "@yopmail.com");
-                store.save(user);
             }
+            user.setEmailVerified(true);
+            store.save(user);
         }
         for (Student student : store.list(Student.class, oid)) {
             String email = student.getEmail() == null ? "" : student.getEmail();

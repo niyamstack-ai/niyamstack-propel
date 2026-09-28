@@ -10,10 +10,13 @@ import com.niyamstack.propel.integration.MailService;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.OtpService;
 import com.niyamstack.propel.security.PasswordPolicy;
+import com.niyamstack.propel.security.PendingFlowService;
 import com.niyamstack.propel.security.Phones;
 import com.niyamstack.propel.security.ResetTokenService;
 import com.niyamstack.propel.security.Roles;
 import com.niyamstack.propel.security.SessionService;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -45,8 +48,9 @@ public class AuthController {
     private final FoundationService foundation;
     private final Environment environment;
     private final boolean demoAliases;
+    private final PendingFlowService pendingFlows;
+    private final ObjectMapper json;
     private final ConcurrentHashMap<String, Integer> ipFailures = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, PendingSignup> pendingSignups = new ConcurrentHashMap<>();
 
     public AuthController(
             Store store,
@@ -58,6 +62,8 @@ public class AuthController {
             MailService mail,
             FoundationService foundation,
             Environment environment,
+            PendingFlowService pendingFlows,
+            ObjectMapper json,
             @Value("${propel.demo-aliases:false}") boolean demoAliases
     ) {
         this.store = store;
@@ -69,6 +75,8 @@ public class AuthController {
         this.mail = mail;
         this.foundation = foundation;
         this.environment = environment;
+        this.pendingFlows = pendingFlows;
+        this.json = json;
         this.demoAliases = demoAliases;
     }
 
@@ -128,6 +136,7 @@ public class AuthController {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid email or password");
         }
         requireOrgAccess(user);
+        requireEmailVerified(user);
         clearLock(user, ip);
         audit.log("LOGIN", "AppUser", user.getId(), user.getEmail());
         return sessions.issue(user);
@@ -147,6 +156,7 @@ public class AuthController {
         }
         ensureActive(user);
         requireOrgAccess(user);
+        requireEmailVerified(user);
         clearLock(user, ip);
         audit.log("LOGIN_PHONE", "AppUser", user.getId(), user.getPhone());
         return sessions.issue(user);
@@ -210,15 +220,18 @@ public class AuthController {
         if (body.fullName() == null || body.fullName().isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Your name is required");
         }
-        pendingSignups.put(phone, new PendingSignup(
-                body.instituteName().trim(),
-                body.fullName().trim(),
-                email,
-                phone,
-                encoder.encode(body.password()),
-                com.niyamstack.propel.catalog.Packs.normalizePack(body.productPack()),
-                Instant.now().plusSeconds(600)
-        ));
+        Map<String, String> payload = new LinkedHashMap<>();
+        payload.put("instituteName", body.instituteName().trim());
+        payload.put("fullName", body.fullName().trim());
+        payload.put("email", email);
+        payload.put("phone", phone);
+        payload.put("passwordHash", encoder.encode(body.password()));
+        payload.put("productPack", com.niyamstack.propel.catalog.Packs.normalizePack(body.productPack()));
+        try {
+            pendingFlows.put("SIGNUP:" + phone, "SIGNUP", json.writeValueAsString(payload), Instant.now().plusSeconds(600));
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not start signup");
+        }
         var issued = otp.issue(phone, OtpService.SIGNUP);
         Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
         if (mail.live() && mail.canDeliver(email)) {
@@ -236,50 +249,59 @@ public class AuthController {
     @Transactional
     public Map<String, Object> signupVerify(@Valid @RequestBody SignupVerifyRequest body) {
         String phone = requireMobile(body.phone());
-        PendingSignup pending = pendingSignups.get(phone);
-        if (pending == null || pending.expires().isBefore(Instant.now())) {
-            pendingSignups.remove(phone);
+        String raw = pendingFlows.getPayload("SIGNUP:" + phone);
+        if (raw == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Signup expired. Start again and verify your email.");
+        }
+        Map<String, String> pending;
+        try {
+            pending = json.readValue(raw, new TypeReference<>() {});
+        } catch (Exception e) {
+            pendingFlows.remove("SIGNUP:" + phone);
             throw new ApiException(HttpStatus.BAD_REQUEST, "Signup expired. Start again and verify your email.");
         }
         otp.verify(phone, OtpService.SIGNUP, body.otp());
-        pendingSignups.remove(phone);
-        if (store.findUserByEmail(pending.email()) != null) {
+        pendingFlows.remove("SIGNUP:" + phone);
+        String email = pending.getOrDefault("email", "");
+        if (store.findUserByEmail(email) != null) {
             throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
         }
         if (store.findUserByPhone(phone) != null) {
             throw new ApiException(HttpStatus.CONFLICT, "An account with this mobile already exists");
         }
 
+        String instituteName = pending.getOrDefault("instituteName", "Institute");
+        String productPack = pending.getOrDefault("productPack", com.niyamstack.propel.catalog.Packs.FULL_OPS);
         Organization org = new Organization();
-        org.setName(pending.instituteName());
-        org.setLegalName(pending.instituteName());
-        org.setEmail(pending.email());
+        org.setName(instituteName);
+        org.setLegalName(instituteName);
+        org.setEmail(email);
         org.setPhone(phone);
         org.setPackageTier("STARTER");
-        org.setProductPack(pending.productPack());
+        org.setProductPack(productPack);
         org.setAccessStatus("DEMO");
         org.setPaymentStatus("UNPAID");
         org.setModulesCsv(com.niyamstack.propel.catalog.Packs.modulesCsvForPack(org.getProductPack()));
-        org.setSlug(uniqueSlug(pending.instituteName()));
+        org.setSlug(uniqueSlug(instituteName));
         org.setBrandPrimary("#0078f0");
         org.setBrandSecondary("#071a33");
         org = store.save(org);
 
         AppUser user = new AppUser();
         user.setOrganizationId(org.getId());
-        user.setFullName(pending.fullName());
-        user.setEmail(pending.email());
+        user.setFullName(pending.getOrDefault("fullName", ""));
+        user.setEmail(email);
         user.setPhone(phone);
-        user.setPasswordHash(pending.passwordHash());
+        user.setPasswordHash(pending.get("passwordHash"));
         user.setRole(Roles.OWNER);
         user.setActive(true);
         user.setPasswordChangedAt(Instant.now());
         user.setEmailVerified(true);
         user = store.save(user);
         foundation.seedStarter(org.getId(), user.getId());
-        audit.log("SIGNUP", "Organization", org.getId(), pending.email());
-        if (mail.live() && mail.canDeliver(pending.email())) {
-            mail.sendWelcome(pending.email(), user.getFullName());
+        audit.log("SIGNUP", "Organization", org.getId(), email);
+        if (mail.live() && mail.canDeliver(email)) {
+            mail.sendWelcome(email, user.getFullName());
         }
         return sessions.issue(user);
     }
@@ -316,6 +338,10 @@ public class AuthController {
         if (user == null || !user.isActive()) {
             return Map.of("status", "sent");
         }
+        // Never send a reset link to an email that has not been verified (blocks takeover after email change).
+        if (!user.isEmailVerified() && !otp.reveal()) {
+            return Map.of("status", "sent");
+        }
         String token = resets.issue(user.getId());
         audit.log("PASSWORD_RESET_EMAIL", "AppUser", user.getId(), user.getEmail());
         if (mail.live() && mail.canDeliver(user.getEmail())) {
@@ -324,7 +350,6 @@ public class AuthController {
         if (otp.reveal()) {
             return Map.of("status", "sent", "resetToken", token);
         }
-        // Without live SMTP in local/dev, return token so reset can be tested.
         if (!mail.live()) {
             return Map.of("status", "sent", "resetToken", token);
         }
@@ -482,6 +507,21 @@ public class AuthController {
         com.niyamstack.propel.security.OrgAccess.requireNotSuspended(org);
     }
 
+    private void requireEmailVerified(AppUser user) {
+        if (user == null || Roles.isPlatform(user.getRole())) {
+            return;
+        }
+        if (user.isEmailVerified()) {
+            return;
+        }
+        // Local reveal mode keeps seed/demo logins usable without SMTP.
+        if (otp.reveal()) {
+            return;
+        }
+        throw new ApiException(HttpStatus.FORBIDDEN,
+                "Verify your email before signing in with a password. Use OTP on mail, or check your inbox for a verification code.");
+    }
+
     private static String requireMobile(String raw) {
         String phone = Phones.normalize(raw);
         if (!Phones.isMobile(phone)) {
@@ -518,14 +558,4 @@ public class AuthController {
     private static String clientIp(jakarta.servlet.http.HttpServletRequest request) {
         return request.getRemoteAddr() == null ? "unknown" : request.getRemoteAddr();
     }
-
-    private record PendingSignup(
-            String instituteName,
-            String fullName,
-            String email,
-            String phone,
-            String passwordHash,
-            String productPack,
-            Instant expires
-    ) {}
 }

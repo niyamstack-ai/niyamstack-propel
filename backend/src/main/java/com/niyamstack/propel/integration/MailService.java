@@ -70,12 +70,12 @@ public class MailService {
     public void sendOtp(String to, String purpose, String code) {
         String label = switch (purpose == null ? "" : purpose) {
             case "RESET" -> "password reset";
-            case "SIGNUP", "VERIFY_EMAIL" -> "email verification";
+            case "SIGNUP", "VERIFY_EMAIL", "STUDENT_REGISTER" -> "email verification";
             default -> "login";
         };
         String title = switch (purpose == null ? "" : purpose) {
             case "RESET" -> "Your password reset code";
-            case "SIGNUP", "VERIFY_EMAIL" -> "Verify your email";
+            case "SIGNUP", "VERIFY_EMAIL", "STUDENT_REGISTER" -> "Verify your email";
             default -> "Your login code";
         };
         String plain = "Your Niyamstack Propel " + label + " code expires in 5 minutes. If you did not request this, ignore this email.";

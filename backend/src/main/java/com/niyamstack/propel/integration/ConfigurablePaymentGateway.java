@@ -5,6 +5,7 @@ import com.niyamstack.propel.data.Store;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +18,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Map;
@@ -28,16 +30,22 @@ public class ConfigurablePaymentGateway implements PaymentGateway {
     private final Store store;
     private final String envKey;
     private final String envSecret;
+    private final boolean allowDemoConfig;
+    private final Environment environment;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(12)).build();
 
     public ConfigurablePaymentGateway(
             Store store,
+            Environment environment,
             @Value("${app.integrations.payments.razorpay-key-id:}") String razorpayKey,
-            @Value("${app.integrations.payments.razorpay-key-secret:}") String razorpaySecret
+            @Value("${app.integrations.payments.razorpay-key-secret:}") String razorpaySecret,
+            @Value("${app.integrations.payments.allow-demo:false}") boolean allowDemo
     ) {
         this.store = store;
+        this.environment = environment;
         this.envKey = razorpayKey == null ? "" : razorpayKey.trim();
         this.envSecret = razorpaySecret == null ? "" : razorpaySecret.trim();
+        this.allowDemoConfig = allowDemo;
     }
 
     @Override
@@ -53,6 +61,15 @@ public class ConfigurablePaymentGateway implements PaymentGateway {
     @Override
     public boolean live(UUID orgId) {
         return keys(orgId) != null;
+    }
+
+    @Override
+    public boolean allowsDemoCheckout() {
+        if (allowDemoConfig) {
+            return true;
+        }
+        return Arrays.stream(environment.getActiveProfiles())
+                .anyMatch(p -> "dev".equalsIgnoreCase(p) || "local".equalsIgnoreCase(p) || "seed".equalsIgnoreCase(p));
     }
 
     @Override
@@ -75,6 +92,10 @@ public class ConfigurablePaymentGateway implements PaymentGateway {
     public ChargeResult createOrder(UUID orgId, BigDecimal amount, String reference, Map<String, String> notes) {
         String[] keys = keys(orgId);
         if (keys == null) {
+            if (!allowsDemoCheckout()) {
+                throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "Online payments are not configured. Add Razorpay keys in Platform settings.");
+            }
             return new ChargeResult(true, "DEMO-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(),
                     "No Razorpay keys yet — recorded in Propel only", Map.of("live", false, "provider", "demo"));
         }
@@ -135,12 +156,9 @@ public class ConfigurablePaymentGateway implements PaymentGateway {
 
     @Override
     public boolean verifyWebhook(UUID orgId, String payload, String signature) {
+        // Only the dashboard webhook secret is valid — never fall back to the API key secret.
         String secret = store.settingValue("razorpayWebhookSecret");
-        if (secret.isBlank()) {
-            String[] keys = keys(orgId);
-            secret = keys == null ? "" : keys[1];
-        }
-        if (secret.isBlank() || payload == null || signature == null) {
+        if (secret.isBlank() || payload == null || signature == null || signature.isBlank()) {
             return false;
         }
         return hmac(secret, payload).equalsIgnoreCase(signature.trim());
@@ -207,6 +225,9 @@ public class ConfigurablePaymentGateway implements PaymentGateway {
     }
 
     private static String extract(String json, String key) {
+        if (json == null) {
+            return "";
+        }
         String needle = "\"" + key + "\":\"";
         int i = json.indexOf(needle);
         if (i < 0) {

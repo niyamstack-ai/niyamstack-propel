@@ -218,7 +218,11 @@ public class PublicController {
         try {
             UUID orgId = UUID.fromString(orgRaw);
             UUID invoiceId = UUID.fromString(invoiceRaw);
-            if (payments.live(orgId) && !payments.verifyWebhook(orgId, body, signature)) {
+            // Never mark paid via webhook without live keys + valid webhook signature.
+            if (!payments.live(orgId)) {
+                return Map.of("ok", true);
+            }
+            if (!payments.verifyWebhook(orgId, body, signature)) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid Razorpay webhook signature");
             }
             String orderId = firstNonBlank(extractJson(body, "order_id"), extractJson(body, "orderId"));

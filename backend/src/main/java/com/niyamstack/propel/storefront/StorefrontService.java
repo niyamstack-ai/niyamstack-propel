@@ -34,11 +34,14 @@ import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.LicenseService;
 import com.niyamstack.propel.security.OrgAccess;
 import com.niyamstack.propel.security.OtpService;
+import com.niyamstack.propel.security.PendingFlowService;
 import com.niyamstack.propel.security.Phones;
 import com.niyamstack.propel.security.PropelUser;
 import com.niyamstack.propel.security.Roles;
 import com.niyamstack.propel.security.SessionService;
 import com.niyamstack.propel.sis.StudentAccountService;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -56,7 +59,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -73,12 +75,13 @@ public class StorefrontService {
     private final GrowService grow;
     private final SettlementService settlements;
     private final MailService mailService;
-    private final ConcurrentHashMap<String, PendingRegister> pendingRegisters = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, PendingPurchase> pendingPurchases = new ConcurrentHashMap<>();
+    private final PendingFlowService pendingFlows;
+    private final ObjectMapper json;
 
     public StorefrontService(Store store, PaymentGateway payments, PasswordEncoder encoder, SessionService sessions,
                              EventHook hooks, FeeService fees, OtpService otp, StudentAccountService studentAccounts,
-                             LicenseService licenses, GrowService grow, SettlementService settlements, MailService mailService) {
+                             LicenseService licenses, GrowService grow, SettlementService settlements, MailService mailService,
+                             PendingFlowService pendingFlows, ObjectMapper json) {
         this.store = store;
         this.payments = payments;
         this.encoder = encoder;
@@ -91,6 +94,8 @@ public class StorefrontService {
         this.grow = grow;
         this.settlements = settlements;
         this.mailService = mailService;
+        this.pendingFlows = pendingFlows;
+        this.json = json;
     }
 
     public Organization orgBySlug(String slug) {
@@ -209,16 +214,23 @@ public class StorefrontService {
         }
         String mail = ctx.email();
         String phone = ctx.phone();
-        pendingPurchases.put(phone, new PendingPurchase(
-                ctx.org().getId(),
-                ctx.fullName(),
-                mail,
-                phone,
-                courseId,
-                couponCode,
-                validityOption,
-                Instant.now().plusSeconds(600)
-        ));
+        Map<String, String> payload = new LinkedHashMap<>();
+        payload.put("orgId", ctx.org().getId().toString());
+        payload.put("fullName", ctx.fullName());
+        payload.put("email", mail);
+        payload.put("phone", phone);
+        payload.put("courseId", courseId.toString());
+        if (couponCode != null) {
+            payload.put("couponCode", couponCode);
+        }
+        if (validityOption != null) {
+            payload.put("validityOption", validityOption);
+        }
+        try {
+            pendingFlows.put("PURCHASE:" + phone, "PURCHASE", json.writeValueAsString(payload), Instant.now().plusSeconds(600));
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not start purchase verification");
+        }
         var issued = otp.issue(phone, OtpService.VERIFY_EMAIL);
         Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
         if (mailService.live() && mailService.canDeliver(mail)) {
@@ -252,19 +264,32 @@ public class StorefrontService {
         AppUser user = ctx.user();
         boolean needsVerify = user == null || !user.isEmailVerified();
         if (needsVerify) {
-            PendingPurchase pending = pendingPurchases.get(phone);
-            if (pending == null || pending.expires().isBefore(Instant.now()) || !org.getId().equals(pending.orgId())) {
+            String raw = pendingFlows.getPayload("PURCHASE:" + phone);
+            if (raw == null) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "Verify your email first. Request a code, then continue.");
             }
-            if (!mail.equalsIgnoreCase(pending.email()) || !courseId.equals(pending.courseId())) {
+            Map<String, String> pending;
+            try {
+                pending = json.readValue(raw, new TypeReference<>() {});
+            } catch (Exception e) {
+                pendingFlows.remove("PURCHASE:" + phone);
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Verify your email first. Request a code, then continue.");
+            }
+            if (!org.getId().toString().equals(pending.get("orgId"))
+                    || !mail.equalsIgnoreCase(pending.getOrDefault("email", ""))
+                    || !courseId.toString().equals(pending.getOrDefault("courseId", ""))) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "Details changed. Request a new email code.");
             }
             otp.verify(phone, OtpService.VERIFY_EMAIL, otpCode);
-            pendingPurchases.remove(phone);
-            fullName = pending.fullName();
-            mail = pending.email();
-            couponCode = pending.couponCode() != null ? pending.couponCode() : couponCode;
-            validityOption = pending.validityOption() != null ? pending.validityOption() : validityOption;
+            pendingFlows.remove("PURCHASE:" + phone);
+            fullName = pending.getOrDefault("fullName", fullName);
+            mail = pending.getOrDefault("email", mail);
+            if (pending.get("couponCode") != null) {
+                couponCode = pending.get("couponCode");
+            }
+            if (pending.get("validityOption") != null) {
+                validityOption = pending.get("validityOption");
+            }
         }
 
         if (user == null) {
@@ -340,6 +365,7 @@ public class StorefrontService {
 
         if (price.signum() == 0) {
             enroll(org, student, course, invoice, applied);
+            redeemCoupon(applied);
             hooks.fire(org.getId(), "course.enrolled", Map.of("courseId", course.getId(), "price", 0));
             Receipt complimentary = complimentaryReceipt(org, invoice);
             return purchaseSession(user, course, invoice, complimentary, false);
@@ -358,8 +384,8 @@ public class StorefrontService {
             pending.setStatus("PENDING");
             store.save(pending);
             if (applied != null) {
-                applied.setRedeemedCount((applied.getRedeemedCount() == null ? 0 : applied.getRedeemedCount()) + 1);
-                store.save(applied);
+                invoice.setNotes("coupon:" + applied.getCode());
+                store.save(invoice);
             }
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("checkout", true);
@@ -373,6 +399,11 @@ public class StorefrontService {
             out.put("phone", phone);
             out.put("loginHint", loginHint(phone));
             return out;
+        }
+
+        if (!payments.allowsDemoCheckout()) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Online payments are not configured. Add Razorpay keys in Platform settings.");
         }
 
         PaymentGateway.ChargeResult charge = payments.charge(org.getId(), price, "UPI", invoice.getInvoiceNo());
@@ -400,11 +431,9 @@ public class StorefrontService {
         receipt.setAmount(price);
         receipt.setIssuedAt(Instant.now());
         store.save(receipt);
-        if (applied != null) {
-            applied.setRedeemedCount((applied.getRedeemedCount() == null ? 0 : applied.getRedeemedCount()) + 1);
-            store.save(applied);
-        }
+        redeemCoupon(applied);
         enroll(org, student, course, invoice, applied);
+        settlements.recordCapture(org, payment, invoice.getId(), student.getId(), course.getId());
         hooks.fire(org.getId(), "course.purchased", Map.of("courseId", course.getId(), "amount", price));
         return purchaseSession(user, course, invoice, receipt, false);
     }
@@ -420,6 +449,7 @@ public class StorefrontService {
         Student student = store.getOwned(Student.class, invoice.getStudentId(), org.getId());
         Course course = store.getOwned(Course.class, invoice.getCourseId(), org.getId());
         enroll(org, student, course, invoice, null);
+        redeemCouponFromInvoice(org, invoice);
         AppUser user = store.get(AppUser.class, student.getUserId());
         hooks.fire(org.getId(), "course.purchased", Map.of("courseId", course.getId(), "amount", invoice.getAmount()));
         Receipt receipt = latestReceipt(org.getId(), invoice.getId());
@@ -993,7 +1023,7 @@ public class StorefrontService {
         if (existing != null) {
             throw new ApiException(HttpStatus.CONFLICT, "An account already exists for this mobile. Log in instead.");
         }
-        if (email == null || email.isBlank() || !email.contains("@") || email.toLowerCase().endsWith(".local")) {
+        if (email == null || email.isBlank() || !email.contains("@") || !mailService.canDeliver(email)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a real email. OTP is sent to email.");
         }
         String mail = email.trim().toLowerCase();
@@ -1006,11 +1036,22 @@ public class StorefrontService {
                 throw new ApiException(HttpStatus.NOT_FOUND, "Course not found");
             }
         }
-        pendingRegisters.put(phone, new PendingRegister(org.getId(), fullName.trim(), mail, courseId, Instant.now().plusSeconds(300)));
-        var issued = otp.issue(phone, OtpService.SIGNUP);
+        Map<String, String> payload = new LinkedHashMap<>();
+        payload.put("orgId", org.getId().toString());
+        payload.put("fullName", fullName.trim());
+        payload.put("email", mail);
+        if (courseId != null) {
+            payload.put("courseId", courseId.toString());
+        }
+        try {
+            pendingFlows.put("REGISTER:" + phone, "STUDENT_REGISTER", json.writeValueAsString(payload), Instant.now().plusSeconds(600));
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not start registration");
+        }
+        var issued = otp.issue(phone, OtpService.STUDENT_REGISTER);
         Map<String, Object> out = new LinkedHashMap<>(otp.publicIssue(issued));
         if (mailService.live() && mailService.canDeliver(mail)) {
-            mailService.sendOtp(mail, OtpService.SIGNUP, issued.code());
+            mailService.sendOtp(mail, OtpService.STUDENT_REGISTER, issued.code());
         } else if (!otp.reveal()) {
             out.put("devOtp", issued.code());
         }
@@ -1024,22 +1065,33 @@ public class StorefrontService {
         Organization org = liveOrg(slug);
         licenses.requireStudentCapacity(org);
         String phone = StudentAccountService.requireMobile(phoneRaw);
-        PendingRegister pending = pendingRegisters.get(phone);
-        if (pending == null || pending.expires().isBefore(Instant.now()) || !org.getId().equals(pending.orgId())) {
+        String raw = pendingFlows.getPayload("REGISTER:" + phone);
+        if (raw == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Request a new OTP, then try again");
         }
-        otp.verify(phone, OtpService.SIGNUP, code);
-        pendingRegisters.remove(phone);
+        Map<String, String> pending;
+        try {
+            pending = json.readValue(raw, new TypeReference<>() {});
+        } catch (Exception e) {
+            pendingFlows.remove("REGISTER:" + phone);
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Request a new OTP, then try again");
+        }
+        if (!org.getId().toString().equals(pending.get("orgId"))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Request a new OTP, then try again");
+        }
+        otp.verify(phone, OtpService.STUDENT_REGISTER, code);
+        pendingFlows.remove("REGISTER:" + phone);
         if (store.findUserByPhone(phone) != null) {
             throw new ApiException(HttpStatus.CONFLICT, "An account already exists for this mobile. Log in instead.");
         }
-        if (store.findUserByEmail(pending.email()) != null) {
+        String email = pending.getOrDefault("email", "");
+        if (store.findUserByEmail(email) != null) {
             throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
         }
         AppUser user = new AppUser();
         user.setOrganizationId(org.getId());
-        user.setFullName(pending.fullName());
-        user.setEmail(pending.email());
+        user.setFullName(pending.getOrDefault("fullName", ""));
+        user.setEmail(email);
         user.setPhone(phone);
         user.setPasswordHash(encoder.encode(UUID.randomUUID().toString()));
         user.setRole(Roles.STUDENT);
@@ -1057,10 +1109,18 @@ public class StorefrontService {
         student.setStudentCode("STU-" + System.currentTimeMillis() % 1_000_000);
         student.setStatus("ENROLLED");
         student.setEnrollmentDate(LocalDate.now());
-        student.setCourseId(pending.courseId());
+        UUID courseId = null;
+        if (pending.get("courseId") != null && !pending.get("courseId").isBlank()) {
+            try {
+                courseId = UUID.fromString(pending.get("courseId"));
+            } catch (Exception ignored) {
+                courseId = null;
+            }
+        }
+        student.setCourseId(courseId);
         student = store.save(student);
-        if (pending.courseId() != null) {
-            Course course = store.getOwned(Course.class, pending.courseId(), org.getId());
+        if (courseId != null) {
+            Course course = store.getOwned(Course.class, courseId, org.getId());
             if ("FREE".equalsIgnoreCase(course.getCourseType())) {
                 studentAccounts.enrollIfCourse(org.getId(), student, course.getId(), "WEBSITE");
             }
@@ -1220,16 +1280,25 @@ public class StorefrontService {
             AppUser user
     ) {}
 
-    private record PendingPurchase(
-            UUID orgId,
-            String fullName,
-            String email,
-            String phone,
-            UUID courseId,
-            String couponCode,
-            String validityOption,
-            Instant expires
-    ) {}
+    private void redeemCoupon(Coupon applied) {
+        if (applied == null) {
+            return;
+        }
+        applied.setRedeemedCount((applied.getRedeemedCount() == null ? 0 : applied.getRedeemedCount()) + 1);
+        store.save(applied);
+    }
 
-    private record PendingRegister(UUID orgId, String fullName, String email, UUID courseId, Instant expires) {}
+    private void redeemCouponFromInvoice(Organization org, Invoice invoice) {
+        if (invoice == null || invoice.getNotes() == null || !invoice.getNotes().startsWith("coupon:")) {
+            return;
+        }
+        String code = invoice.getNotes().substring("coupon:".length()).trim();
+        if (code.isBlank()) {
+            return;
+        }
+        Coupon applied = couponFor(org.getId(), invoice.getCourseId(), code);
+        redeemCoupon(applied);
+        invoice.setNotes(null);
+        store.save(invoice);
+    }
 }

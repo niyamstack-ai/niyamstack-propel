@@ -21,3 +21,6 @@ app:
     enabled: true
   otp:
     reveal: true
+  integrations:
+    payments:
+      allow-demo: true
