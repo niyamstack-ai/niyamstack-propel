@@ -12,6 +12,7 @@ import com.niyamstack.propel.domain.Model.Student;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.JwtService;
+import com.niyamstack.propel.security.OauthProviders;
 import com.niyamstack.propel.security.OrgAccess;
 import com.niyamstack.propel.security.PasswordPolicy;
 import com.niyamstack.propel.security.Phones;
@@ -45,12 +46,14 @@ public class PlatformService {
     private final PasswordEncoder encoder;
     private final JwtService jwt;
     private final AuditService audit;
+    private final OauthProviders oauth;
 
-    public PlatformService(Store store, PasswordEncoder encoder, JwtService jwt, AuditService audit) {
+    public PlatformService(Store store, PasswordEncoder encoder, JwtService jwt, AuditService audit, OauthProviders oauth) {
         this.store = store;
         this.encoder = encoder;
         this.jwt = jwt;
         this.audit = audit;
+        this.oauth = oauth;
     }
 
     private static final int MAX_FAILURES = 8;
@@ -521,6 +524,43 @@ public class PlatformService {
         putSettingIfPresent(body, "razorpayxAccountNumber");
         audit.log("PLATFORM_PAYMENT_GATEWAY", "PlatformSetting", null, "razorpay");
         return paymentGatewayStatus();
+    }
+
+    public Map<String, Object> oauthLogin() {
+        requireCap(PlatformCaps.MANAGE_RIGHTS);
+        return oauth.adminStatus();
+    }
+
+    @Transactional
+    public Map<String, Object> saveOauthLogin(Map<String, String> body) {
+        requireCap(PlatformCaps.MANAGE_RIGHTS);
+        if (body == null) {
+            body = Map.of();
+        }
+        if (truthy(body.get("clearMicrosoft"))) {
+            store.putSetting(OauthProviders.KEY_MICROSOFT_ID, null);
+            store.putSetting(OauthProviders.KEY_MICROSOFT_SECRET, null);
+            store.putSetting(OauthProviders.KEY_MICROSOFT_TENANT, null);
+            audit.log("PLATFORM_OAUTH_CLEAR", "PlatformSetting", null, "microsoft");
+            return oauth.adminStatus();
+        }
+        if (truthy(body.get("clearGoogle"))) {
+            store.putSetting(OauthProviders.KEY_GOOGLE_ID, null);
+            store.putSetting(OauthProviders.KEY_GOOGLE_SECRET, null);
+            audit.log("PLATFORM_OAUTH_CLEAR", "PlatformSetting", null, "google");
+            return oauth.adminStatus();
+        }
+        putSettingIfPresent(body, OauthProviders.KEY_GOOGLE_ID);
+        putSettingIfPresent(body, OauthProviders.KEY_GOOGLE_SECRET);
+        putSettingIfPresent(body, OauthProviders.KEY_MICROSOFT_ID);
+        putSettingIfPresent(body, OauthProviders.KEY_MICROSOFT_SECRET);
+        putSettingIfPresent(body, OauthProviders.KEY_MICROSOFT_TENANT);
+        audit.log("PLATFORM_OAUTH_SAVE", "PlatformSetting", null, "login-providers");
+        return oauth.adminStatus();
+    }
+
+    private static boolean truthy(String v) {
+        return v != null && (v.equalsIgnoreCase("true") || v.equals("1") || v.equalsIgnoreCase("yes"));
     }
 
     private Map<String, Object> paymentGatewayStatus() {

@@ -17,6 +17,19 @@ type PaymentGateway = {
   webhookPath?: string;
 };
 
+type OauthLogin = {
+  google?: boolean;
+  microsoft?: boolean;
+  googleSource?: string;
+  microsoftSource?: string;
+  googleClientIdMasked?: string;
+  microsoftClientIdMasked?: string;
+  microsoftTenant?: string;
+  publicUrl?: string;
+  googleCallback?: string;
+  microsoftCallback?: string;
+};
+
 type SettlementRow = {
   organizationId: string;
   name: string;
@@ -48,6 +61,7 @@ export function PlatformSettingsPage() {
   const canSettle = canManageRights || hasCap(user, "VIEW_SETTLEMENTS");
   const catalog = useApi<Catalog>(canManageRights ? "/api/platform/roles" : "");
   const paymentGateway = useApi<PaymentGateway>(canManageRights ? "/api/platform/payment-gateway" : "");
+  const oauthLogin = useApi<OauthLogin>(canManageRights ? "/api/platform/oauth-login" : "");
   const [newName, setNewName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -60,6 +74,13 @@ export function PlatformSettingsPage() {
     razorpayKeySecret: "",
     razorpayWebhookSecret: "",
     razorpayxAccountNumber: "",
+  });
+  const [oauthKeys, setOauthKeys] = useState({
+    oauthGoogleClientId: "",
+    oauthGoogleClientSecret: "",
+    oauthMicrosoftClientId: "",
+    oauthMicrosoftClientSecret: "",
+    oauthMicrosoftTenant: "common",
   });
   const payoutMode = useApi<{ payoutMode: string; configured?: boolean }>(canSettle ? "/api/platform/settlement/payout-mode" : "");
   const settlement = useApi<SettlementRow[]>(canSettle ? "/api/platform/settlement/report" : "");
@@ -147,6 +168,7 @@ export function PlatformSettingsPage() {
   const caps = catalog.data?.capabilities ?? [];
   const roles = catalog.data?.roles ?? [];
   const pay = paymentGateway.data;
+  const oauth = oauthLogin.data;
   const modeLabel =
     pay?.mode === "test" ? "Test mode" : pay?.mode === "live" ? "Live mode" : pay?.razorpay ? "Configured" : "Not configured";
 
@@ -164,6 +186,55 @@ export function PlatformSettingsPage() {
       paymentGateway.reload();
       payoutMode.reload();
       setDone("Razorpay keys saved. All institutes on this portal will use these keys.");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveOauthLogin(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setDone(null);
+    try {
+      const body: Record<string, string> = {};
+      for (const [k, v] of Object.entries(oauthKeys)) {
+        if (v.trim()) body[k] = v.trim();
+      }
+      if (Object.keys(body).length === 0) {
+        setError("Paste at least one Client ID or secret to save.");
+        return;
+      }
+      await api("/api/platform/oauth-login", { method: "PUT", body: JSON.stringify(body) });
+      setOauthKeys({
+        oauthGoogleClientId: "",
+        oauthGoogleClientSecret: "",
+        oauthMicrosoftClientId: "",
+        oauthMicrosoftClientSecret: "",
+        oauthMicrosoftTenant: oauthLogin.data?.microsoftTenant || "common",
+      });
+      oauthLogin.reload();
+      setDone("Login provider settings saved. Microsoft/Google buttons appear on login pages when configured.");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearOauth(provider: "google" | "microsoft") {
+    setBusy(true);
+    setError(null);
+    setDone(null);
+    try {
+      await api("/api/platform/oauth-login", {
+        method: "PUT",
+        body: JSON.stringify(provider === "google" ? { clearGoogle: "true" } : { clearMicrosoft: "true" }),
+      });
+      oauthLogin.reload();
+      setDone(`${provider === "google" ? "Google" : "Microsoft"} settings cleared from platform Settings (env fallback still applies if set on the server).`);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -195,6 +266,7 @@ export function PlatformSettingsPage() {
       </div>
       {catalog.error && <p className="text-sm text-red-600">{catalog.error}</p>}
       {paymentGateway.error && <p className="text-sm text-red-600">{paymentGateway.error}</p>}
+      {oauthLogin.error && <p className="text-sm text-red-600">{oauthLogin.error}</p>}
       <ErrorText error={error} />
       {done && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{done}</p>}
       {canManageRights && (
@@ -238,6 +310,93 @@ export function PlatformSettingsPage() {
               <button className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={busy}>
                 {busy ? "Saving…" : "Save payment keys"}
               </button>
+            </form>
+          </Card>
+
+          <Card title="Login providers (Google / Microsoft)">
+            <p className="text-sm text-slate-500">
+              Portal-wide social login for institute, student, and platform staff pages. Leave Microsoft empty to keep that button hidden.
+              Values saved here override server env files. Google is already on if configured via env.
+            </p>
+            <div className="mt-3 grid gap-2 text-sm text-navy sm:grid-cols-2">
+              <p>
+                Google:{" "}
+                <span className="font-semibold">{oauth?.google ? "On" : "Hidden"}</span>
+                {oauth?.googleSource && oauth.googleSource !== "none" && (
+                  <span className="ml-1 text-xs text-slate-500">({oauth.googleSource}{oauth.googleClientIdMasked ? ` · ${oauth.googleClientIdMasked}` : ""})</span>
+                )}
+              </p>
+              <p>
+                Microsoft:{" "}
+                <span className="font-semibold">{oauth?.microsoft ? "On" : "Hidden"}</span>
+                {oauth?.microsoftSource && oauth.microsoftSource !== "none" && (
+                  <span className="ml-1 text-xs text-slate-500">({oauth.microsoftSource}{oauth.microsoftClientIdMasked ? ` · ${oauth.microsoftClientIdMasked}` : ""})</span>
+                )}
+              </p>
+            </div>
+            <form className="mt-4 max-w-lg space-y-3" onSubmit={saveOauthLogin}>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Google</p>
+              <Field
+                label="Google Client ID"
+                value={oauthKeys.oauthGoogleClientId}
+                onChange={(v) => setOauthKeys((p) => ({ ...p, oauthGoogleClientId: v }))}
+                placeholder={oauth?.google ? "Saved — paste to replace" : "….apps.googleusercontent.com"}
+              />
+              <Field
+                label="Google Client secret"
+                value={oauthKeys.oauthGoogleClientSecret}
+                onChange={(v) => setOauthKeys((p) => ({ ...p, oauthGoogleClientSecret: v }))}
+                type="password"
+                placeholder={oauth?.google ? "Saved — paste to replace" : "Client secret"}
+              />
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Microsoft</p>
+              <Field
+                label="Microsoft Application (client) ID"
+                value={oauthKeys.oauthMicrosoftClientId}
+                onChange={(v) => setOauthKeys((p) => ({ ...p, oauthMicrosoftClientId: v }))}
+                placeholder={oauth?.microsoft ? "Saved — paste to replace" : "UUID from Entra"}
+              />
+              <Field
+                label="Microsoft Client secret"
+                value={oauthKeys.oauthMicrosoftClientSecret}
+                onChange={(v) => setOauthKeys((p) => ({ ...p, oauthMicrosoftClientSecret: v }))}
+                type="password"
+                placeholder={oauth?.microsoft ? "Saved — paste to replace" : "Secret value"}
+              />
+              <Field
+                label="Microsoft tenant"
+                value={oauthKeys.oauthMicrosoftTenant}
+                onChange={(v) => setOauthKeys((p) => ({ ...p, oauthMicrosoftTenant: v }))}
+                placeholder="common"
+              />
+              <p className="text-xs text-slate-500">
+                Use tenant <span className="font-mono">common</span> for any Microsoft account. Redirect URIs to register:
+              </p>
+              <ul className="list-inside list-disc text-xs text-slate-500">
+                <li className="break-all font-mono">{oauth?.googleCallback || `${oauth?.publicUrl || ""}/api/auth/oauth/google/callback`}</li>
+                <li className="break-all font-mono">{oauth?.microsoftCallback || `${oauth?.publicUrl || ""}/api/auth/oauth/microsoft/callback`}</li>
+              </ul>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={busy}>
+                  {busy ? "Saving…" : "Save login providers"}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full border border-line px-3 py-2 text-sm disabled:opacity-50"
+                  disabled={busy || oauth?.microsoftSource !== "settings"}
+                  onClick={() => void clearOauth("microsoft")}
+                >
+                  Clear Microsoft settings
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full border border-line px-3 py-2 text-sm disabled:opacity-50"
+                  disabled={busy || oauth?.googleSource !== "settings"}
+                  onClick={() => void clearOauth("google")}
+                >
+                  Clear Google settings
+                </button>
+              </div>
             </form>
           </Card>
         </>

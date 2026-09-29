@@ -157,6 +157,16 @@ public class PlatformController {
         return platform.savePaymentGateway(body);
     }
 
+    @GetMapping("/oauth-login")
+    public Map<String, Object> oauthLogin() {
+        return platform.oauthLogin();
+    }
+
+    @PutMapping("/oauth-login")
+    public Map<String, Object> saveOauthLogin(@RequestBody Map<String, String> body) {
+        return platform.saveOauthLogin(body);
+    }
+
     @GetMapping("/settlement/report")
     public List<Map<String, Object>> settlementReport(@RequestParam(required = false) UUID organizationId) {
         return settlements.report(organizationId);
