@@ -21,6 +21,7 @@ import { ReadinessPage } from "./pages/ReadinessPage";
 import { AlumniPage } from "./pages/AlumniPage";
 import { CommsPage } from "./pages/CommsPage";
 import { InstitutePage } from "./pages/InstitutePage";
+import { AccountPage } from "./pages/AccountPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { IntelligencePage } from "./pages/IntelligencePage";
 import { EnterprisePage } from "./pages/EnterprisePage";
@@ -222,6 +223,7 @@ export default function App() {
           <Route path="alumni" element={<AlumniPage />} />
           <Route path="comms" element={<CommsPage />} />
           <Route path="institute" element={<InstitutePage />} />
+          <Route path="account" element={<AccountPage />} />
           <Route path="audit" element={<AuditPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="intelligence" element={<IntelligencePage />} />

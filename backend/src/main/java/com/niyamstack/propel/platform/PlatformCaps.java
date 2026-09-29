@@ -16,6 +16,8 @@ public final class PlatformCaps {
     public static final String SUSPEND = "SUSPEND";
     public static final String MANAGE_EMPLOYEES = "MANAGE_EMPLOYEES";
     public static final String MANAGE_RIGHTS = "MANAGE_RIGHTS";
+    /** View and run institute settlements / payouts (Finance). Separate from MANAGE_RIGHTS. */
+    public static final String VIEW_SETTLEMENTS = "VIEW_SETTLEMENTS";
 
     public static final List<String> ALL = List.of(
             VIEW_DASHBOARD,
@@ -25,7 +27,8 @@ public final class PlatformCaps {
             APPROVE,
             SUSPEND,
             MANAGE_EMPLOYEES,
-            MANAGE_RIGHTS
+            MANAGE_RIGHTS,
+            VIEW_SETTLEMENTS
     );
 
     public static final List<String> STAFF_ROLES = List.of(
@@ -42,9 +45,9 @@ public final class PlatformCaps {
         Map<String, List<String>> map = new LinkedHashMap<>();
         map.put(Roles.PLATFORM_SALES, List.of(VIEW_DASHBOARD, VIEW_INSTITUTES, EDIT_DEAL));
         map.put(Roles.PLATFORM_SUPPORT, List.of(VIEW_DASHBOARD, VIEW_INSTITUTES));
-        map.put(Roles.PLATFORM_FINANCE, List.of(VIEW_DASHBOARD, VIEW_INSTITUTES, EDIT_DEAL, MARK_PAID));
+        map.put(Roles.PLATFORM_FINANCE, List.of(VIEW_DASHBOARD, VIEW_INSTITUTES, EDIT_DEAL, MARK_PAID, VIEW_SETTLEMENTS));
         map.put(Roles.PLATFORM_HR, List.of(VIEW_DASHBOARD, MANAGE_EMPLOYEES));
-        map.put(Roles.PLATFORM_OPS, List.of(VIEW_DASHBOARD, VIEW_INSTITUTES, EDIT_DEAL, MARK_PAID, APPROVE, SUSPEND));
+        map.put(Roles.PLATFORM_OPS, List.of(VIEW_DASHBOARD, VIEW_INSTITUTES, EDIT_DEAL, MARK_PAID, APPROVE, SUSPEND, VIEW_SETTLEMENTS));
         return map;
     }
 
@@ -62,6 +65,7 @@ public final class PlatformCaps {
             case SUSPEND -> "Suspend institute";
             case MANAGE_EMPLOYEES -> "Add and manage employees";
             case MANAGE_RIGHTS -> "Change staff rights";
+            case VIEW_SETTLEMENTS -> "View and run institute settlements";
             default -> cap;
         };
     }

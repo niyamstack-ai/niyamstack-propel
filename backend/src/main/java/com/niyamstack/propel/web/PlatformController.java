@@ -97,6 +97,16 @@ public class PlatformController {
         return platform.restore(id);
     }
 
+    @PostMapping("/institutes/{id}/trash")
+    public Map<String, Object> trash(@PathVariable UUID id) {
+        return platform.trash(id);
+    }
+
+    @PutMapping("/institutes/{id}/owner-contact")
+    public Map<String, Object> ownerContact(@PathVariable UUID id, @RequestBody PlatformService.OwnerContactRequest body) {
+        return platform.updateOwnerContact(id, body);
+    }
+
     @GetMapping("/employees")
     public List<Map<String, Object>> employees() {
         return platform.employees();

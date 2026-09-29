@@ -381,14 +381,14 @@ public class AuthController {
         audit.log("PASSWORD_RESET_EMAIL", "AppUser", user.getId(), user.getEmail());
         if (mail.live() && mail.canDeliver(user.getEmail())) {
             mail.sendPasswordReset(user.getEmail(), token);
+            return Map.of("status", "sent");
         }
+        // Local/dev only: never return a reset token just because SMTP is down in prod.
         if (otp.reveal()) {
             return Map.of("status", "sent", "resetToken", token);
         }
-        if (!mail.live()) {
-            return Map.of("status", "sent", "resetToken", token);
-        }
-        return Map.of("status", "sent");
+        throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
+                "Email delivery is not configured. Configure SMTP or enable OTP reveal for local testing.");
     }
 
     @PostMapping("/reset/email")

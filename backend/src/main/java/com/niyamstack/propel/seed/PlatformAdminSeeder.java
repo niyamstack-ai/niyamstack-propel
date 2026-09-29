@@ -54,28 +54,43 @@ public class PlatformAdminSeeder implements CommandLineRunner {
     }
 
     private void ensureRoles() {
-        if (!store.listPlatformRoles().isEmpty()) {
+        if (store.listPlatformRoles().isEmpty()) {
+            Map<String, List<String>> seed = Map.of(
+                    "Sales", List.of(PlatformCaps.VIEW_DASHBOARD, PlatformCaps.VIEW_INSTITUTES, PlatformCaps.EDIT_DEAL),
+                    "Support", List.of(PlatformCaps.VIEW_DASHBOARD, PlatformCaps.VIEW_INSTITUTES),
+                    "Finance", List.of(PlatformCaps.VIEW_DASHBOARD, PlatformCaps.VIEW_INSTITUTES, PlatformCaps.EDIT_DEAL, PlatformCaps.MARK_PAID, PlatformCaps.VIEW_SETTLEMENTS),
+                    "HR", List.of(PlatformCaps.VIEW_DASHBOARD, PlatformCaps.MANAGE_EMPLOYEES),
+                    "Operations", List.of(
+                            PlatformCaps.VIEW_DASHBOARD,
+                            PlatformCaps.VIEW_INSTITUTES,
+                            PlatformCaps.EDIT_DEAL,
+                            PlatformCaps.MARK_PAID,
+                            PlatformCaps.APPROVE,
+                            PlatformCaps.SUSPEND,
+                            PlatformCaps.VIEW_SETTLEMENTS)
+            );
+            for (var entry : seed.entrySet()) {
+                PlatformRole role = new PlatformRole();
+                role.setName(entry.getKey());
+                role.setCapabilitiesCsv(String.join(",", entry.getValue()));
+                store.save(role);
+            }
+            log.info("Default platform roles created. Rename or add more under Settings.");
             return;
         }
-        Map<String, List<String>> seed = Map.of(
-                "Sales", List.of(PlatformCaps.VIEW_DASHBOARD, PlatformCaps.VIEW_INSTITUTES, PlatformCaps.EDIT_DEAL),
-                "Support", List.of(PlatformCaps.VIEW_DASHBOARD, PlatformCaps.VIEW_INSTITUTES),
-                "Finance", List.of(PlatformCaps.VIEW_DASHBOARD, PlatformCaps.VIEW_INSTITUTES, PlatformCaps.EDIT_DEAL, PlatformCaps.MARK_PAID),
-                "HR", List.of(PlatformCaps.VIEW_DASHBOARD, PlatformCaps.MANAGE_EMPLOYEES),
-                "Operations", List.of(
-                        PlatformCaps.VIEW_DASHBOARD,
-                        PlatformCaps.VIEW_INSTITUTES,
-                        PlatformCaps.EDIT_DEAL,
-                        PlatformCaps.MARK_PAID,
-                        PlatformCaps.APPROVE,
-                        PlatformCaps.SUSPEND)
-        );
-        for (var entry : seed.entrySet()) {
-            PlatformRole role = new PlatformRole();
-            role.setName(entry.getKey());
-            role.setCapabilitiesCsv(String.join(",", entry.getValue()));
-            store.save(role);
+        // Existing DBs: ensure Finance can run settlements without MANAGE_RIGHTS.
+        for (PlatformRole role : store.listPlatformRoles()) {
+            if (!"Finance".equalsIgnoreCase(role.getName())) {
+                continue;
+            }
+            String csv = role.getCapabilitiesCsv() == null ? "" : role.getCapabilitiesCsv();
+            if (!csv.contains(PlatformCaps.VIEW_SETTLEMENTS)) {
+                role.setCapabilitiesCsv(csv.isBlank()
+                        ? PlatformCaps.VIEW_SETTLEMENTS
+                        : csv + "," + PlatformCaps.VIEW_SETTLEMENTS);
+                store.save(role);
+                log.info("Added VIEW_SETTLEMENTS to existing Finance role");
+            }
         }
-        log.info("Default platform roles created. Rename or add more under Settings.");
     }
 }

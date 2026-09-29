@@ -520,7 +520,12 @@ public class SettlementService {
     }
 
     private void requirePlatformFinance() {
-        requireCap(PlatformCaps.MANAGE_RIGHTS);
+        Access.requirePlatform(Auth.current());
+        AppUser user = store.get(AppUser.class, Auth.current().userId());
+        var caps = capsForUser(user);
+        if (!caps.contains(PlatformCaps.VIEW_SETTLEMENTS) && !caps.contains(PlatformCaps.MANAGE_RIGHTS)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "This role cannot view and run institute settlements");
+        }
     }
 
     private void requireCap(String cap) {

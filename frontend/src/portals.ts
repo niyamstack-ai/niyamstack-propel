@@ -199,7 +199,7 @@ function filterNav(entries: NavEntry[], modules?: string[]): NavEntry[] {
 }
 
 export function canOpen(role: string | undefined, path: string, modules?: string[], capabilities?: string[]) {
-  if (path === "/" || path === "/m" || path.startsWith("/m/")) return true;
+  if (path === "/" || path === "/m" || path.startsWith("/m/") || path === "/account") return true;
   if (path === "/help" || path === "/support" || path.startsWith("/help/") || path.startsWith("/support/")) return true;
   if (!pathAllowed(path, modules)) return false;
   const nav = flattenNav(navForRole(role, modules, capabilities));

@@ -9,6 +9,8 @@ import java.time.Instant;
 public final class OrgAccess {
     public static final String SUSPENDED_MESSAGE =
             "This institute is suspended. Contact Niyamstack to restore access.";
+    public static final String TRASHED_MESSAGE =
+            "This institute was removed. Contact Niyamstack if this was a mistake.";
     public static final String SUBSCRIBE_MESSAGE =
             "You are not a paid user. Please subscribe to use this facility.";
     public static final String PAST_DUE_MESSAGE =
@@ -35,7 +37,11 @@ public final class OrgAccess {
     }
 
     public static boolean suspended(Organization org) {
-        return "SUSPENDED".equals(status(org));
+        return "SUSPENDED".equals(status(org)) || "TRASHED".equals(status(org));
+    }
+
+    public static boolean trashed(Organization org) {
+        return "TRASHED".equals(status(org));
     }
 
     public static boolean demo(Organization org) {
@@ -73,6 +79,9 @@ public final class OrgAccess {
     }
 
     public static String writeBlockMessage(Organization org) {
+        if (trashed(org)) {
+            return TRASHED_MESSAGE;
+        }
         if (suspended(org)) {
             return SUSPENDED_MESSAGE;
         }
@@ -83,6 +92,9 @@ public final class OrgAccess {
     }
 
     public static void requireNotSuspended(Organization org) {
+        if (trashed(org)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, TRASHED_MESSAGE);
+        }
         if (suspended(org)) {
             throw new ApiException(HttpStatus.FORBIDDEN, SUSPENDED_MESSAGE);
         }

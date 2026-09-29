@@ -283,7 +283,7 @@ export function Shell() {
             >
               {t("menu", "Menu")}
             </button>
-            <UserMenu />
+            <UserMenu profileTo="/account" />
           </div>
         ) : (
           <header className="border-b border-line bg-white">
@@ -301,7 +301,7 @@ export function Shell() {
                 </div>
                 <UnifiedSearch />
               </div>
-              <UserMenu />
+              <UserMenu profileTo="/account" />
             </div>
           </header>
         )}

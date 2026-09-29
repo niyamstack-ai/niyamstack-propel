@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../../api";
+import { formatInr } from "../../labels";
 import { MODULES, PACKS, modulesForPack, type PackId } from "../../packs";
 import { hasCap, usePlatformAuth } from "../../platformAuth";
 import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, useApi } from "../../ui";
@@ -10,6 +11,7 @@ type Institute = {
   name: string;
   slug?: string;
   email?: string;
+  phone?: string;
   accessStatus: string;
   paymentStatus: string;
   packageTier?: string;
@@ -25,6 +27,21 @@ type Institute = {
   platformFeeMode?: string;
   payoutMode?: string;
   hasBank?: boolean;
+  graceEndsAt?: string;
+  inGrace?: boolean;
+  ownerId?: string;
+  ownerName?: string;
+  ownerEmail?: string;
+  ownerPhone?: string;
+  ownerEmailVerified?: boolean;
+  ownerPhoneVerified?: boolean;
+  studentCount?: number;
+  studentsRegisteredToday?: number;
+  transactionCount?: number;
+  transactionTotal?: number;
+  transactionsTodayCount?: number;
+  transactionsTodayAmount?: number;
+  createdAt?: string;
 };
 
 export function PlatformInstituteDetailPage() {
@@ -34,11 +51,12 @@ export function PlatformInstituteDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [acting, setActing] = useState<null | "paid" | "approve" | "failed" | "suspend" | "restore">(null);
+  const [acting, setActing] = useState<null | "paid" | "approve" | "failed" | "suspend" | "restore" | "trash" | "owner">(null);
   const canMarkPaid = hasCap(user, "MARK_PAID");
   const canApprove = hasCap(user, "APPROVE");
   const canSuspend = hasCap(user, "SUSPEND");
   const canEditDeal = hasCap(user, "EDIT_DEAL");
+  const canView = hasCap(user, "VIEW_INSTITUTES");
   const [amount, setAmount] = useState("");
   const [cycle, setCycle] = useState("MONTHLY");
   const [tier, setTier] = useState("STARTER");
@@ -51,6 +69,9 @@ export function PlatformInstituteDetailPage() {
   const [feePct, setFeePct] = useState("5");
   const [feeMode, setFeeMode] = useState("ABSORB");
   const [payoutMode, setPayoutMode] = useState("INHERIT");
+  const [ownerName, setOwnerName] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [ownerPhone, setOwnerPhone] = useState("");
 
   useEffect(() => {
     const org = rec.data;
@@ -69,6 +90,9 @@ export function PlatformInstituteDetailPage() {
     setFeePct(String(pct <= 1 ? Math.round(pct * 1000) / 10 : pct));
     setFeeMode(org.platformFeeMode || "ABSORB");
     setPayoutMode(org.payoutMode || "INHERIT");
+    setOwnerName(org.ownerName || "");
+    setOwnerEmail(org.ownerEmail || org.email || "");
+    setOwnerPhone(org.ownerPhone || org.phone || "");
   }, [rec.data]);
 
   async function saveDeal(e: FormEvent) {
@@ -103,6 +127,24 @@ export function PlatformInstituteDetailPage() {
     }
   }
 
+  async function saveOwner() {
+    setActing("owner");
+    setError(null);
+    setNotice(null);
+    try {
+      await api(`/api/platform/institutes/${id}/owner-contact`, {
+        method: "PUT",
+        body: JSON.stringify({ fullName: ownerName, email: ownerEmail, phone: ownerPhone }),
+      });
+      rec.reload();
+      setNotice("Owner login contact updated. Ask them to verify email/phone after next login if needed.");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setActing(null);
+    }
+  }
+
   async function action(path: string, kind: NonNullable<typeof acting>, ok: string) {
     setActing(kind);
     setError(null);
@@ -122,6 +164,7 @@ export function PlatformInstituteDetailPage() {
   const paid = org?.paymentStatus === "PAID";
   const active = org?.accessStatus === "ACTIVE";
   const suspended = org?.accessStatus === "SUSPENDED";
+  const trashed = org?.accessStatus === "TRASHED";
 
   return (
     <div className="space-y-6">
@@ -133,29 +176,70 @@ export function PlatformInstituteDetailPage() {
       <div>
         <h1 className="text-2xl font-bold text-navy">{org?.name || "Institute"}</h1>
         <p className="mt-1 text-sm text-slate-500">
-          {org?.email} · {org?.slug || "no slug"}
+          {org?.email || "—"} · {org?.phone ? `+91 ${org.phone}` : "no phone"} · {org?.slug || "no slug"}
         </p>
         <p className="mt-1 text-sm text-slate-600">
           Access: <span className="font-medium text-navy">{prettyAccess(org?.accessStatus)}</span>
           {" · "}
           Payment: <span className="font-medium text-navy">{prettyPayment(org?.paymentStatus)}</span>
+          {org?.hasBank != null ? (
+            <>
+              {" · "}
+              Bank: <span className="font-medium text-navy">{org.hasBank ? "On file" : "Missing"}</span>
+            </>
+          ) : null}
+          {org?.inGrace ? (
+            <>
+              {" · "}
+              <span className="font-medium text-amber-800">In grace until {org.graceEndsAt ? new Date(org.graceEndsAt).toLocaleString("en-IN") : "—"}</span>
+            </>
+          ) : null}
         </p>
       </div>
       {rec.error && <p className="text-sm text-red-600">{rec.error}</p>}
       <ErrorText error={error} />
       {notice && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p>}
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Students" value={String(org?.studentCount ?? "—")} hint={`${org?.studentsRegisteredToday ?? 0} registered today`} />
+        <Stat label="Captured payments" value={formatInr(org?.transactionTotal)} hint={`${org?.transactionCount ?? 0} transactions`} />
+        <Stat label="Today’s GMV" value={formatInr(org?.transactionsTodayAmount)} hint={`${org?.transactionsTodayCount ?? 0} today`} />
+        <Stat label="Owner" value={org?.ownerName || "—"} hint={org?.ownerPhone ? `+91 ${org.ownerPhone}` : org?.ownerEmail || "No owner linked"} />
+      </div>
+
+      {canView && (
+        <Card title="Owner login (for support recovery)">
+          <p className="mb-3 text-sm text-slate-500">
+            Shown when an owner forgets which mobile they used. Updating here changes their login email/phone (they may need to re-verify).
+          </p>
+          <div className="space-y-3">
+            <FormGrid>
+              <Field label="Owner name" value={ownerName} onChange={setOwnerName} />
+              <Field label="Login email" value={ownerEmail} onChange={setOwnerEmail} type="email" />
+              <Field label="Login mobile" value={ownerPhone} onChange={setOwnerPhone} placeholder="10-digit" />
+            </FormGrid>
+            <p className="text-xs text-slate-500">
+              Verified: email {org?.ownerEmailVerified ? "yes" : "no"} · phone {org?.ownerPhoneVerified ? "yes" : "no"}
+            </p>
+            <PrimaryButton disabled={!!acting || saving} onClick={() => void saveOwner()}>
+              {acting === "owner" ? "Saving…" : "Save owner contact"}
+            </PrimaryButton>
+          </div>
+        </Card>
+      )}
+
       {(canMarkPaid || canApprove || canSuspend) && (
       <Card title="Lifecycle">
         <p className="mb-3 text-sm text-slate-500">
-          DEMO = browse-only until paid. PENDING_APPROVAL = paid, waiting for Approve. ACTIVE = live. SUSPENDED = all staff locked out until Restore.
+          DEMO = browse-only until paid. PENDING_APPROVAL = paid, waiting for Approve. ACTIVE = live. SUSPENDED = locked. Trash = soft-deleted (kept for legal/support).
         </p>
         <div className="flex flex-wrap gap-2">
-          {canMarkPaid && (
+          {canMarkPaid && !trashed && (
             <PrimaryButton disabled={saving || !!acting} onClick={() => action("mark-paid", "paid", paid ? "Already marked paid." : "Payment marked received. You can now approve.")}>
               {acting === "paid" ? "Marking paid…" : "Mark paid"}
             </PrimaryButton>
           )}
-          {canApprove && (
+          {canApprove && !trashed && (
             <PrimaryButton
               disabled={saving || !!acting || !paid}
               onClick={() => action("approve", "approve", active ? "Already active." : "Institute activated.")}
@@ -163,20 +247,20 @@ export function PlatformInstituteDetailPage() {
               {acting === "approve" ? "Approving…" : "Approve / activate"}
             </PrimaryButton>
           )}
-          {canMarkPaid && (
+          {canMarkPaid && !trashed && (
             <button type="button" className="rounded-full border border-line px-4 py-2 text-sm" disabled={saving || !!acting} onClick={() => action("mark-failed", "failed", "Payment marked failed.")}>
               {acting === "failed" ? "Updating…" : "Mark payment failed"}
             </button>
           )}
           {canSuspend && (
-            suspended ? (
+            suspended || trashed ? (
               <button
                 type="button"
                 className="rounded-full border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-800"
                 disabled={saving || !!acting}
-                onClick={() => action("restore", "restore", "Institute restored.")}
+                onClick={() => action("restore", "restore", trashed ? "Restored from trash." : "Institute restored.")}
               >
-                {acting === "restore" ? "Restoring…" : "Restore"}
+                {acting === "restore" ? "Restoring…" : trashed ? "Restore from trash" : "Restore"}
               </button>
             ) : (
               <button
@@ -192,13 +276,26 @@ export function PlatformInstituteDetailPage() {
               </button>
             )
           )}
+          {canSuspend && !trashed && (
+            <button
+              type="button"
+              className="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-700"
+              disabled={saving || !!acting}
+              onClick={() => {
+                if (!window.confirm("Move this institute to trash? It stays in the system for legal/support and can be restored.")) return;
+                action("trash", "trash", "Moved to trash.");
+              }}
+            >
+              {acting === "trash" ? "Moving…" : "Move to trash"}
+            </button>
+          )}
         </div>
         <p className="mt-3 text-xs text-slate-500">
           {paid ? "Payment is already marked received." : "Mark paid first, then approve."} Student fee collect uses the Razorpay keys saved under Platform → Settings.
         </p>
       </Card>
       )}
-      {canEditDeal && (
+      {canEditDeal && !trashed && (
       <Card title="Customer deal">
         <form className="space-y-4" onSubmit={saveDeal}>
           <FormGrid>
@@ -292,6 +389,16 @@ export function PlatformInstituteDetailPage() {
   );
 }
 
+function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="rounded-2xl border border-line bg-white p-4">
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 truncate text-lg font-semibold text-navy">{value}</p>
+      {hint ? <p className="mt-1 truncate text-xs text-slate-500">{hint}</p> : null}
+    </div>
+  );
+}
+
 function prettyAccess(status?: string) {
   switch ((status || "").toUpperCase()) {
     case "DEMO":
@@ -302,6 +409,8 @@ function prettyAccess(status?: string) {
       return "Active";
     case "SUSPENDED":
       return "Suspended";
+    case "TRASHED":
+      return "Trash";
     default:
       return status || "—";
   }

@@ -5,13 +5,16 @@ import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.AppUser;
 import com.niyamstack.propel.domain.Model.Organization;
+import com.niyamstack.propel.domain.Model.Payment;
 import com.niyamstack.propel.domain.Model.PlatformRole;
 import com.niyamstack.propel.domain.Model.PlatformUserRole;
+import com.niyamstack.propel.domain.Model.Student;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.JwtService;
 import com.niyamstack.propel.security.OrgAccess;
 import com.niyamstack.propel.security.PasswordPolicy;
+import com.niyamstack.propel.security.Phones;
 import com.niyamstack.propel.security.PropelUser;
 import com.niyamstack.propel.security.Roles;
 import org.springframework.http.HttpStatus;
@@ -22,6 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -48,16 +53,26 @@ public class PlatformService {
         this.audit = audit;
     }
 
+    private static final int MAX_FAILURES = 8;
+
     @Transactional
     public Map<String, Object> login(String username, String password) {
         String id = username == null ? "" : username.trim().toLowerCase();
         AppUser user = store.findUserByEmail(id);
-        if (user == null || !Roles.isPlatform(user.getRole()) || !user.isActive()
-                || !encoder.matches(password, user.getPasswordHash())) {
+        if (user == null || !Roles.isPlatform(user.getRole()) || !user.isActive()) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid id or password");
         }
         if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now())) {
-            throw new ApiException(HttpStatus.LOCKED, "Account temporarily locked");
+            throw new ApiException(HttpStatus.LOCKED, "Account temporarily locked. Try again in 15 minutes.");
+        }
+        if (!encoder.matches(password, user.getPasswordHash())) {
+            user.setFailedLogins(user.getFailedLogins() + 1);
+            if (user.getFailedLogins() >= MAX_FAILURES) {
+                user.setLockedUntil(Instant.now().plusSeconds(900));
+            }
+            store.save(user);
+            audit.log("PLATFORM_LOGIN_FAILED", "AppUser", user.getId(), user.getEmail());
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid id or password");
         }
         user.setFailedLogins(0);
         user.setLockedUntil(null);
@@ -99,10 +114,15 @@ public class PlatformService {
         int suspended = 0;
         int failed = 0;
         int newSignups = 0;
+        int trashed = 0;
         BigDecimal mrr = BigDecimal.ZERO;
         for (Organization org : orgs) {
             String access = nz(org.getAccessStatus(), "DEMO");
             String pay = nz(org.getPaymentStatus(), "UNPAID");
+            if ("TRASHED".equals(access)) {
+                trashed++;
+                continue;
+            }
             if (org.getCreatedAt() != null && org.getCreatedAt().isAfter(weekAgo)) {
                 newSignups++;
             }
@@ -115,7 +135,8 @@ public class PlatformService {
             if ("FAILED".equals(pay)) {
                 failed++;
             }
-            if ("PAID".equals(pay) && ("PENDING_APPROVAL".equals(access) || "DEMO".equals(access))) {
+            // Align with list filter: paid and waiting for Approve (not still DEMO).
+            if ("PAID".equals(pay) && "PENDING_APPROVAL".equals(access)) {
                 paidPending++;
             }
             if ("ACTIVE".equals(access)) {
@@ -127,7 +148,7 @@ public class PlatformService {
             }
         }
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("institutes", orgs.size());
+        out.put("institutes", orgs.size() - trashed);
         out.put("newSignups", newSignups);
         out.put("demo", demo);
         out.put("unpaid", unpaid);
@@ -135,6 +156,7 @@ public class PlatformService {
         out.put("active", active);
         out.put("suspended", suspended);
         out.put("failedPay", failed);
+        out.put("trashed", trashed);
         out.put("mrr", mrr.setScale(2, RoundingMode.HALF_UP));
         return out;
     }
@@ -150,7 +172,7 @@ public class PlatformService {
 
     public Map<String, Object> institute(UUID id) {
         requireCap(PlatformCaps.VIEW_INSTITUTES);
-        return toView(store.get(Organization.class, id));
+        return toDetail(store.get(Organization.class, id));
     }
 
     @Transactional
@@ -271,17 +293,84 @@ public class PlatformService {
     public Map<String, Object> restore(UUID id) {
         requireCap(PlatformCaps.SUSPEND);
         Organization org = store.get(Organization.class, id);
-        if (!"SUSPENDED".equals(nz(org.getAccessStatus(), ""))) {
-            return toView(org);
+        String access = nz(org.getAccessStatus(), "");
+        if (!"SUSPENDED".equals(access) && !"TRASHED".equals(access)) {
+            return toDetail(org);
         }
         if ("PAID".equals(nz(org.getPaymentStatus(), "UNPAID"))) {
-            org.setAccessStatus("ACTIVE");
+            // Paid but never approved → pending; otherwise back to active.
+            org.setAccessStatus(org.getApprovedAt() == null ? "PENDING_APPROVAL" : "ACTIVE");
         } else {
             org.setAccessStatus("DEMO");
         }
         store.save(org);
         audit.log("PLATFORM_RESTORE", "Organization", org.getId(), org.getName());
-        return toView(org);
+        return toDetail(org);
+    }
+
+    /** Soft-delete: move to trash (kept for legal/support). Not a hard delete. */
+    @Transactional
+    public Map<String, Object> trash(UUID id) {
+        requireCap(PlatformCaps.SUSPEND);
+        Organization org = store.get(Organization.class, id);
+        if ("TRASHED".equals(nz(org.getAccessStatus(), ""))) {
+            return toDetail(org);
+        }
+        org.setAccessStatus("TRASHED");
+        store.save(org);
+        audit.log("PLATFORM_TRASH", "Organization", org.getId(), org.getName());
+        return toDetail(org);
+    }
+
+    public record OwnerContactRequest(String email, String phone, String fullName) {}
+
+    /** Support recovery: update institute OWNER login email/phone when they are locked out. */
+    @Transactional
+    public Map<String, Object> updateOwnerContact(UUID id, OwnerContactRequest body) {
+        requireCap(PlatformCaps.VIEW_INSTITUTES);
+        Organization org = store.get(Organization.class, id);
+        AppUser owner = findOwner(org.getId());
+        if (owner == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "No owner account found for this institute");
+        }
+        if (body != null && body.fullName() != null && !body.fullName().isBlank()) {
+            owner.setFullName(body.fullName().trim());
+        }
+        if (body != null && body.email() != null && !body.email().isBlank()) {
+            String email = body.email().trim().toLowerCase();
+            if (!email.contains("@")) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a valid email");
+            }
+            AppUser other = store.findUserByEmail(email);
+            if (other != null && !other.getId().equals(owner.getId())) {
+                throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+            }
+            if (!email.equalsIgnoreCase(owner.getEmail() == null ? "" : owner.getEmail())) {
+                owner.setEmail(email);
+                owner.setEmailVerified(false);
+            }
+            org.setEmail(email);
+        }
+        if (body != null && body.phone() != null && !body.phone().isBlank()) {
+            String phone = Phones.normalize(body.phone());
+            if (phone.length() != 10) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a valid 10-digit mobile number");
+            }
+            AppUser other = store.findUserByPhone(phone);
+            if (other != null && !other.getId().equals(owner.getId())) {
+                throw new ApiException(HttpStatus.CONFLICT, "An account with this mobile already exists");
+            }
+            String prior = Phones.normalize(owner.getPhone() == null ? "" : owner.getPhone());
+            if (!phone.equals(prior)) {
+                owner.setPhone(phone);
+                owner.setPhoneVerified(false);
+            }
+            org.setPhone(phone);
+        }
+        store.save(owner);
+        store.save(org);
+        audit.log("PLATFORM_OWNER_CONTACT", "AppUser", owner.getId(), owner.getEmail() + " / " + owner.getPhone());
+        return toDetail(org);
     }
 
     public List<Map<String, Object>> employees() {
@@ -623,6 +712,59 @@ public class PlatformService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Role name is too long");
         }
         return name;
+    }
+
+    private Map<String, Object> toDetail(Organization org) {
+        Map<String, Object> row = toView(org);
+        AppUser owner = findOwner(org.getId());
+        if (owner != null) {
+            row.put("ownerId", owner.getId());
+            row.put("ownerName", owner.getFullName());
+            row.put("ownerEmail", owner.getEmail());
+            row.put("ownerPhone", owner.getPhone());
+            row.put("ownerEmailVerified", owner.isEmailVerified());
+            row.put("ownerPhoneVerified", owner.isPhoneVerified());
+        }
+        List<Student> students = store.list(Student.class, org.getId());
+        ZoneId ist = ZoneId.of("Asia/Kolkata");
+        Instant dayStart = LocalDate.now(ist).atStartOfDay(ist).toInstant();
+        long studentsToday = students.stream()
+                .filter(s -> s.getCreatedAt() != null && !s.getCreatedAt().isBefore(dayStart))
+                .count();
+        row.put("studentCount", students.size());
+        row.put("studentsRegisteredToday", studentsToday);
+
+        List<Payment> payments = store.list(Payment.class, org.getId());
+        BigDecimal capturedTotal = BigDecimal.ZERO;
+        BigDecimal capturedToday = BigDecimal.ZERO;
+        int capturedCount = 0;
+        int capturedTodayCount = 0;
+        for (Payment p : payments) {
+            if (p.getStatus() == null || !"CAPTURED".equalsIgnoreCase(p.getStatus())) {
+                continue;
+            }
+            BigDecimal amt = p.getAmount() == null ? BigDecimal.ZERO : p.getAmount();
+            capturedTotal = capturedTotal.add(amt);
+            capturedCount++;
+            if (p.getCreatedAt() != null && !p.getCreatedAt().isBefore(dayStart)) {
+                capturedToday = capturedToday.add(amt);
+                capturedTodayCount++;
+            }
+        }
+        row.put("transactionCount", capturedCount);
+        row.put("transactionTotal", capturedTotal);
+        row.put("transactionsTodayCount", capturedTodayCount);
+        row.put("transactionsTodayAmount", capturedToday);
+        return row;
+    }
+
+    private AppUser findOwner(UUID orgId) {
+        for (AppUser user : store.listUsers(orgId)) {
+            if (Roles.OWNER.equals(user.getRole())) {
+                return user;
+            }
+        }
+        return null;
     }
 
     private static Map<String, Object> toView(Organization org) {

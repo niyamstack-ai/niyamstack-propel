@@ -45,6 +45,7 @@ type PayoutBatch = {
 export function PlatformSettingsPage() {
   const { user } = usePlatformAuth();
   const canManageRights = hasCap(user, "MANAGE_RIGHTS");
+  const canSettle = canManageRights || hasCap(user, "VIEW_SETTLEMENTS");
   const catalog = useApi<Catalog>(canManageRights ? "/api/platform/roles" : "");
   const paymentGateway = useApi<PaymentGateway>(canManageRights ? "/api/platform/payment-gateway" : "");
   const [newName, setNewName] = useState("");
@@ -60,9 +61,9 @@ export function PlatformSettingsPage() {
     razorpayWebhookSecret: "",
     razorpayxAccountNumber: "",
   });
-  const payoutMode = useApi<{ payoutMode: string; configured?: boolean }>(canManageRights ? "/api/platform/settlement/payout-mode" : "");
-  const settlement = useApi<SettlementRow[]>(canManageRights ? "/api/platform/settlement/report" : "");
-  const batches = useApi<PayoutBatch[]>(canManageRights ? "/api/platform/settlement/batches" : "");
+  const payoutMode = useApi<{ payoutMode: string; configured?: boolean }>(canSettle ? "/api/platform/settlement/payout-mode" : "");
+  const settlement = useApi<SettlementRow[]>(canSettle ? "/api/platform/settlement/report" : "");
+  const batches = useApi<PayoutBatch[]>(canSettle ? "/api/platform/settlement/batches" : "");
   const [payoutBusy, setPayoutBusy] = useState(false);
 
   async function createRole(e: FormEvent) {
@@ -239,6 +240,9 @@ export function PlatformSettingsPage() {
               </button>
             </form>
           </Card>
+        </>
+      )}
+      {canSettle && (
           <Card title="Institute settlements">
             <p className="text-sm text-slate-500">
               Default platform fee is 5% (editable per institute). Weekly cron (Monday 06:15 IST) and this button create batches.
@@ -455,6 +459,9 @@ export function PlatformSettingsPage() {
               </table>
             </div>
           </Card>
+      )}
+      {canManageRights && (
+        <>
           <Card title="Create a role">
             <form className="flex flex-wrap items-end gap-3" onSubmit={createRole}>
               <div className="w-64">
