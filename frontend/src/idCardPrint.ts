@@ -1,3 +1,5 @@
+import { fileSrc } from "./api";
+
 export type IdCardData = {
   instituteName?: string;
   logoUrl?: string;
@@ -40,12 +42,14 @@ export function openIdCardPrint(rec: IdCardData) {
       ? [rec.title, rec.department].filter(Boolean).join(" · ")
       : [rec.courseName, rec.batchName].filter(Boolean).join(" · ") || rec.title || "";
   const valid = rec.validLabel || "Institute identity card";
-  const photo = rec.photoUrl
-    ? `<img class="photo" src="${esc(rec.photoUrl)}" alt="" />`
-    : `<div class="photo placeholder">${esc((rec.fullName || "?").slice(0, 1).toUpperCase())}</div>`;
-  const logo = rec.logoUrl
-    ? `<img class="logo" src="${esc(rec.logoUrl)}" alt="" />`
-    : `<div class="logo-fallback">${esc((rec.instituteName || "I").slice(0, 1).toUpperCase())}</div>`;
+  const logoSrc = fileSrc(rec.logoUrl);
+  const photoSrc = fileSrc(rec.photoUrl);
+  const photo = photoSrc
+    ? `<div class="photo-frame"><img class="photo" src="${esc(photoSrc)}" alt="" /></div>`
+    : `<div class="photo-frame placeholder">${esc((rec.fullName || "?").slice(0, 1).toUpperCase())}</div>`;
+  const logo = logoSrc
+    ? `<div class="logo-frame"><img class="logo" src="${esc(logoSrc)}" alt="" /></div>`
+    : `<div class="logo-frame logo-fallback">${esc((rec.instituteName || "I").slice(0, 1).toUpperCase())}</div>`;
 
   win.document.write(`<!doctype html>
 <html>
@@ -82,19 +86,31 @@ export function openIdCardPrint(rec: IdCardData) {
       gap: 2.5mm;
       padding: 0 3.5mm;
     }
-    .logo, .logo-fallback {
-      width: 9mm;
-      height: 9mm;
+    .logo-frame, .logo-fallback {
+      width: 10mm;
+      height: 10mm;
       border-radius: 2mm;
-      object-fit: cover;
-      background: rgba(255,255,255,0.2);
       flex-shrink: 0;
-    }
-    .logo-fallback {
       display: grid;
       place-items: center;
+      overflow: hidden;
+      background: #fff;
+      border: 0.25mm solid rgba(255,255,255,0.55);
+    }
+    .logo {
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      object-position: center;
+    }
+    .logo-fallback {
+      background: rgba(255,255,255,0.2);
+      border-color: transparent;
       font-weight: 700;
       font-size: 4.5mm;
+      color: #fff;
     }
     .inst {
       font-size: 3.2mm;
@@ -110,17 +126,25 @@ export function openIdCardPrint(rec: IdCardData) {
       padding: 3mm 3.5mm 2.5mm;
       height: calc(54mm - 14mm);
     }
-    .photo, .placeholder {
+    .photo-frame, .placeholder {
       width: 22mm;
       height: 26mm;
       border-radius: 2mm;
-      object-fit: cover;
       border: 0.35mm solid #cbd5e1;
-      background: #f1f5f9;
-    }
-    .placeholder {
+      background: #f8fafc;
       display: grid;
       place-items: center;
+      overflow: hidden;
+    }
+    .photo {
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      object-position: center;
+    }
+    .placeholder {
       font-size: 8mm;
       font-weight: 700;
       color: ${esc(brand)};
