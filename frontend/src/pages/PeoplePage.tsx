@@ -30,6 +30,7 @@ const tabs = [
   { id: "staff", label: "Staff", to: "/people/staff" },
   { id: "employees", label: "Employees", to: "/people/employees" },
   { id: "alumni", label: "Alumni", to: "/people/alumni" },
+  { id: "trash", label: "Trash", to: "/people/trash" },
 ] as const;
 
 export function PeoplePage() {
@@ -37,7 +38,7 @@ export function PeoplePage() {
   const { user } = useAuth();
   const current = tab || "students";
   if (!tab) return <Navigate to="/people/students" replace />;
-  if (current !== "students" && current !== "staff" && current !== "employees" && current !== "alumni") {
+  if (current !== "students" && current !== "staff" && current !== "employees" && current !== "alumni" && current !== "trash") {
     return <Navigate to="/people/students" replace />;
   }
   const canEnroll = user?.role === "OWNER" || user?.role === "COUNSELOR" || (user?.capabilities ?? []).includes("STUDENTS");
@@ -45,7 +46,7 @@ export function PeoplePage() {
     const role = user?.role;
     if (!role || role === "OWNER") return true;
     if (role === "FACULTY" || role === "COUNSELOR" || role === "PLACEMENT_HEAD") {
-      return item.id === "students" || item.id === "alumni";
+      return item.id === "students" || item.id === "alumni" || (item.id === "trash" && (role === "COUNSELOR" || (user.capabilities ?? []).includes("STUDENTS")));
     }
     if (role === "ACCOUNTANT") return item.id === "students" || item.id === "employees";
     return item.id === "students";
@@ -72,6 +73,7 @@ export function PeoplePage() {
         ))}
       </div>
       {current === "students" && <StaffStudents canEnroll={!!canEnroll} embedded />}
+      {current === "trash" && <StaffStudents canEnroll={!!canEnroll} embedded trashView />}
       {current === "staff" && <InstituteStaff />}
       {current === "employees" && <InstituteEmployees />}
       {current === "alumni" && <AlumniPage embedded />}

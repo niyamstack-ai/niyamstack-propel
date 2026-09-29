@@ -217,8 +217,15 @@ public class OauthLoginService {
         OrgAccess.requireNotSuspended(org);
 
         if (byEmail != null && Roles.STUDENT.equals(byEmail.getRole())
-                && org.getId().equals(byEmail.getOrganizationId()) && byEmail.isActive()) {
-            return byEmail;
+                && org.getId().equals(byEmail.getOrganizationId())) {
+            List<Student> linked = store.listBy(Student.class, org.getId(), "userId", byEmail.getId());
+            if (!linked.isEmpty() && linked.getFirst().getTrashedAt() != null) {
+                throw new ApiException(HttpStatus.FORBIDDEN,
+                        "This student was moved to trash. Ask the institute to restore them.");
+            }
+            if (byEmail.isActive()) {
+                return byEmail;
+            }
         }
         if (byEmail != null && !Roles.STUDENT.equals(byEmail.getRole()) && !Roles.isPlatform(byEmail.getRole())
                 && org.getId().equals(byEmail.getOrganizationId())) {
@@ -228,6 +235,9 @@ public class OauthLoginService {
 
         Student match = null;
         for (Student s : store.list(Student.class, org.getId())) {
+            if (s.getTrashedAt() != null) {
+                continue;
+            }
             if (s.getEmail() != null && identity.email().equalsIgnoreCase(s.getEmail().trim())) {
                 match = s;
                 break;

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
-import { createRecord, updateRecord } from "../ops";
+import { createRecord } from "../ops";
 import { useAuth } from "../auth";
 import { prettyLabel } from "../labels";
+import { studentOpenPath } from "./StudentProfilePage";
 import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, formatDay, useApi } from "../ui";
 
 type Student = {
@@ -22,8 +24,10 @@ type Named = { id: string; name: string; code?: string; courseId?: string };
 
 export function StudentsPage() {
   const { user } = useAuth();
+  const [params] = useSearchParams();
   if (user?.role === "STUDENT" || user?.role === "PARENT") return <MyStudentRecord />;
-  return <StaffStudents canEnroll={user?.role === "OWNER" || user?.role === "COUNSELOR" || (user?.capabilities ?? []).includes("STUDENTS")} />;
+  const canEnroll = user?.role === "OWNER" || user?.role === "COUNSELOR" || (user?.capabilities ?? []).includes("STUDENTS");
+  return <StaffStudents canEnroll={canEnroll} trashView={params.get("trash") === "1"} />;
 }
 
 export function MyStudentRecord() {
@@ -258,8 +262,8 @@ export function MyStudentRecord() {
   );
 }
 
-export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; embedded?: boolean }) {
-  const students = useApi<Student[]>("/api/students");
+export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: boolean; embedded?: boolean; trashView?: boolean }) {
+  const students = useApi<Student[]>(trashView ? "/api/students?view=trash" : "/api/students");
   const courses = useApi<Named[]>("/api/courses");
   const batches = useApi<Named[]>("/api/batches");
   const centers = useApi<Named[]>("/api/centers");
@@ -281,6 +285,8 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showEnroll, setShowEnroll] = useState(false);
+  const [search, setSearch] = useState("");
   const [docStudent, setDocStudent] = useState("");
   const [docType, setDocType] = useState("Aadhaar");
   const [docFile, setDocFile] = useState("");
@@ -347,6 +353,7 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
       setParentPhone("");
       setPhotoUrl("");
       students.reload();
+      setShowEnroll(false);
       setNotice(
         (created.tempPassword
           ? `${created.fullName} can log in on your website with mobile ${created.phone} (OTP) or email ${created.email} / password ${created.tempPassword}. Share this once.`
@@ -369,25 +376,6 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
       setNotice(
         `${s.fullName} can log in with mobile ${created.phone || s.phone} (OTP) or email ${created.email || s.email} / password ${created.tempPassword}. Share this once.`
       );
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-
-  async function setStatus(s: Student, status: string) {
-    const labels: Record<string, string> = {
-      DEFERRED: `Put ${s.fullName} on hold? They stay in the list but are not treated as active.`,
-      DROPPED: `Drop ${s.fullName}? This does not delete fee records.`,
-      ALUMNI: `Mark ${s.fullName} as alumni?`,
-      ACTIVE: `Mark ${s.fullName} as active?`,
-    };
-    if (!window.confirm(labels[status] || `Change status for ${s.fullName}?`)) return;
-    setError(null);
-    setNotice(null);
-    try {
-      await updateRecord(`/api/students/${s.id}`, { ...s, status });
-      setNotice(`${s.fullName} marked ${prettyLabel(status)}.`);
-      students.reload();
     } catch (e) {
       setError((e as Error).message);
     }
@@ -440,16 +428,69 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
     }
   }
 
+  async function moveToTrash(s: Student) {
+    if (!window.confirm(`Move ${s.fullName} to Trash? They leave the live list. Restore from People → Trash.`)) return;
+    setError(null);
+    setNotice(null);
+    try {
+      await api(`/api/students/${s.id}/trash`, { method: "POST", body: "{}" });
+      students.reload();
+      setNotice(`${s.fullName} moved to Trash.`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function restoreStudent(s: Student) {
+    setError(null);
+    setNotice(null);
+    try {
+      await api(`/api/students/${s.id}/restore`, { method: "POST", body: "{}" });
+      students.reload();
+      setNotice(`${s.fullName} restored.`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (students.data ?? []).filter((s) => {
+      if (!q) return true;
+      return `${s.studentCode} ${s.fullName} ${s.email || ""} ${s.phone || ""}`.toLowerCase().includes(q);
+    });
+  }, [students.data, search]);
+
+  const openPath = (id: string) => studentOpenPath(id, !!embedded);
+
   return (
     <div className="space-y-6">
       {!embedded && (
       <div>
-        <h1 className="text-2xl font-bold text-navy">Students</h1>
-        <p className="text-sm text-slate-500">Enroll students with a mobile number. That creates a login for your institute website.</p>
+        <h1 className="text-2xl font-bold text-navy">{trashView ? "Student trash" : "Students"}</h1>
+        <p className="text-sm text-slate-500">
+          {trashView
+            ? "Restore a student if they were moved here by mistake."
+            : "Open a student for the full profile. Enroll with a mobile number to create a website login."}
+        </p>
+        {canEnroll && (
+          <p className="mt-2 text-sm">
+            {trashView ? (
+              <Link className="text-brand" to="/students">
+                ← Live students
+              </Link>
+            ) : (
+              <Link className="text-brand" to="/students?trash=1">
+                Open trash
+              </Link>
+            )}
+          </p>
+        )}
       </div>
       )}
-      {canEnroll && (
-      <Card title="Enroll a student">
+      {canEnroll && !trashView && (
+        showEnroll ? (
+      <Card title="Enroll a student" action={<button type="button" className="text-sm text-brand" onClick={() => setShowEnroll(false)}>Close</button>}>
         <FormGrid>
           <Field key="enroll-code" name="student-code" label="Student code" value={code} onChange={setCode} placeholder="Auto if blank" />
           <Field key="enroll-name" name="student-name" label="Full name" value={name} onChange={setName} />
@@ -469,31 +510,55 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
           </div>
         </FormGrid>
       </Card>
+        ) : (
+          <div>
+            <PrimaryButton onClick={() => setShowEnroll(true)}>Enroll student</PrimaryButton>
+          </div>
+        )
       )}
       <ErrorText error={error} />
       {notice && <p className="text-sm text-navy">{notice}</p>}
-      <Card title="Students">
+      <Card
+        title={trashView ? "Trash" : "Students"}
+        action={
+          <input
+            className="rounded-lg border border-line px-3 py-1.5 text-sm"
+            placeholder="Search name, code, email"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        }
+      >
         <Table
-          empty="No students yet. Enrol the first student above."
+          empty={trashView ? "Trash is empty." : "No students yet. Enrol the first student."}
+          loading={students.loading}
           columns={["Code", "Name", "Status", "Email", ""]}
-          rows={(students.data ?? []).map((s) => [
+          rows={filtered.map((s) => [
             s.studentCode,
-            s.fullName,
-            prettyLabel(s.status),
+            <Link className="font-medium text-brand hover:underline" to={openPath(s.id)}>
+              {s.fullName}
+            </Link>,
+            <span className="rounded-full bg-mist px-2 py-0.5 text-xs font-medium text-navy">{prettyLabel(s.status)}</span>,
             s.email,
             <span className="flex flex-wrap gap-2">
-              {!s.userId && (
-                <Linkish onClick={() => void issueLogin(s)}>Create login</Linkish>
+              <Link className="text-brand hover:underline" to={openPath(s.id)}>
+                Open
+              </Link>
+              {trashView ? (
+                canEnroll ? <Linkish onClick={() => void restoreStudent(s)}>Restore</Linkish> : null
+              ) : (
+                <>
+                  {!s.userId && canEnroll && <Linkish onClick={() => void issueLogin(s)}>Create login</Linkish>}
+                  <Linkish onClick={() => void printId(s)}>ID card</Linkish>
+                  {canEnroll && <Linkish onClick={() => void moveToTrash(s)}>Trash</Linkish>}
+                </>
               )}
-              <Linkish onClick={() => void printId(s)}>ID card</Linkish>
-              <Linkish onClick={() => setStatus(s, "ACTIVE")}>Active</Linkish>
-              <Linkish onClick={() => setStatus(s, "DEFERRED")}>On hold</Linkish>
-              <Linkish onClick={() => setStatus(s, "DROPPED")}>Drop</Linkish>
-              <Linkish onClick={() => setStatus(s, "ALUMNI")}>Alumni</Linkish>
             </span>,
           ])}
         />
       </Card>
+      {!trashView && (
+      <>
       <Card title="Link guardian / parent">
         <FormGrid>
           <Select
@@ -587,6 +652,8 @@ export function StaffStudents({ canEnroll, embedded }: { canEnroll: boolean; emb
           </ul>
         </Card>
       </div>
+      </>
+      )}
     </div>
   );
 }

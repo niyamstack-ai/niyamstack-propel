@@ -1,5 +1,6 @@
 package com.niyamstack.propel.sis;
 
+import com.niyamstack.propel.audit.AuditService;
 import com.niyamstack.propel.common.ApiException;
 import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.AppUser;
@@ -29,11 +30,13 @@ public class StudentAccountService {
     private final Store store;
     private final PasswordEncoder encoder;
     private final LicenseService licenses;
+    private final AuditService audit;
 
-    public StudentAccountService(Store store, PasswordEncoder encoder, LicenseService licenses) {
+    public StudentAccountService(Store store, PasswordEncoder encoder, LicenseService licenses, AuditService audit) {
         this.store = store;
         this.encoder = encoder;
         this.licenses = licenses;
+        this.audit = audit;
     }
 
     @Transactional
@@ -93,6 +96,9 @@ public class StudentAccountService {
         Access.requireTenant(actor);
         Access.requireWrite(actor, "SIS");
         Student student = store.getOwned(Student.class, studentId, actor.organizationId());
+        if (student.getTrashedAt() != null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Restore this student from Trash before creating a login.");
+        }
         if (student.getUserId() != null) {
             AppUser existing = store.get(AppUser.class, student.getUserId());
             if (existing != null && existing.isActive()) {
@@ -147,6 +153,62 @@ public class StudentAccountService {
             student.setCourseId(course.getId());
             store.save(student);
         }
+    }
+
+    @Transactional
+    public Student trash(UUID studentId) {
+        PropelUser actor = Auth.current();
+        Access.requireTenant(actor);
+        Access.requireWrite(actor, "SIS");
+        Student student = store.getOwned(Student.class, studentId, actor.organizationId());
+        if (student.getTrashedAt() != null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "This student is already in Trash.");
+        }
+        student.setPreviousStatus(student.getStatus());
+        student.setTrashedAt(Instant.now());
+        student.setStatus("TRASHED");
+        student = store.save(student);
+        if (student.getUserId() != null) {
+            AppUser user = store.get(AppUser.class, student.getUserId());
+            user.setActive(false);
+            store.save(user);
+        }
+        audit.log("STUDENT_TRASH", "Student", student.getId(), student.getFullName());
+        return student;
+    }
+
+    @Transactional
+    public Student restore(UUID studentId) {
+        PropelUser actor = Auth.current();
+        Access.requireTenant(actor);
+        Access.requireWrite(actor, "SIS");
+        Student student = store.getOwned(Student.class, studentId, actor.organizationId());
+        if (student.getTrashedAt() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "This student is not in Trash.");
+        }
+        licenses.requireStudentCapacity();
+        String prior = student.getPreviousStatus();
+        if (prior == null || prior.isBlank() || "TRASHED".equalsIgnoreCase(prior)) {
+            prior = "ENROLLED";
+        }
+        student.setStatus(prior);
+        student.setPreviousStatus(null);
+        student.setTrashedAt(null);
+        student = store.save(student);
+        if (student.getUserId() != null) {
+            AppUser user = store.get(AppUser.class, student.getUserId());
+            user.setActive(true);
+            store.save(user);
+        }
+        audit.log("STUDENT_RESTORE", "Student", student.getId(), student.getFullName());
+        return student;
+    }
+
+    public Student requireLive(Student student) {
+        if (student.getTrashedAt() != null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Restore this student from Trash first.");
+        }
+        return student;
     }
 
     public static String requireMobile(String raw) {

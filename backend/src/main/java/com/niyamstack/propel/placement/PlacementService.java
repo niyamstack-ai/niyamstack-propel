@@ -405,6 +405,9 @@ public class PlacementService {
         UUID org = user.organizationId();
         List<Map<String, Object>> out = new ArrayList<>();
         for (Student s : store.list(Student.class, org)) {
+            if (s.getTrashedAt() != null) {
+                continue;
+            }
             List<String> reasons = riskReasons(org, s);
             if (reasons.isEmpty()) {
                 continue;

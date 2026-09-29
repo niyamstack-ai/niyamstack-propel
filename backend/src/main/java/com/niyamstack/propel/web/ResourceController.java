@@ -250,10 +250,43 @@ public class ResourceController {
     @GetMapping("/scholarships") public List<Scholarship> scholarships() { return list(Scholarship.class); }
     @PostMapping("/scholarships") public Scholarship createScholarship(@RequestBody Scholarship body) { return create(body, "CRM"); }
 
-    @GetMapping("/students") public List<Student> students() { return list(Student.class); }
+    @GetMapping("/students")
+    public List<Student> students(@RequestParam(required = false) String view) {
+        List<Student> rows = list(Student.class);
+        boolean trash = "trash".equalsIgnoreCase(view);
+        return rows.stream().filter(s -> trash == (s.getTrashedAt() != null)).toList();
+    }
+
+    @GetMapping("/students/{id}")
+    public Student student(@PathVariable UUID id) {
+        PropelUser user = Auth.current();
+        Access.requireTenant(user);
+        Access.requireEntityModule(user, Student.class);
+        Student row = store.getOwned(Student.class, id, user.organizationId());
+        if (scope.restrict(Student.class, List.of(row), user).isEmpty()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Student not found");
+        }
+        return row;
+    }
+
     @PostMapping("/students") public Map<String, Object> createStudent(@RequestBody Student body) { return studentAccounts.enrollFromOwner(body); }
     @PostMapping("/students/{id}/issue-login") public Map<String, Object> issueStudentLogin(@PathVariable UUID id) { return studentAccounts.issueLogin(id); }
-    @PutMapping("/students/{id}") public Student updateStudent(@PathVariable UUID id, @RequestBody Student body) { return update(Student.class, id, body, "SIS"); }
+    @PostMapping("/students/{id}/trash") public Student trashStudent(@PathVariable UUID id) { return studentAccounts.trash(id); }
+    @PostMapping("/students/{id}/restore") public Student restoreStudent(@PathVariable UUID id) { return studentAccounts.restore(id); }
+
+    @PutMapping("/students/{id}")
+    public Student updateStudent(@PathVariable UUID id, @RequestBody Student body) {
+        Student existing = store.getOwned(Student.class, id, Auth.current().organizationId());
+        if (existing.getTrashedAt() != null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Restore this student from Trash before editing.");
+        }
+        body.setTrashedAt(null);
+        body.setPreviousStatus(existing.getPreviousStatus());
+        if (body.getStatus() != null && "TRASHED".equalsIgnoreCase(body.getStatus())) {
+            body.setStatus(existing.getStatus());
+        }
+        return update(Student.class, id, body, "SIS");
+    }
 
     @GetMapping("/student-documents") public List<StudentDocument> docs() { return list(StudentDocument.class); }
     @PostMapping("/student-documents") public StudentDocument createDoc(@RequestBody StudentDocument body) { return create(body, "SIS"); }

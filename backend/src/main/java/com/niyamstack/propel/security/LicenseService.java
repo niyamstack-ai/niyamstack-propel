@@ -37,7 +37,9 @@ public class LicenseService {
         if (org.getMaxStudents() == null || org.getMaxStudents() <= 0) {
             return;
         }
-        int used = store.list(Student.class, org.getId()).size();
+        int used = (int) store.list(Student.class, org.getId()).stream()
+                .filter(s -> s.getTrashedAt() == null)
+                .count();
         if (used >= org.getMaxStudents()) {
             throw new ApiException(HttpStatus.FORBIDDEN,
                     "Student limit reached (" + org.getMaxStudents() + "). Ask Niyamstack to raise the cap.");

@@ -325,6 +325,8 @@ public final class Model {
         private String photoUrl;
         @Column(columnDefinition = "TEXT")
         private String customJson;
+        private Instant trashedAt;
+        private String previousStatus;
     }
 
     @Entity(name = "CourseEnrollment") @Table(name = "course_enrollments") @Getter @Setter

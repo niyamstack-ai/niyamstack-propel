@@ -15,6 +15,7 @@ import { MobileApp } from "./pages/MobileApps";
 import { DashboardPage } from "./pages/DashboardPage";
 import { CrmPage } from "./pages/CrmPage";
 import { StudentsPage } from "./pages/StudentsPage";
+import { StudentProfilePage } from "./pages/StudentProfilePage";
 import { FeesPage } from "./pages/FeesPage";
 import { PlacementPage } from "./pages/PlacementPage";
 import { ReadinessPage } from "./pages/ReadinessPage";
@@ -206,6 +207,8 @@ export default function App() {
           <Route path="one-to-one" element={<OneToOnePage />} />
           <Route path="chats" element={<ChatsPage />} />
           <Route path="campaigns" element={<CampaignsPage />} />
+          <Route path="people/students/:studentId" element={<StudentProfilePage />} />
+          <Route path="students/:studentId" element={<StudentProfilePage />} />
           <Route path="people" element={<PeoplePage />} />
           <Route path="people/:tab" element={<PeoplePage />} />
           <Route path="self-service" element={<SelfServicePage />} />

@@ -15,6 +15,7 @@ const STATUS_LABELS: Record<string, string> = {
   DEFERRED: "On hold",
   DROPPED: "Dropped",
   ALUMNI: "Alumni",
+  TRASHED: "Trash",
   NEW: "New",
   COUNSELING: "Counselling",
   DEMO: "Demo",
