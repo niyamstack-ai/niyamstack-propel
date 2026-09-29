@@ -47,13 +47,21 @@ public class PlatformService {
     private final JwtService jwt;
     private final AuditService audit;
     private final OauthProviders oauth;
+    private final PlatformCommissionService commissions;
 
-    public PlatformService(Store store, PasswordEncoder encoder, JwtService jwt, AuditService audit, OauthProviders oauth) {
+    public PlatformService(
+            Store store,
+            PasswordEncoder encoder,
+            JwtService jwt,
+            AuditService audit,
+            OauthProviders oauth,
+            PlatformCommissionService commissions) {
         this.store = store;
         this.encoder = encoder;
         this.jwt = jwt;
         this.audit = audit;
         this.oauth = oauth;
+        this.commissions = commissions;
     }
 
     private static final int MAX_FAILURES = 8;
@@ -800,6 +808,7 @@ public class PlatformService {
         row.put("transactionTotal", capturedTotal);
         row.put("transactionsTodayCount", capturedTodayCount);
         row.put("transactionsTodayAmount", capturedToday);
+        row.putAll(commissions.summary(org.getId()));
         return row;
     }
 

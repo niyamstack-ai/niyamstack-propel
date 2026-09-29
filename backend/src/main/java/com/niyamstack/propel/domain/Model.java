@@ -847,6 +847,29 @@ public final class Model {
         private String notes;
     }
 
+    /** Institute → platform share when a course is allotted offline (not gateway settlement). */
+    @Entity(name = "PlatformCommission")
+    @Table(name = "platform_commissions", uniqueConstraints = @UniqueConstraint(
+            name = "uk_platform_commissions_org_student_course",
+            columnNames = {"organization_id", "student_id", "course_id"}))
+    @Getter @Setter
+    public static class PlatformCommission extends TenantEntity {
+        private UUID studentId;
+        private UUID courseId;
+        private String courseName;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal courseFees;
+        @Column(precision = 6, scale = 4)
+        private BigDecimal platformFeePercent;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal platformFeeAmount;
+        private String status = "PENDING";
+        private String source;
+        private Instant receivedAt;
+        @Column(length = 500)
+        private String notes;
+    }
+
     @Entity(name = "PayoutBatch")
     @Table(name = "payout_batches", uniqueConstraints = @UniqueConstraint(name = "uk_payout_batches_org_period", columnNames = {"organization_id", "period_start", "period_end"}))
     @Getter @Setter

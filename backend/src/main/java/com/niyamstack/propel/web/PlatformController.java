@@ -1,6 +1,7 @@
 package com.niyamstack.propel.web;
 
 import com.niyamstack.propel.catalog.Features;
+import com.niyamstack.propel.platform.PlatformCommissionService;
 import com.niyamstack.propel.platform.PlatformService;
 import com.niyamstack.propel.platform.PlatformService.DealRequest;
 import com.niyamstack.propel.platform.PlatformService.EmployeeRequest;
@@ -21,10 +22,15 @@ import java.util.UUID;
 public class PlatformController {
     private final PlatformService platform;
     private final SettlementService settlements;
+    private final PlatformCommissionService commissions;
 
-    public PlatformController(PlatformService platform, SettlementService settlements) {
+    public PlatformController(
+            PlatformService platform,
+            SettlementService settlements,
+            PlatformCommissionService commissions) {
         this.platform = platform;
         this.settlements = settlements;
+        this.commissions = commissions;
     }
 
     public record LoginRequest(@NotBlank String username, @NotBlank String password) {}
@@ -201,5 +207,15 @@ public class PlatformController {
     @PutMapping("/settlement/payout-mode")
     public Map<String, Object> savePayoutMode(@RequestBody Map<String, String> body) {
         return settlements.setGlobalPayoutMode(body == null ? null : body.get("payoutMode"));
+    }
+
+    @GetMapping("/institutes/{id}/commissions")
+    public List<Map<String, Object>> instituteCommissions(@PathVariable UUID id) {
+        return commissions.listForInstitute(id);
+    }
+
+    @PostMapping("/commissions/{id}/mark-received")
+    public Map<String, Object> markCommissionReceived(@PathVariable UUID id) {
+        return commissions.markReceived(id);
     }
 }

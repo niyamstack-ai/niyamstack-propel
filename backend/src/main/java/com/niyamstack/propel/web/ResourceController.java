@@ -285,7 +285,11 @@ public class ResourceController {
         if (body.getStatus() != null && "TRASHED".equalsIgnoreCase(body.getStatus())) {
             body.setStatus(existing.getStatus());
         }
-        return update(Student.class, id, body, "SIS");
+        Student saved = update(Student.class, id, body, "SIS");
+        if (body.getCourseId() != null) {
+            studentAccounts.enrollIfCourse(Auth.current().organizationId(), saved, body.getCourseId(), "OWNER");
+        }
+        return saved;
     }
 
     @GetMapping("/student-documents") public List<StudentDocument> docs() { return list(StudentDocument.class); }

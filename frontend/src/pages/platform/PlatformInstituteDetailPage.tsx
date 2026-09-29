@@ -41,7 +41,24 @@ type Institute = {
   transactionTotal?: number;
   transactionsTodayCount?: number;
   transactionsTodayAmount?: number;
+  offlineCommissionPending?: number;
+  offlineCommissionPendingCount?: number;
+  offlineCommissionReceived?: number;
   createdAt?: string;
+};
+
+type CommissionNote = {
+  id: string;
+  studentName?: string;
+  studentCode?: string;
+  courseName?: string;
+  courseFees?: number;
+  platformFeePercent?: number;
+  platformFeeAmount?: number;
+  status?: string;
+  source?: string;
+  createdAt?: string;
+  receivedAt?: string;
 };
 
 export function PlatformInstituteDetailPage() {
@@ -51,12 +68,14 @@ export function PlatformInstituteDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [acting, setActing] = useState<null | "paid" | "approve" | "failed" | "suspend" | "restore" | "trash" | "owner">(null);
+  const [acting, setActing] = useState<null | "paid" | "approve" | "failed" | "suspend" | "restore" | "trash" | "owner" | "commission">(null);
   const canMarkPaid = hasCap(user, "MARK_PAID");
   const canApprove = hasCap(user, "APPROVE");
   const canSuspend = hasCap(user, "SUSPEND");
   const canEditDeal = hasCap(user, "EDIT_DEAL");
   const canView = hasCap(user, "VIEW_INSTITUTES");
+  const canCommissions = canView || canMarkPaid || hasCap(user, "VIEW_SETTLEMENTS");
+  const commissions = useApi<CommissionNote[]>(canCommissions && id ? `/api/platform/institutes/${id}/commissions` : "");
   const [amount, setAmount] = useState("");
   const [cycle, setCycle] = useState("MONTHLY");
   const [tier, setTier] = useState("STARTER");
@@ -160,6 +179,22 @@ export function PlatformInstituteDetailPage() {
     }
   }
 
+  async function markCommission(noteId: string) {
+    setActing("commission");
+    setError(null);
+    setNotice(null);
+    try {
+      await api(`/api/platform/commissions/${noteId}/mark-received`, { method: "POST", body: "{}" });
+      commissions.reload();
+      rec.reload();
+      setNotice("Commission marked received.");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setActing(null);
+    }
+  }
+
   const org = rec.data;
   const paid = org?.paymentStatus === "PAID";
   const active = org?.accessStatus === "ACTIVE";
@@ -204,8 +239,73 @@ export function PlatformInstituteDetailPage() {
         <Stat label="Students" value={String(org?.studentCount ?? "—")} hint={`${org?.studentsRegisteredToday ?? 0} registered today`} />
         <Stat label="Captured payments" value={formatInr(org?.transactionTotal)} hint={`${org?.transactionCount ?? 0} transactions`} />
         <Stat label="Today’s GMV" value={formatInr(org?.transactionsTodayAmount)} hint={`${org?.transactionsTodayCount ?? 0} today`} />
-        <Stat label="Owner" value={org?.ownerName || "—"} hint={org?.ownerPhone ? `+91 ${org.ownerPhone}` : org?.ownerEmail || "No owner linked"} />
+        <Stat
+          label="Offline commission due"
+          value={formatInr(org?.offlineCommissionPending)}
+          hint={`${org?.offlineCommissionPendingCount ?? 0} pending note(s)`}
+        />
       </div>
+
+      {canCommissions && (
+        <Card title="Offline commission (course allotment)">
+          <p className="mb-3 text-sm text-slate-500">
+            When the institute allots a course in admin (not via Razorpay checkout), Propel records a platform registration charge —
+            typically {(Number(org?.platformFeePercent ?? 0.05) * 100).toFixed(0)}% of the course list price. Mark received when they pay Niyamstack offline.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-line text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="py-2 pr-3 font-medium">Student</th>
+                  <th className="py-2 pr-3 font-medium">Course</th>
+                  <th className="py-2 pr-3 font-medium">List price</th>
+                  <th className="py-2 pr-3 font-medium">Commission</th>
+                  <th className="py-2 pr-3 font-medium">Status</th>
+                  <th className="py-2 font-medium" />
+                </tr>
+              </thead>
+              <tbody>
+                {(commissions.data ?? []).map((row) => (
+                  <tr key={row.id} className="border-b border-line/70">
+                    <td className="py-2 pr-3">
+                      <span className="font-medium text-navy">{row.studentName || "—"}</span>
+                      {row.studentCode ? <span className="mt-0.5 block text-xs text-slate-500">{row.studentCode}</span> : null}
+                    </td>
+                    <td className="py-2 pr-3">{row.courseName || "—"}</td>
+                    <td className="py-2 pr-3">{formatInr(row.courseFees)}</td>
+                    <td className="py-2 pr-3">
+                      {formatInr(row.platformFeeAmount)}
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        {row.platformFeePercent != null ? `${(Number(row.platformFeePercent) * 100).toFixed(1)}%` : ""}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3">{row.status || "—"}</td>
+                    <td className="py-2 text-right">
+                      {canMarkPaid && row.status === "PENDING" ? (
+                        <button
+                          type="button"
+                          className="rounded-full border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-800 disabled:opacity-50"
+                          disabled={saving || !!acting}
+                          onClick={() => void markCommission(row.id)}
+                        >
+                          {acting === "commission" ? "…" : "Mark received"}
+                        </button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+                {(commissions.data?.length ?? 0) === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-4 text-sm text-slate-500">
+                      No offline commission notes yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       {canView && (
         <Card title="Owner login (for support recovery)">

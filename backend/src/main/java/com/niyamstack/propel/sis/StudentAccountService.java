@@ -6,7 +6,9 @@ import com.niyamstack.propel.data.Store;
 import com.niyamstack.propel.domain.Model.AppUser;
 import com.niyamstack.propel.domain.Model.Course;
 import com.niyamstack.propel.domain.Model.CourseEnrollment;
+import com.niyamstack.propel.domain.Model.PlatformCommission;
 import com.niyamstack.propel.domain.Model.Student;
+import com.niyamstack.propel.platform.PlatformCommissionService;
 import com.niyamstack.propel.security.Access;
 import com.niyamstack.propel.security.Auth;
 import com.niyamstack.propel.security.LicenseService;
@@ -31,12 +33,19 @@ public class StudentAccountService {
     private final PasswordEncoder encoder;
     private final LicenseService licenses;
     private final AuditService audit;
+    private final PlatformCommissionService commissions;
 
-    public StudentAccountService(Store store, PasswordEncoder encoder, LicenseService licenses, AuditService audit) {
+    public StudentAccountService(
+            Store store,
+            PasswordEncoder encoder,
+            LicenseService licenses,
+            AuditService audit,
+            PlatformCommissionService commissions) {
         this.store = store;
         this.encoder = encoder;
         this.licenses = licenses;
         this.audit = audit;
+        this.commissions = commissions;
     }
 
     @Transactional
@@ -86,8 +95,14 @@ public class StudentAccountService {
         student.setPermanentAddress(body.getPermanentAddress());
         student.setPhotoUrl(body.getPhotoUrl());
         student = store.save(student);
-        enrollIfCourse(orgId, student, body.getCourseId(), "OWNER");
-        return response(student, temp);
+        PlatformCommission note = enrollIfCourse(orgId, student, body.getCourseId(), "OWNER");
+        Map<String, Object> out = response(student, temp);
+        if (note != null) {
+            out.put("platformCommissionAmount", note.getPlatformFeeAmount());
+            out.put("platformCommissionPercent", note.getPlatformFeePercent());
+            out.put("platformCommissionCourse", note.getCourseName());
+        }
+        return out;
     }
 
     @Transactional
@@ -131,15 +146,15 @@ public class StudentAccountService {
         return response(student, temp);
     }
 
-    public void enrollIfCourse(UUID orgId, Student student, UUID courseId, String source) {
+    public PlatformCommission enrollIfCourse(UUID orgId, Student student, UUID courseId, String source) {
         if (courseId == null) {
-            return;
+            return null;
         }
         Course course = store.getOwned(Course.class, courseId, orgId);
         boolean already = store.listBy(CourseEnrollment.class, orgId, "studentId", student.getId()).stream()
                 .anyMatch(e -> courseId.equals(e.getCourseId()) && !"CANCELLED".equals(e.getStatus()));
         if (already) {
-            return;
+            return null;
         }
         CourseEnrollment enrollment = new CourseEnrollment();
         enrollment.setOrganizationId(orgId);
@@ -153,6 +168,7 @@ public class StudentAccountService {
             student.setCourseId(course.getId());
             store.save(student);
         }
+        return commissions.recordAllotment(orgId, student.getId(), course.getId(), source);
     }
 
     @Transactional

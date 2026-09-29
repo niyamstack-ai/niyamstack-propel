@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { createRecord } from "../ops";
 import { useAuth } from "../auth";
-import { prettyLabel } from "../labels";
+import { formatInr, prettyLabel } from "../labels";
 import { studentOpenPath } from "./StudentProfilePage";
 import { openIdCardPrint } from "../idCardPrint";
 import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, formatDay, useApi, PhoneField, phoneForApi } from "../ui";
@@ -334,7 +334,12 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
         photoUrl: photoUrl || null,
         status: "ENROLLED",
         enrollmentDate: new Date().toISOString().slice(0, 10),
-      }) as Student & { tempPassword?: string };
+      }) as Student & {
+        tempPassword?: string;
+        platformCommissionAmount?: number;
+        platformCommissionCourse?: string;
+        platformCommissionPercent?: number;
+      };
       let parentNote = "";
       if (parentPhone) {
         const invited = await api<{ phone?: string; tempPassword?: string }>(`/api/actions/sis/parents/invite`, {
@@ -355,10 +360,18 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
       setPhotoUrl("");
       students.reload();
       setShowEnroll(false);
+      const commissionNote =
+        created.platformCommissionAmount != null
+          ? ` Platform registration charge ${formatInr(created.platformCommissionAmount)} recorded${
+              created.platformCommissionCourse ? ` for ${created.platformCommissionCourse}` : ""
+            }.`
+          : "";
       setNotice(
         (created.tempPassword
           ? `${created.fullName} can log in on your website with mobile ${created.phone} (OTP) or email ${created.email} / password ${created.tempPassword}. Share this once.`
-          : `${created.fullName} was enrolled.`) + parentNote
+          : `${created.fullName} was enrolled.`) +
+          parentNote +
+          commissionNote
       );
     } catch (e) {
       setError((e as Error).message);
