@@ -53,7 +53,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             }
             return 0;
         }
-        if (path.startsWith("/api/auth/login")) {
+        if (path.startsWith("/api/auth/login") || path.equals("/api/auth/oauth/complete")) {
             return LOGIN_LIMIT;
         }
         if (path.equals("/api/auth/signup")

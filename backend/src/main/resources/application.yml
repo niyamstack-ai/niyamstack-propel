@@ -73,6 +73,14 @@ app:
       password: ${PROPEL_MAIL_PASSWORD:}
       from: ${PROPEL_MAIL_FROM:}
       public-url: ${PROPEL_PUBLIC_URL:http://localhost:5173}
+  oauth:
+    google:
+      client-id: ${PROPEL_OAUTH_GOOGLE_CLIENT_ID:}
+      client-secret: ${PROPEL_OAUTH_GOOGLE_CLIENT_SECRET:}
+    microsoft:
+      client-id: ${PROPEL_OAUTH_MICROSOFT_CLIENT_ID:}
+      client-secret: ${PROPEL_OAUTH_MICROSOFT_CLIENT_SECRET:}
+      tenant: ${PROPEL_OAUTH_MICROSOFT_TENANT:common}
     storage:
       provider: ${PROPEL_STORAGE_PROVIDER:local}
       minio-endpoint: ${MINIO_ENDPOINT:http://localhost:9000}

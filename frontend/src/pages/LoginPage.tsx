@@ -2,6 +2,7 @@ import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { api, clearPlatformSession } from "../api";
 import { useAuth, type SessionUser } from "../auth";
+import { OauthButtons, useOauthReturn } from "../oauth";
 import { PACKS, type PackId } from "../packs";
 import { NiyamstackLogo } from "../brand/NiyamstackLogo";
 
@@ -69,6 +70,10 @@ function AuthShell({ children }: { children: ReactNode }) {
 function LoginViews() {
   const [params] = useSearchParams();
   const emailMode = params.get("method") === "email";
+  const { applySession } = useAuth();
+  const { oauthError, oauthBusy } = useOauthReturn((session) => {
+    applySession(session as { token: string; user: SessionUser });
+  });
   const [logoutReason, setLogoutReason] = useState<string | null>(null);
   useEffect(() => {
     try {
@@ -81,12 +86,18 @@ function LoginViews() {
       /* ignore */
     }
   }, []);
+  if (oauthBusy) {
+    return <p className="text-sm text-slate-500">Completing sign-in…</p>;
+  }
   return (
     <>
       {logoutReason === "suspended" && (
         <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
           This institute is suspended, so the session was ended. Contact Niyamstack to restore access, then sign in again.
         </p>
+      )}
+      {oauthError && (
+        <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">{oauthError}</p>
       )}
       {emailMode ? <EmailLoginView /> : <OtpLoginView />}
     </>
@@ -211,6 +222,7 @@ function OtpLoginView() {
           </button>
         </form>
       )}
+      {!sent && <OauthButtons surface="institute" returnTo="/" />}
       <OrLine />
       <Link className="block text-center text-sm font-medium text-brand" to="/login?method=email">
         Login via Email
@@ -270,6 +282,7 @@ function EmailLoginView() {
           {busy ? "Signing in…" : "Login"}
         </button>
       </form>
+      <OauthButtons surface="institute" returnTo="/" />
       <OrLine />
       <Link className="block text-center text-sm font-medium text-brand" to="/login">
         Login via Mobile

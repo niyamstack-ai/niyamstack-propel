@@ -15,6 +15,7 @@ type PlatformAuthState = {
   token: string | null;
   user: PlatformUser | null;
   login: (username: string, password: string) => Promise<void>;
+  applySession: (res: SessionResponse) => void;
   logout: () => void;
 };
 
@@ -59,6 +60,14 @@ export function PlatformAuthProvider({ children }: { children: ReactNode }) {
     () => ({
       token,
       user,
+      applySession(res: SessionResponse) {
+        clearInstituteSession();
+        window.dispatchEvent(new Event("propel:unauthorized"));
+        setPlatformToken(res.token);
+        localStorage.setItem(USER_KEY, JSON.stringify(res.user));
+        setTok(res.token);
+        setUser(res.user);
+      },
       async login(username, password) {
         clearInstituteSession();
         window.dispatchEvent(new Event("propel:unauthorized"));

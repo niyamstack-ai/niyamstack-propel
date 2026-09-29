@@ -1,7 +1,8 @@
 import { FormEvent, createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
-import { useAuth } from "../auth";
+import { useAuth, type SessionUser } from "../auth";
+import { OauthButtons, useOauthReturn } from "../oauth";
 import { UserMenu, initialsOf } from "../UserMenu";
 import { StudentLms, type StudySection } from "./LmsPage";
 import { StudentCourseLibrary } from "./courseContent";
@@ -1289,7 +1290,7 @@ function CoursePage() {
 
 function StudentLoginPage() {
   const slug = useSlug();
-  const { token, user, loginWithOtp, login } = useAuth();
+  const { token, user, loginWithOtp, login, applySession } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const next = searchParams.get("next") || `${sitePath(slug)}/learn`;
@@ -1301,6 +1302,14 @@ function StudentLoginPage() {
   const [mode, setMode] = useState<"otp" | "email">("otp");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { oauthError, oauthBusy } = useOauthReturn(
+    (session) => {
+      applySession(session as { token: string; user: SessionUser });
+    },
+    (returnTo) => {
+      navigate(returnTo || next, { replace: true });
+    },
+  );
 
   if (token && user?.role === "STUDENT") {
     return <Navigate to={next} replace />;
@@ -1351,10 +1360,21 @@ function StudentLoginPage() {
     }
   }
 
+  if (oauthBusy) {
+    return (
+      <div className="mx-auto max-w-md rounded-2xl border border-line bg-white p-6">
+        <p className="text-sm text-slate-500">Completing sign-in…</p>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-md rounded-2xl border border-line bg-white p-6">
       <h1 className="text-xl font-bold text-navy">Student login</h1>
       <p className="mt-1 text-sm text-slate-500">Use the mobile you registered, enrolled with, or purchased with.</p>
+      {(error || oauthError) && (
+        <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">{error || oauthError}</p>
+      )}
       <div className="mt-4 flex gap-2">
         <button type="button" className={`rounded-full px-3 py-1 text-sm ${mode === "otp" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => setMode("otp")}>
           Mobile OTP
@@ -1366,7 +1386,6 @@ function StudentLoginPage() {
       {mode === "otp" && !sent && (
         <form className="mt-4 space-y-3" onSubmit={sendOtp}>
           <input className="w-full rounded-lg border border-line px-3 py-2" placeholder="Mobile" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          {error && <p className="text-sm text-red-600">{error}</p>}
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
             {busy ? "Sending…" : "Send OTP"}
           </button>
@@ -1381,7 +1400,6 @@ function StudentLoginPage() {
         <form className="mt-4 space-y-3" onSubmit={verify}>
           {sent.devOtp && <p className="text-xs text-slate-400">Local OTP: {sent.devOtp}</p>}
           <input className="w-full rounded-lg border border-line px-3 py-2 tracking-[0.3em]" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="OTP" />
-          {error && <p className="text-sm text-red-600">{error}</p>}
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
             {busy ? "Signing in…" : "Login"}
           </button>
@@ -1399,7 +1417,6 @@ function StudentLoginPage() {
         <form className="mt-4 space-y-3" onSubmit={emailLogin}>
           <input className="w-full rounded-lg border border-line px-3 py-2" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <PasswordInput placeholder="Password" value={password} onChange={setPassword} autoComplete="current-password" />
-          {error && <p className="text-sm text-red-600">{error}</p>}
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
             {busy ? "Signing in…" : "Login"}
           </button>
@@ -1409,6 +1426,9 @@ function StudentLoginPage() {
             </Link>
           </p>
         </form>
+      )}
+      {!sent && (
+        <OauthButtons surface="storefront" returnTo={next} slug={slug} />
       )}
       <p className="mt-4 text-center text-sm text-slate-500">
         New student?{" "}

@@ -1,15 +1,25 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { NiyamstackLogo } from "../../brand/NiyamstackLogo";
 import { clearInstituteSession } from "../../api";
-import { usePlatformAuth } from "../../platformAuth";
+import { OauthButtons, useOauthReturn } from "../../oauth";
+import { usePlatformAuth, type PlatformUser } from "../../platformAuth";
 
 export function PlatformLoginPage() {
-  const { token, login } = usePlatformAuth();
+  const { token, login, applySession } = usePlatformAuth();
+  const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { oauthError, oauthBusy } = useOauthReturn(
+    (session) => {
+      applySession(session as { token: string; user: PlatformUser });
+    },
+    (returnTo) => {
+      navigate(returnTo && returnTo.startsWith("/platform") ? returnTo : "/platform", { replace: true });
+    },
+  );
 
   useEffect(() => {
     clearInstituteSession();
@@ -53,25 +63,34 @@ export function PlatformLoginPage() {
           </div>
           <h1 className="text-2xl font-bold text-navy">Platform login</h1>
           <p className="mt-2 text-sm text-slate-500">Niyamstack staff sign in here. There is no public signup on this door.</p>
-          <form className="mt-8" onSubmit={onSubmit}>
-            <label className="block text-sm font-medium text-navy">
-              Id
-              <input
-                className="mt-1 w-full rounded-lg border border-line px-3 py-2.5 outline-none focus:border-brand"
-                autoComplete="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            </label>
-            <label className="mt-4 block text-sm font-medium text-navy">
-              Password
-              <PasswordField value={password} onChange={setPassword} />
-            </label>
-            {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-            <button className="mt-6 w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy}>
-              {busy ? "Signing in…" : "Login"}
-            </button>
-          </form>
+          {oauthBusy ? (
+            <p className="mt-8 text-sm text-slate-500">Completing sign-in…</p>
+          ) : (
+            <>
+              {(error || oauthError) && (
+                <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">{error || oauthError}</p>
+              )}
+              <form className="mt-8" onSubmit={onSubmit}>
+                <label className="block text-sm font-medium text-navy">
+                  Id
+                  <input
+                    className="mt-1 w-full rounded-lg border border-line px-3 py-2.5 outline-none focus:border-brand"
+                    autoComplete="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                  />
+                </label>
+                <label className="mt-4 block text-sm font-medium text-navy">
+                  Password
+                  <PasswordField value={password} onChange={setPassword} />
+                </label>
+                <button className="mt-6 w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy}>
+                  {busy ? "Signing in…" : "Login"}
+                </button>
+              </form>
+              <OauthButtons surface="platform" returnTo="/platform" />
+            </>
+          )}
           <p className="mt-4 text-center text-sm text-slate-500">
             No self-serve reset here.{" "}
             <a className="font-medium text-brand" href="mailto:support@niyamstack.com?subject=Platform%20password%20reset">

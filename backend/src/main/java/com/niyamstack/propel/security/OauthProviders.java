@@ -1,0 +1,217 @@
+package com.niyamstack.propel.security;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.niyamstack.propel.common.ApiException;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+@Service
+public class OauthProviders {
+    public static final String GOOGLE = "google";
+    public static final String MICROSOFT = "microsoft";
+
+    private final String publicUrl;
+    private final String googleClientId;
+    private final String googleClientSecret;
+    private final String microsoftClientId;
+    private final String microsoftClientSecret;
+    private final String microsoftTenant;
+    private final ObjectMapper json;
+    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+
+    public OauthProviders(
+            @Value("${app.integrations.mail.public-url:http://localhost:5173}") String publicUrl,
+            @Value("${app.oauth.google.client-id:}") String googleClientId,
+            @Value("${app.oauth.google.client-secret:}") String googleClientSecret,
+            @Value("${app.oauth.microsoft.client-id:}") String microsoftClientId,
+            @Value("${app.oauth.microsoft.client-secret:}") String microsoftClientSecret,
+            @Value("${app.oauth.microsoft.tenant:common}") String microsoftTenant,
+            ObjectMapper json
+    ) {
+        this.publicUrl = publicUrl == null || publicUrl.isBlank() ? "http://localhost:5173" : publicUrl.trim().replaceAll("/$", "");
+        this.googleClientId = nz(googleClientId);
+        this.googleClientSecret = nz(googleClientSecret);
+        this.microsoftClientId = nz(microsoftClientId);
+        this.microsoftClientSecret = nz(microsoftClientSecret);
+        this.microsoftTenant = microsoftTenant == null || microsoftTenant.isBlank() ? "common" : microsoftTenant.trim();
+        this.json = json;
+    }
+
+    public record Identity(String provider, String subject, String email, String name, boolean emailVerified) {}
+
+    public Map<String, Object> status() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("google", googleEnabled());
+        out.put("microsoft", microsoftEnabled());
+        out.put("publicUrl", publicUrl);
+        return out;
+    }
+
+    public boolean googleEnabled() {
+        return !googleClientId.isBlank() && !googleClientSecret.isBlank();
+    }
+
+    public boolean microsoftEnabled() {
+        return !microsoftClientId.isBlank() && !microsoftClientSecret.isBlank();
+    }
+
+    public boolean enabled(String provider) {
+        return GOOGLE.equals(provider) ? googleEnabled() : MICROSOFT.equals(provider) && microsoftEnabled();
+    }
+
+    public String normalizeProvider(String raw) {
+        String p = raw == null ? "" : raw.trim().toLowerCase();
+        if (!GOOGLE.equals(p) && !MICROSOFT.equals(p)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Provider must be google or microsoft");
+        }
+        if (!enabled(p)) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
+                    p.substring(0, 1).toUpperCase() + p.substring(1) + " login is not configured on this portal yet.");
+        }
+        return p;
+    }
+
+    /** Browser callback hits the same public origin via nginx (/api/...). */
+    public String callbackUrl(String provider) {
+        return publicUrl + "/api/auth/oauth/" + provider + "/callback";
+    }
+
+    public String authorizeUrl(String provider, String state) {
+        String p = normalizeProvider(provider);
+        String redirect = URLEncoder.encode(callbackUrl(p), StandardCharsets.UTF_8);
+        String st = URLEncoder.encode(state, StandardCharsets.UTF_8);
+        if (GOOGLE.equals(p)) {
+            return "https://accounts.google.com/o/oauth2/v2/auth"
+                    + "?client_id=" + URLEncoder.encode(googleClientId, StandardCharsets.UTF_8)
+                    + "&redirect_uri=" + redirect
+                    + "&response_type=code"
+                    + "&scope=" + URLEncoder.encode("openid email profile", StandardCharsets.UTF_8)
+                    + "&state=" + st
+                    + "&access_type=online"
+                    + "&prompt=select_account";
+        }
+        return "https://login.microsoftonline.com/" + URLEncoder.encode(microsoftTenant, StandardCharsets.UTF_8) + "/oauth2/v2.0/authorize"
+                + "?client_id=" + URLEncoder.encode(microsoftClientId, StandardCharsets.UTF_8)
+                + "&redirect_uri=" + redirect
+                + "&response_type=code"
+                + "&scope=" + URLEncoder.encode("openid email profile User.Read", StandardCharsets.UTF_8)
+                + "&state=" + st
+                + "&prompt=select_account";
+    }
+
+    public Identity exchange(String provider, String code) {
+        String p = normalizeProvider(provider);
+        if (code == null || code.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Missing authorization code");
+        }
+        try {
+            if (GOOGLE.equals(p)) {
+                return exchangeGoogle(code);
+            }
+            return exchangeMicrosoft(code);
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "Could not complete " + p + " sign-in. Try again.");
+        }
+    }
+
+    private Identity exchangeGoogle(String code) throws Exception {
+        String body = "code=" + URLEncoder.encode(code, StandardCharsets.UTF_8)
+                + "&client_id=" + URLEncoder.encode(googleClientId, StandardCharsets.UTF_8)
+                + "&client_secret=" + URLEncoder.encode(googleClientSecret, StandardCharsets.UTF_8)
+                + "&redirect_uri=" + URLEncoder.encode(callbackUrl(GOOGLE), StandardCharsets.UTF_8)
+                + "&grant_type=authorization_code";
+        Map<String, Object> token = postForm("https://oauth2.googleapis.com/token", body);
+        String idToken = str(token.get("id_token"));
+        if (idToken.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "Google did not return an identity token");
+        }
+        Map<String, Object> claims = decodeJwtPayload(idToken);
+        String email = str(claims.get("email")).toLowerCase();
+        boolean verified = Boolean.TRUE.equals(claims.get("email_verified")) || "true".equalsIgnoreCase(str(claims.get("email_verified")));
+        if (email.isBlank() || !email.contains("@")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Google account has no email we can use");
+        }
+        if (!verified) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Google email is not verified");
+        }
+        return new Identity(GOOGLE, str(claims.get("sub")), email, str(claims.get("name")), true);
+    }
+
+    private Identity exchangeMicrosoft(String code) throws Exception {
+        String body = "code=" + URLEncoder.encode(code, StandardCharsets.UTF_8)
+                + "&client_id=" + URLEncoder.encode(microsoftClientId, StandardCharsets.UTF_8)
+                + "&client_secret=" + URLEncoder.encode(microsoftClientSecret, StandardCharsets.UTF_8)
+                + "&redirect_uri=" + URLEncoder.encode(callbackUrl(MICROSOFT), StandardCharsets.UTF_8)
+                + "&grant_type=authorization_code";
+        String tokenUrl = "https://login.microsoftonline.com/" + microsoftTenant + "/oauth2/v2.0/token";
+        Map<String, Object> token = postForm(tokenUrl, body);
+        String access = str(token.get("access_token"));
+        if (access.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "Microsoft did not return an access token");
+        }
+        HttpRequest req = HttpRequest.newBuilder(URI.create("https://graph.microsoft.com/v1.0/me"))
+                .timeout(Duration.ofSeconds(15))
+                .header("Authorization", "Bearer " + access)
+                .GET()
+                .build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+        if (res.statusCode() >= 300) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "Microsoft profile lookup failed");
+        }
+        Map<String, Object> me = json.readValue(res.body(), new TypeReference<>() {});
+        String email = str(me.get("mail"));
+        if (email.isBlank()) {
+            email = str(me.get("userPrincipalName"));
+        }
+        email = email.trim().toLowerCase();
+        if (email.isBlank() || !email.contains("@")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Microsoft account has no email we can use");
+        }
+        String name = str(me.get("displayName"));
+        return new Identity(MICROSOFT, str(me.get("id")), email, name, true);
+    }
+
+    private Map<String, Object> postForm(String url, String body) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(15))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+        if (res.statusCode() >= 300) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "Token exchange failed");
+        }
+        return json.readValue(res.body(), new TypeReference<>() {});
+    }
+
+    private Map<String, Object> decodeJwtPayload(String jwt) throws Exception {
+        String[] parts = jwt.split("\\.");
+        if (parts.length < 2) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "Invalid identity token");
+        }
+        byte[] decoded = java.util.Base64.getUrlDecoder().decode(parts[1]);
+        return json.readValue(decoded, new TypeReference<>() {});
+    }
+
+    private static String str(Object v) {
+        return v == null ? "" : String.valueOf(v).trim();
+    }
+
+    private static String nz(String v) {
+        return v == null ? "" : v.trim();
+    }
+}

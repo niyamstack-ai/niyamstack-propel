@@ -594,6 +594,11 @@ public class PlatformService {
             String payoutMode
     ) {}
 
+    /** Used by password login and OAuth complete. */
+    public Map<String, Object> sessionFor(AppUser user) {
+        return session(user);
+    }
+
     private Map<String, Object> session(AppUser user) {
         PropelUser principal = new PropelUser(
                 user.getId(),
