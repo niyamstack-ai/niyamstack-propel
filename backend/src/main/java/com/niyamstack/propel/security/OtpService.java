@@ -43,8 +43,9 @@ public class OtpService {
 
     @Transactional
     public Issued issue(String phone, String purpose) {
+        String normalized = Phones.normalize(phone);
         String code = reveal ? devCode : randomCode();
-        String challengeKey = key(phone, purpose);
+        String challengeKey = key(normalized, purpose);
         OtpChallenge challenge = store.findOtpChallenge(challengeKey);
         if (challenge == null) {
             challenge = new OtpChallenge();
@@ -55,12 +56,13 @@ public class OtpService {
         challenge.setExpiresAt(Instant.now().plusSeconds(300));
         challenge.setTries(0);
         store.save(challenge);
-        return new Issued(phone, reveal, code);
+        return new Issued(normalized, reveal, code);
     }
 
     @Transactional
     public void verify(String phone, String purpose, String otp) {
-        String k = key(phone, purpose);
+        String normalized = Phones.normalize(phone);
+        String k = key(normalized, purpose);
         OtpChallenge challenge = store.findOtpChallenge(k);
         if (challenge == null || challenge.getExpiresAt() == null || challenge.getExpiresAt().isBefore(Instant.now())) {
             if (challenge != null) {

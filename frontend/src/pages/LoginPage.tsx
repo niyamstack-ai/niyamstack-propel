@@ -110,9 +110,23 @@ function OtpLoginView() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
+  /** Normalized phone used for the OTP challenge — must match verify. */
+  const [otpPhone, setOtpPhone] = useState("");
   const [sent, setSent] = useState<OtpSent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  async function requestOtp(digits: string) {
+    const res = await api<OtpSent>("/api/auth/otp/request", {
+      method: "POST",
+      body: JSON.stringify({ phone: digits }),
+    });
+    setOtpPhone(digits);
+    setOtp("");
+    setSent(res);
+    setError(null);
+    return res;
+  }
 
   async function loginPassword(e: FormEvent) {
     e.preventDefault();
@@ -122,7 +136,7 @@ function OtpLoginView() {
       return;
     }
     if (!password) {
-      setError("Enter your password, or use OTP on mail");
+      setError("Enter your password, or tap OTP on mail");
       return;
     }
     setBusy(true);
@@ -134,7 +148,18 @@ function OtpLoginView() {
       });
       applySession(res as never);
     } catch (err) {
-      setError((err as Error).message);
+      const msg = (err as Error).message || "";
+      // Unverified email → send OTP and switch to code entry (do not leave them looping on password).
+      if (/verify your email|otp on mail/i.test(msg)) {
+        try {
+          await requestOtp(digits);
+          setError(null);
+        } catch (otpErr) {
+          setError((otpErr as Error).message || msg);
+        }
+      } else {
+        setError(msg);
+      }
     } finally {
       setBusy(false);
     }
@@ -149,12 +174,7 @@ function OtpLoginView() {
     setBusy(true);
     setError(null);
     try {
-      const res = await api<OtpSent>("/api/auth/otp/request", {
-        method: "POST",
-        body: JSON.stringify({ phone: digits }),
-      });
-      setSent(res);
-      setPhone(phone);
+      await requestOtp(digits);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -164,10 +184,15 @@ function OtpLoginView() {
 
   async function verify(e: FormEvent) {
     e.preventDefault();
+    const digits = otpPhone || phoneForApi(phone);
+    if (!otp.trim()) {
+      setError("Enter the 6-digit code from your email");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await loginWithOtp(phoneForApi(phone), otp);
+      await loginWithOtp(digits, otp.trim());
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -194,21 +219,43 @@ function OtpLoginView() {
         </form>
       ) : (
         <form className="mt-8" onSubmit={verify}>
-          <p className="text-sm text-slate-500">OTP sent to {sent.emailMasked || `+91 ${sent.phone || phone}`}</p>
+          <p className="text-sm text-slate-600">
+            Enter the 6-digit code we sent to <span className="font-medium text-navy">{sent.emailMasked || "your email"}</span>.
+            This also verifies your email so password login works next time.
+          </p>
           {sent.devOtp && <p className="mt-1 text-xs text-slate-400">Local OTP: {sent.devOtp}</p>}
           <label className="mt-4 block text-sm font-medium text-navy">OTP</label>
           <input
             className="mt-1 w-full rounded-lg border border-line px-3 py-2.5 tracking-[0.4em] outline-none focus:border-brand"
             inputMode="numeric"
+            autoComplete="one-time-code"
             maxLength={6}
             value={otp}
-            onChange={(e) => setOtp(e.target.value)}
+            onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            autoFocus
           />
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-          <button className="mt-6 w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy}>
-            {busy ? "Signing in…" : "Login"}
+          <button className="mt-6 w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy || otp.length < 6}>
+            {busy ? "Signing in…" : "Verify & login"}
           </button>
-          <button type="button" className="mt-3 w-full text-sm text-brand" onClick={() => setSent(null)}>
+          <button
+            type="button"
+            className="mt-3 w-full text-sm text-brand disabled:opacity-60"
+            disabled={busy}
+            onClick={() => void sendOtp()}
+          >
+            Resend code
+          </button>
+          <button
+            type="button"
+            className="mt-2 w-full text-sm text-slate-500"
+            onClick={() => {
+              setSent(null);
+              setOtp("");
+              setOtpPhone("");
+              setError(null);
+            }}
+          >
             Back
           </button>
         </form>

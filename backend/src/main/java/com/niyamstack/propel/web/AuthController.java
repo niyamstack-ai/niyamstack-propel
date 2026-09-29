@@ -203,10 +203,10 @@ public class AuthController {
         ensureActive(user);
         requireOrgAccess(user);
         otp.verify(user.getPhone(), OtpService.LOGIN, body.otp());
-        if (!user.isEmailVerified()) {
-            user.setEmailVerified(true);
-            store.save(user);
-        }
+        // OTP on mail proves inbox access — unlock password login going forward.
+        user.setEmailVerified(true);
+        user.setPhoneVerified(true);
+        store.save(user);
         clearLock(user, "otp");
         audit.log("LOGIN_OTP", "AppUser", user.getId(), user.getPhone());
         Map<String, Object> session = sessions.issue(user);
@@ -553,7 +553,7 @@ public class AuthController {
             return;
         }
         throw new ApiException(HttpStatus.FORBIDDEN,
-                "Verify your email before signing in with a password. Use OTP on mail, or check your inbox for a verification code.");
+                "Your email is not verified yet. Enter the OTP we send to your inbox, then you can use password login.");
     }
 
     private static String requireMobile(String raw) {
