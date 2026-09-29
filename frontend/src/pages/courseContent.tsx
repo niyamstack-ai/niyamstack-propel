@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { api, fileSrc, getToken } from "../api";
 import { createRecord, deleteRecord, updateRecord, uploadContentFile } from "../ops";
+import { StudyMediaOverlay, studyMediaFillClass } from "../StudyMediaOverlay";
 import { ErrorText, useApi } from "../ui";
 
 export type ContentRow = {
@@ -1361,47 +1362,49 @@ function PreviewModal({ item, onClose }: { item: ContentRow; onClose: () => void
   const isPdf = !remote && (type === "PDF" || /\.pdf($|\?)/i.test(item.url || ""));
   const external = remote && !isVideo && !isImage;
   const isDoc = (type === "DOCUMENT" || isPdf) && !!src && !remote && !isZip;
+
+  const actions = src ? (
+    <a
+      className="rounded-lg border border-white/25 px-2.5 py-1 text-xs font-medium text-sky-200 hover:bg-white/10 sm:text-sm"
+      href={src}
+      download={!external}
+      target="_blank"
+      rel="noreferrer"
+    >
+      {external ? "Open link" : "Download"}
+    </a>
+  ) : null;
+
   return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/50 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-2xl bg-white p-4" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="font-semibold text-navy">{item.title}</h3>
-          <div className="flex items-center gap-3">
-            {src && (
-              <a className="text-sm font-medium text-brand" href={src} download={!external} target="_blank" rel="noreferrer">
-                {external ? "Open link" : "Download"}
-              </a>
-            )}
-            <button type="button" aria-label="Close preview" onClick={onClose}>
-              Close
-            </button>
-          </div>
-        </div>
-        {isVideo && src && <video src={src} controls className="w-full rounded-lg bg-black" />}
-        {isImage && src && <img src={src} alt={item.title} className="max-h-[70vh] w-full object-contain" />}
-        {isPdf && src && !external && <iframe title={item.title} src={src} className="h-[70vh] w-full rounded-lg border" />}
-        {isDoc && !isPdf && <iframe title={item.title} src={src} className="h-[70vh] w-full rounded-lg border" />}
-        {isZip && (
-          <p className="text-sm text-slate-500">
+    <StudyMediaOverlay title={item.title} onClose={onClose} actions={actions}>
+      {isVideo && src && <video src={src} controls autoPlay className={studyMediaFillClass("video")} />}
+      {isImage && src && <img src={src} alt={item.title} className={studyMediaFillClass("image")} />}
+      {isPdf && src && !external && <iframe title={item.title} src={src} className={studyMediaFillClass("iframe")} />}
+      {isDoc && !isPdf && <iframe title={item.title} src={src} className={studyMediaFillClass("iframe")} />}
+      {isZip && (
+        <div className="grid h-full place-items-center px-6 text-center text-sm text-slate-200">
+          <p>
             This is a downloadable package. Use Download to save it
             {src ? "." : " — no file is attached."}
           </p>
-        )}
-        {external && !isZip && src && (
-          <>
-            <iframe title={item.title} src={src} className="h-[70vh] w-full rounded-lg border" />
-            <p className="mt-2 text-xs text-slate-400">
-              If the page is blank, the site blocks embedding.{" "}
-              <a className="text-brand" href={src} target="_blank" rel="noreferrer">
-                Open in a new tab
-              </a>
-              .
-            </p>
-          </>
-        )}
-        {!src && <p className="text-sm text-slate-500">No file attached.</p>}
-      </div>
-    </div>
+        </div>
+      )}
+      {external && !isZip && src && (
+        <div className="flex h-full min-h-0 flex-col">
+          <iframe title={item.title} src={src} className={studyMediaFillClass("iframe")} />
+          <p className="shrink-0 bg-navy/90 px-4 py-2 text-xs text-slate-300">
+            If the page is blank, the site blocks embedding.{" "}
+            <a className="font-medium text-sky-300" href={src} target="_blank" rel="noreferrer">
+              Open in a new tab
+            </a>
+            .
+          </p>
+        </div>
+      )}
+      {!src && !isZip && (
+        <div className="grid h-full place-items-center text-sm text-slate-300">No file attached.</div>
+      )}
+    </StudyMediaOverlay>
   );
 }
 

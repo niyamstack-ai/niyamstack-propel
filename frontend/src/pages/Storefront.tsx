@@ -19,6 +19,7 @@ import { isProductHost } from "../siteHost";
 import { RichHtml } from "../RichTextArea";
 import { openRazorpay, type CheckoutOrder } from "../razorpay";
 import { printReceiptById } from "../receiptPrint";
+import { StudyMediaOverlay, studyMediaFillClass } from "../StudyMediaOverlay";
 
 type CmsPage = { title: string; slug: string; pageType?: string; body?: string };
 
@@ -256,43 +257,45 @@ function StorefrontPreviewModal({ item, onClose }: { item: OutlineItem; onClose:
   const isImage = type === "IMAGE" || type.includes("IMAGE") || type === "PNG" || type === "JPG" || type === "JPEG";
   const remote = /^https?:\/\//i.test(src);
   const isPdf = !remote && (type === "PDF" || type === "DOCUMENT" || /\.pdf($|\?)/i.test(src));
+  const actions = src ? (
+    <a
+      className="rounded-lg border border-white/25 px-2.5 py-1 text-xs font-medium text-sky-200 hover:bg-white/10 sm:text-sm"
+      href={src}
+      target="_blank"
+      rel="noreferrer"
+    >
+      Open
+    </a>
+  ) : null;
+
   return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/50 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-2xl bg-white p-4" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="font-semibold text-navy">{item.title}</h3>
-          <div className="flex items-center gap-3">
-            {src && (
-              <a className="text-sm font-medium text-brand" href={src} target="_blank" rel="noreferrer">
-                Open
-              </a>
-            )}
-            <button type="button" className="text-sm text-slate-600" onClick={onClose}>
-              Close
-            </button>
-          </div>
+    <StudyMediaOverlay title={item.title} onClose={onClose} actions={actions}>
+      {isVideo && src && <video src={src} controls autoPlay className={studyMediaFillClass("video")} />}
+      {isImage && src && <img src={src} alt={item.title} className={studyMediaFillClass("image")} />}
+      {isPdf && src && <iframe title={item.title} src={src} className={studyMediaFillClass("iframe")} />}
+      {!isVideo && !isImage && !isPdf && item.body && (
+        <div className="h-full overflow-auto bg-white p-6">
+          <RichHtml html={item.body} className="prose mx-auto max-w-3xl text-sm text-slate-700" />
         </div>
-        {isVideo && src && <video src={src} controls className="w-full rounded-lg bg-black" />}
-        {isImage && src && <img src={src} alt={item.title} className="max-h-[70vh] w-full object-contain" />}
-        {isPdf && src && <iframe title={item.title} src={src} className="h-[70vh] w-full rounded-lg border" />}
-        {!isVideo && !isImage && !isPdf && item.body && <RichHtml html={item.body} className="prose max-w-none text-sm text-slate-700" />}
-        {!isVideo && !isImage && !isPdf && !item.body && src && (
-          <>
-            <iframe title={item.title} src={src} className="h-[70vh] w-full rounded-lg border" />
-            {remote && (
-              <p className="mt-2 text-xs text-slate-400">
-                If the page is blank, the site blocks embedding.{" "}
-                <a className="text-brand" href={src} target="_blank" rel="noreferrer">
-                  Open in a new tab
-                </a>
-                .
-              </p>
-            )}
-          </>
-        )}
-        {!src && !item.body && <p className="text-sm text-slate-500">This preview has no file attached yet.</p>}
-      </div>
-    </div>
+      )}
+      {!isVideo && !isImage && !isPdf && !item.body && src && (
+        <div className="flex h-full min-h-0 flex-col">
+          <iframe title={item.title} src={src} className={studyMediaFillClass("iframe")} />
+          {remote && (
+            <p className="shrink-0 bg-navy/90 px-4 py-2 text-xs text-slate-300">
+              If the page is blank, the site blocks embedding.{" "}
+              <a className="font-medium text-sky-300" href={src} target="_blank" rel="noreferrer">
+                Open in a new tab
+              </a>
+              .
+            </p>
+          )}
+        </div>
+      )}
+      {!src && !item.body && (
+        <div className="grid h-full place-items-center text-sm text-slate-300">This preview has no file attached yet.</div>
+      )}
+    </StudyMediaOverlay>
   );
 }
 
