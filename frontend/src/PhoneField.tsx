@@ -148,16 +148,17 @@ export function PhoneField({
     <label className={`block text-sm ${fullWidth ? "md:col-span-2" : ""}`}>
       {label ? <span className="text-slate-600">{label}</span> : null}
       <span className={`flex min-w-0 overflow-hidden rounded-lg border border-line bg-white ${label ? "mt-1" : ""}`}>
-        <span className="relative shrink-0 border-r border-line bg-mist">
-          {/* Visible dial badge — native <select> closed label is often truncated */}
-          <span className="pointer-events-none absolute inset-0 z-0 flex items-center gap-1 px-2.5 text-sm font-semibold text-navy">
-            <span aria-hidden>{flagOf(country.iso)}</span>
+        <span className="relative inline-flex shrink-0 items-stretch border-r border-line bg-mist">
+          <span className="pointer-events-none flex items-center gap-0.5 px-2 text-[13px] font-semibold tabular-nums text-navy">
+            <span className="text-base leading-none" aria-hidden>
+              {flagOf(country.iso)}
+            </span>
             <span>+{country.dial}</span>
-            <span className="text-[10px] font-normal text-slate-500">▾</span>
+            <span className="pl-0.5 text-[9px] font-normal text-slate-500">▾</span>
           </span>
           <select
             aria-label="Country code"
-            className="relative z-10 h-full min-h-[2.5rem] min-w-[6.75rem] cursor-pointer appearance-none bg-transparent py-2 pl-2 pr-2 text-sm opacity-0"
+            className="absolute inset-0 z-10 cursor-pointer opacity-0"
             value={iso}
             disabled={disabled}
             onChange={(e) => emit(e.target.value, national)}
@@ -176,14 +177,11 @@ export function PhoneField({
           inputMode="numeric"
           required={required}
           disabled={disabled}
-          className="w-full min-w-0 border-0 px-3 py-2 outline-none focus:ring-0"
+          className="w-full min-w-0 border-0 px-3 py-2.5 outline-none focus:ring-0"
           value={national}
           placeholder={placeholder || (country.iso === "IN" ? "10-digit mobile" : "Local mobile number")}
           onChange={(e) => emit(iso, e.target.value)}
         />
-      </span>
-      <span className="mt-1 block text-[11px] text-slate-400">
-        Default India (+91). Pick another country from the dropdown — type only the local number.
       </span>
     </label>
   );
