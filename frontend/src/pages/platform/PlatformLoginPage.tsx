@@ -88,7 +88,7 @@ export function PlatformLoginPage() {
                   {busy ? "Signing in…" : "Login"}
                 </button>
               </form>
-              <OauthButtons surface="platform" returnTo="/platform" />
+              <OauthButtons surface="platform" returnTo="/platform/login" />
             </>
           )}
           <p className="mt-4 text-center text-sm text-slate-500">

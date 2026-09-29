@@ -459,7 +459,14 @@ function StudentGate({ children }: { children: React.ReactNode }) {
   const slug = useSlug();
   const location = useLocation();
   if (!token) {
-    return <Navigate to={`${sitePath(slug)}/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+    const params = new URLSearchParams();
+    params.set("next", location.pathname + (location.search || ""));
+    const incoming = new URLSearchParams(location.search);
+    const ticket = incoming.get("oauth");
+    const oauthErr = incoming.get("oauth_error");
+    if (ticket) params.set("oauth", ticket);
+    if (oauthErr) params.set("oauth_error", oauthErr);
+    return <Navigate to={`${sitePath(slug)}/login?${params.toString()}`} replace />;
   }
   if (user?.role !== "STUDENT") {
     return (
@@ -1428,7 +1435,11 @@ function StudentLoginPage() {
         </form>
       )}
       {!sent && (
-        <OauthButtons surface="storefront" returnTo={next} slug={slug} />
+        <OauthButtons
+          surface="storefront"
+          returnTo={`${sitePath(slug)}/login?next=${encodeURIComponent(next)}`}
+          slug={slug}
+        />
       )}
       <p className="mt-4 text-center text-sm text-slate-500">
         New student?{" "}

@@ -260,7 +260,7 @@ function OtpLoginView() {
           </button>
         </form>
       )}
-      {!sent && <OauthButtons surface="institute" returnTo="/" />}
+      {!sent && <OauthButtons surface="institute" returnTo="/login" />}
       <OrLine />
       <Link className="block text-center text-sm font-medium text-brand" to="/login?method=email">
         Login via Email
@@ -320,7 +320,7 @@ function EmailLoginView() {
           {busy ? "Signing in…" : "Login"}
         </button>
       </form>
-      <OauthButtons surface="institute" returnTo="/" />
+      <OauthButtons surface="institute" returnTo="/login" />
       <OrLine />
       <Link className="block text-center text-sm font-medium text-brand" to="/login">
         Login via Mobile

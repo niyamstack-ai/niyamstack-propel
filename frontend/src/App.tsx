@@ -56,8 +56,13 @@ import { api } from "./api";
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { token, ready } = useAuth();
+  const location = useLocation();
   if (!token && !ready) return <p className="p-6 text-sm text-slate-500">Loading…</p>;
-  if (!token) return <Navigate to="/login" replace />;
+  if (!token) {
+    const q = location.search || "";
+    const keepOauth = q.includes("oauth=") || q.includes("oauth_error=");
+    return <Navigate to={keepOauth ? `/login${q}` : "/login"} replace />;
+  }
   return children;
 }
 
@@ -72,7 +77,12 @@ function HomePage() {
 
 function PlatformGuard({ children }: { children: React.ReactNode }) {
   const { token, user } = usePlatformAuth();
-  if (!token || !user?.role?.startsWith("PLATFORM_")) return <Navigate to="/platform/login" replace />;
+  const location = useLocation();
+  if (!token || !user?.role?.startsWith("PLATFORM_")) {
+    const q = location.search || "";
+    const keepOauth = q.includes("oauth=") || q.includes("oauth_error=");
+    return <Navigate to={keepOauth ? `/platform/login${q}` : "/platform/login"} replace />;
+  }
   return children;
 }
 

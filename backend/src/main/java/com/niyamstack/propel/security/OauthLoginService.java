@@ -198,7 +198,7 @@ public class OauthLoginService {
         }
         if (byEmail == null || Roles.isPlatform(byEmail.getRole()) || !byEmail.isActive()) {
             throw new ApiException(HttpStatus.FORBIDDEN,
-                    "No institute account for this email. Owners and staff must be invited first; new institutes still use Create your institute.");
+                    "No institute account uses this Google/Microsoft email. Sign in with the same email you registered, or use mobile/password. New institutes still use Create your institute.");
         }
         if (byEmail.getOrganizationId() == null) {
             throw new ApiException(HttpStatus.FORBIDDEN, "Account is not linked to an institute");
@@ -301,9 +301,9 @@ public class OauthLoginService {
             }
         }
         return switch (surface) {
-            case "platform" -> "/platform";
-            case "storefront" -> slug == null || slug.isBlank() ? "/" : "/s/" + slug + "/learn";
-            default -> "/";
+            case "platform" -> "/platform/login";
+            case "storefront" -> slug == null || slug.isBlank() ? "/" : "/s/" + slug + "/login";
+            default -> "/login";
         };
     }
 }
