@@ -5,6 +5,7 @@ import { useAuth, type SessionUser } from "../auth";
 import { OauthButtons, useOauthReturn } from "../oauth";
 import { PACKS, type PackId } from "../packs";
 import { NiyamstackLogo } from "../brand/NiyamstackLogo";
+import { PhoneField, phoneForApi } from "../PhoneField";
 
 type OtpSent = { status: string; phone?: string; emailMasked?: string; channel?: string; devOtp?: string };
 type EmailSent = { status: string; resetToken?: string };
@@ -115,9 +116,9 @@ function OtpLoginView() {
 
   async function loginPassword(e: FormEvent) {
     e.preventDefault();
-    const digits = phone.replace(/\D/g, "");
-    if (digits.length !== 10) {
-      setError("Enter a valid 10-digit mobile number");
+    const digits = phoneForApi(phone);
+    if (digits.length < 8) {
+      setError("Enter a valid mobile number");
       return;
     }
     if (!password) {
@@ -140,9 +141,9 @@ function OtpLoginView() {
   }
 
   async function sendOtp() {
-    const digits = phone.replace(/\D/g, "");
-    if (digits.length !== 10) {
-      setError("Enter a valid 10-digit mobile number");
+    const digits = phoneForApi(phone);
+    if (digits.length < 8) {
+      setError("Enter a valid mobile number");
       return;
     }
     setBusy(true);
@@ -153,7 +154,7 @@ function OtpLoginView() {
         body: JSON.stringify({ phone: digits }),
       });
       setSent(res);
-      setPhone(digits);
+      setPhone(phone);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -166,7 +167,7 @@ function OtpLoginView() {
     setBusy(true);
     setError(null);
     try {
-      await loginWithOtp(phone, otp);
+      await loginWithOtp(phoneForApi(phone), otp);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -180,17 +181,7 @@ function OtpLoginView() {
       <p className="mt-2 text-sm text-slate-500">Institute owners sign in here. Students should open your institute website, not this page.</p>
       {!sent ? (
         <form className="mt-8" onSubmit={loginPassword}>
-          <label className="block text-sm font-medium text-navy">Mobile</label>
-          <div className="mt-1 flex">
-            <span className="inline-flex items-center rounded-l-lg border border-r-0 border-line bg-mist px-3 text-sm text-slate-600">+91</span>
-            <input
-              className="w-full rounded-r-lg border border-line px-3 py-2.5 outline-none focus:border-brand"
-              inputMode="numeric"
-              placeholder="10-digit mobile"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-            />
-          </div>
+          <PhoneField label="Mobile" value={phone} onChange={setPhone} required />
           <label className="mt-4 block text-sm font-medium text-navy">Password</label>
           <PasswordField value={password} onChange={setPassword} />
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
@@ -323,7 +314,7 @@ function SignupView() {
     try {
       const res = await api<OtpSent>("/api/auth/signup", {
         method: "POST",
-        body: JSON.stringify({ instituteName, fullName, email, phone, password, productPack }),
+        body: JSON.stringify({ instituteName, fullName, email, phone: phoneForApi(phone), password, productPack }),
       });
       setSent(res);
     } catch (err) {
@@ -340,7 +331,7 @@ function SignupView() {
     try {
       const res = await api<{ token: string; user: SessionUser }>("/api/auth/signup/verify", {
         method: "POST",
-        body: JSON.stringify({ phone, otp }),
+        body: JSON.stringify({ phone: phoneForApi(phone), otp }),
       });
       applySession(res);
     } catch (err) {
@@ -358,13 +349,7 @@ function SignupView() {
         <form className="mt-6 space-y-3" onSubmit={createInstitute}>
           <Field label="Institute name" value={instituteName} onChange={setInstituteName} />
           <Field label="Your name" value={fullName} onChange={setFullName} />
-          <label className="block text-sm font-medium text-navy">
-            Mobile
-            <div className="mt-1 flex">
-              <span className="inline-flex items-center rounded-l-lg border border-r-0 border-line bg-mist px-3 text-sm text-slate-600">+91</span>
-              <input className="w-full rounded-r-lg border border-line px-3 py-2 outline-none focus:border-brand" value={phone} onChange={(e) => setPhone(e.target.value)} />
-            </div>
-          </label>
+          <PhoneField label="Mobile" value={phone} onChange={setPhone} required />
           <Field label="Email" value={email} onChange={setEmail} type="email" />
           <Field label="Password" value={password} onChange={setPassword} type="password" />
           <Field label="Confirm password" value={confirm} onChange={setConfirm} type="password" />
@@ -440,7 +425,7 @@ function ForgotView() {
     setError(null);
     try {
       if (method === "otp") {
-        const res = await api<OtpSent>("/api/auth/forgot/otp", { method: "POST", body: JSON.stringify({ phone }) });
+        const res = await api<OtpSent>("/api/auth/forgot/otp", { method: "POST", body: JSON.stringify({ phone: phoneForApi(phone) }) });
         setSent(res);
       } else {
         const res = await api<EmailSent>("/api/auth/forgot/email", { method: "POST", body: JSON.stringify({ email }) });
@@ -465,7 +450,7 @@ function ForgotView() {
       if (linkToken) {
         await api("/api/auth/reset/email", { method: "POST", body: JSON.stringify({ token: linkToken, newPassword: password }) });
       } else {
-        await api("/api/auth/reset/otp", { method: "POST", body: JSON.stringify({ phone, otp, newPassword: password }) });
+        await api("/api/auth/reset/otp", { method: "POST", body: JSON.stringify({ phone: phoneForApi(phone), otp, newPassword: password }) });
       }
       setDone(true);
     } catch (err) {
@@ -534,13 +519,7 @@ function ForgotView() {
       ) : !sent ? (
         <form className="mt-6" onSubmit={requestReset}>
           {method === "otp" ? (
-            <label className="block text-sm font-medium text-navy">
-              Mobile
-              <div className="mt-1 flex">
-                <span className="inline-flex items-center rounded-l-lg border border-r-0 border-line bg-mist px-3 text-sm">+91</span>
-                <input className="w-full rounded-r-lg border border-line px-3 py-2" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </div>
-            </label>
+            <PhoneField label="Mobile" value={phone} onChange={setPhone} required />
           ) : (
             <Field label="Email" value={email} onChange={setEmail} type="email" />
           )}

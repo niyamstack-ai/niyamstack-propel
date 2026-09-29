@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { updateRecord } from "../ops";
 import { prettyLabel } from "../labels";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatDay, formatInr, useApi } from "../ui";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatDay, formatInr, useApi, PhoneField, phoneForApi } from "../ui";
 
 type Student = {
   id: string;
@@ -405,7 +405,7 @@ function ProfileEditor({
       <FormGrid>
         <Field label="Full name" name="fullName" value={name} onChange={setName} />
         <Field label="Email" name="email" value={email} onChange={setEmail} />
-        <Field label="Phone" name="phone" value={phone} onChange={setPhone} />
+        <PhoneField label="Phone" name="phone" value={phone} onChange={setPhone} />
         <Field label="Date of birth" name="dateOfBirth" value={dob} onChange={setDob} type="date" />
         <Field label="Address" name="permanentAddress" value={address} onChange={setAddress} />
         <Select
@@ -446,7 +446,7 @@ function ProfileEditor({
             void onSave({
               fullName: name,
               email,
-              phone,
+              phone: phoneForApi(phone),
               dateOfBirth: dob || null,
               permanentAddress: address || null,
               courseId: courseId || null,

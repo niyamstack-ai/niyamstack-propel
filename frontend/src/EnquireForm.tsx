@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "./api";
 import { selectOptions, type FormField } from "./formFields";
+import { PhoneField, phoneForApi } from "./PhoneField";
 
 export function EnquireForm({
   slug,
@@ -50,7 +51,7 @@ export function EnquireForm({
         method: "POST",
         body: JSON.stringify({
           fullName: name,
-          phone,
+          phone: phoneForApi(phone),
           email,
           message,
           landingSlug: landingSlug || undefined,
@@ -78,7 +79,7 @@ export function EnquireForm({
   return (
     <form className={`mt-4 grid gap-3 ${compact ? "" : "sm:grid-cols-2"}`} onSubmit={submit}>
       <input className="rounded-lg border border-line px-3 py-2 text-sm" placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} required />
-      <input className="rounded-lg border border-line px-3 py-2 text-sm" placeholder="Mobile" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+      <PhoneField value={phone} onChange={setPhone} required placeholder="Mobile" />
       <input className="rounded-lg border border-line px-3 py-2 text-sm sm:col-span-2" placeholder="Email (optional)" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
       {fields.map((field) => (
         <div key={field.id} className="sm:col-span-2">

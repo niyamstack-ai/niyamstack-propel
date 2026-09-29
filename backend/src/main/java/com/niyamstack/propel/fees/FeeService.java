@@ -65,6 +65,9 @@ public class FeeService {
         Access.requireAny(user, Roles.OWNER, Roles.ACCOUNTANT, Roles.COUNSELOR);
         FeePlan plan = store.getOwned(FeePlan.class, planId, user.organizationId());
         Student student = store.getOwned(Student.class, studentId, user.organizationId());
+        if (student.getTrashedAt() != null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Restore this student from Trash before scheduling fees.");
+        }
         int count = plan.getInstallmentCount() == null || plan.getInstallmentCount() < 1 ? 2 : plan.getInstallmentCount();
         BigDecimal each = plan.getTotalAmount().divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_UP);
         Organization org = store.get(Organization.class, user.organizationId());
@@ -359,15 +362,18 @@ public class FeeService {
     public List<Invoice> dues() {
         PropelUser user = Auth.current();
         Access.requireTenant(user);
-        List<Invoice> unpaid = store.list(Invoice.class, user.organizationId()).stream()
+        UUID orgId = user.organizationId();
+        var trashed = trashedStudentIds(orgId);
+        List<Invoice> unpaid = store.list(Invoice.class, orgId).stream()
                 .filter(i -> !"PAID".equals(i.getStatus()) && !"CANCELLED".equals(i.getStatus()) && !"VOID".equals(i.getStatus()))
+                .filter(i -> i.getStudentId() == null || !trashed.contains(i.getStudentId()))
                 .toList();
         if (Roles.OWNER.equals(user.role()) || Roles.ACCOUNTANT.equals(user.role()) || Access.hasCap(user, Packs.CAP_VIEW_FEES)) {
             return unpaid;
         }
         if (Roles.STUDENT.equals(user.role())) {
             Student me = scope.studentFor(user);
-            if (me == null) {
+            if (me == null || me.getTrashedAt() != null) {
                 return List.of();
             }
             return unpaid.stream().filter(i -> me.getId().equals(i.getStudentId())).toList();
@@ -462,6 +468,7 @@ public class FeeService {
 
     private int remindOrg(Organization org) {
         int sent = 0;
+        var trashed = trashedStudentIds(org.getId());
         for (Invoice invoice : store.list(Invoice.class, org.getId())) {
             if (!isOverdue(invoice)) {
                 continue;
@@ -469,7 +476,7 @@ public class FeeService {
             if (invoice.getLastRemindedAt() != null && invoice.getLastRemindedAt().isAfter(Instant.now().minusSeconds(20 * 3600))) {
                 continue;
             }
-            if (invoice.getStudentId() == null) {
+            if (invoice.getStudentId() == null || trashed.contains(invoice.getStudentId())) {
                 continue;
             }
             try {
@@ -770,6 +777,9 @@ public class FeeService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "This invoice is not due");
         }
         Student student = store.getOwned(Student.class, invoice.getStudentId(), org.getId());
+        if (student.getTrashedAt() != null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "This student is in Trash. Restore them before sending fee reminders.");
+        }
         BigDecimal due = invoice.getAmount().subtract(nvl(invoice.getPaidAmount()));
         String title = "Fee due " + invoice.getInvoiceNo();
         Map<String, String> vars = new LinkedHashMap<>();
@@ -873,6 +883,12 @@ public class FeeService {
         }
         if (invoice.getInvoiceNo() == null || invoice.getInvoiceNo().isBlank()) {
             invoice.setInvoiceNo(nextInvoiceNo(org));
+        }
+        if (invoice.getStudentId() != null) {
+            Student student = store.getOwned(Student.class, invoice.getStudentId(), invoice.getOrganizationId());
+            if (student.getTrashedAt() != null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Restore this student from Trash before raising an invoice.");
+            }
         }
         if (invoice.getFeePlanId() != null) {
             FeePlan plan = store.getOwned(FeePlan.class, invoice.getFeePlanId(), invoice.getOrganizationId());
@@ -1003,7 +1019,11 @@ public class FeeService {
         BigDecimal outstanding = BigDecimal.ZERO;
         BigDecimal billed = BigDecimal.ZERO;
         for (Invoice invoice : store.list(Invoice.class, orgId)) {
-            if ("CANCELLED".equalsIgnoreCase(invoice.getStatus())) {
+            if ("CANCELLED".equalsIgnoreCase(invoice.getStatus()) || "VOID".equalsIgnoreCase(invoice.getStatus())) {
+                continue;
+            }
+            Student student = invoice.getStudentId() == null ? null : students.get(invoice.getStudentId());
+            if (student != null && student.getTrashedAt() != null) {
                 continue;
             }
             BigDecimal remaining = nvl(invoice.getAmount()).subtract(nvl(invoice.getPaidAmount()));
@@ -1016,7 +1036,7 @@ public class FeeService {
             if (invoice.getCreatedAt() != null && !invoice.getCreatedAt().isBefore(from)) {
                 billed = billed.add(nvl(invoice.getAmount()));
             }
-            String course = courseName(invoice, students.get(invoice.getStudentId()), courseNames);
+            String course = courseName(invoice, student, courseNames);
             String counselor = counselorName(invoice.getStudentId(), counselorByStudent, userNames);
             bump(byCourse, course, BigDecimal.ZERO, remaining);
             bump(byCounselor, counselor, BigDecimal.ZERO, remaining);
@@ -1180,6 +1200,22 @@ public class FeeService {
         BigDecimal[] row = buckets.computeIfAbsent(key, k -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO});
         row[0] = row[0].add(nvl(collected));
         row[1] = row[1].add(nvl(outstanding));
+    }
+
+    /** Students in Trash stay out of dues, reminders, and live fee collections until restored. */
+    private java.util.Set<UUID> trashedStudentIds(UUID orgId) {
+        java.util.Set<UUID> ids = new java.util.HashSet<>();
+        for (Student s : store.list(Student.class, orgId)) {
+            if (s.getTrashedAt() != null) {
+                ids.add(s.getId());
+            }
+        }
+        return ids;
+    }
+
+    /** Public for list filtering on fee resources. */
+    public java.util.Set<UUID> trashedStudentIdsForOrg(UUID orgId) {
+        return trashedStudentIds(orgId);
     }
 
     private static List<Map<String, Object>> buckets(Map<String, BigDecimal[]> source) {

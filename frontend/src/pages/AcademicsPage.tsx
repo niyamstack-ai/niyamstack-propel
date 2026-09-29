@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { createRecord } from "../ops";
 import { prettyLabel } from "../labels";
+import { openIdCardPrint } from "../idCardPrint";
 import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, TextArea, formatDay, formatWhen, studentChoice, useApi } from "../ui";
 
 type Year = { id: string; name: string; startDate?: string; endDate?: string; active?: boolean };
@@ -195,24 +196,8 @@ function IdsTab() {
   async function printCard(kind: string, id: string) {
     setError(null);
     try {
-      const rec = await api<{ instituteName?: string; fullName?: string; code?: string; title?: string; department?: string; photoUrl?: string; kind?: string }>(
-        `/api/actions/sis/id-card/${kind}/${id}`,
-      );
-      const win = window.open("", "_blank");
-      if (!win) {
-        setError("Allow pop-ups to print the ID card.");
-        return;
-      }
-      win.document.write(`<!doctype html><html><head><title>ID</title>
-        <style>body{font-family:sans-serif;padding:24px;color:#071a33}.card{border:2px solid #071a33;padding:16px;width:320px}img{width:80px;height:80px;object-fit:cover}</style></head>
-        <body><div class="card">
-          <p><strong>${esc(rec.instituteName)}</strong></p>
-          ${rec.photoUrl ? `<img src="${esc(rec.photoUrl)}"/>` : ""}
-          <h2>${esc(rec.fullName)}</h2>
-          <p>${esc(rec.kind)} · ${esc(rec.code)}</p>
-          <p>${esc(rec.title)} ${esc(rec.department)}</p>
-        </div><script>window.print()<\/script></body></html>`);
-      win.document.close();
+      const rec = await api<Parameters<typeof openIdCardPrint>[0]>(`/api/actions/sis/id-card/${kind}/${id}`);
+      openIdCardPrint(rec);
     } catch (e) {
       setError((e as Error).message);
     }

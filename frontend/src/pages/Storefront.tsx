@@ -9,7 +9,7 @@ import { StudentCourseLibrary } from "./courseContent";
 import { MyStudentRecord } from "./StudentsPage";
 import { FeesPage } from "./FeesPage";
 import { PlacementPage } from "./PlacementPage";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, formatDay, formatInr, formatWhen, useApi } from "../ui";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, formatDay, formatInr, formatWhen, useApi, PhoneField, phoneForApi } from "../ui";
 import { createRecord } from "../ops";
 import { prettyLabel } from "../labels";
 import { PageSections } from "../PageSections";
@@ -927,7 +927,7 @@ function CoursePage() {
         body: JSON.stringify({
           fullName: name,
           email,
-          phone,
+          phone: phoneForApi(phone),
           courseId: course.id,
           couponCode: couponOk || undefined,
           validityOption,
@@ -964,7 +964,7 @@ function CoursePage() {
           body: JSON.stringify({
             fullName: name,
             email,
-            phone,
+            phone: phoneForApi(phone),
             courseId: course.id,
             couponCode: couponOk || undefined,
             validityOption,
@@ -1235,7 +1235,7 @@ function CoursePage() {
           ) : !otpSent ? (
             <form className="space-y-2" onSubmit={(e) => void sendPurchaseOtp(e)}>
               <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" required placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
-              <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" required placeholder="Mobile" inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value)} />
+              <PhoneField required value={phone} onChange={setPhone} placeholder="Mobile" />
               <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
               <p className="text-xs text-slate-500">We email a verification code before checkout.</p>
               {error && <p className="text-sm text-red-600">{error}</p>}
@@ -1322,7 +1322,7 @@ function StudentLoginPage() {
     try {
       const res = await api<{ phone?: string; devOtp?: string }>("/api/auth/otp/request", {
         method: "POST",
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone: phoneForApi(phone) }),
       });
       setSent(res);
     } catch (err) {
@@ -1337,7 +1337,7 @@ function StudentLoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await loginWithOtp(phone, otp);
+      await loginWithOtp(phoneForApi(phone), otp);
       navigate(next);
     } catch (err) {
       setError((err as Error).message);
@@ -1385,7 +1385,7 @@ function StudentLoginPage() {
       </div>
       {mode === "otp" && !sent && (
         <form className="mt-4 space-y-3" onSubmit={sendOtp}>
-          <input className="w-full rounded-lg border border-line px-3 py-2" placeholder="Mobile" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <PhoneField value={phone} onChange={setPhone} placeholder="Mobile" />
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
             {busy ? "Sending…" : "Send OTP"}
           </button>
@@ -1493,7 +1493,7 @@ function StudentRegisterPage() {
     try {
       const res = await api<{ phone?: string; devOtp?: string }>(`/api/public/sites/${slug}/register/otp`, {
         method: "POST",
-        body: JSON.stringify({ fullName: name, phone, email, courseId: resolvedCourseId }),
+        body: JSON.stringify({ fullName: name, phone: phoneForApi(phone), email, courseId: resolvedCourseId }),
       });
       setSent(res);
     } catch (err) {
@@ -1510,7 +1510,7 @@ function StudentRegisterPage() {
     try {
       const res = await api<{ token: string; user: { id: string; name: string; email: string; phone?: string; role: string; organizationId: string; packageTier: string } }>(
         `/api/public/sites/${slug}/register/verify`,
-        { method: "POST", body: JSON.stringify({ phone, otp }) }
+        { method: "POST", body: JSON.stringify({ phone: phoneForApi(phone), otp }) }
       );
       applySession(res);
       navigate(`${sitePath(slug)}/learn`);
@@ -1528,7 +1528,7 @@ function StudentRegisterPage() {
       {!sent ? (
         <form className="mt-4 space-y-3" onSubmit={sendOtp}>
           <input className="w-full rounded-lg border border-line px-3 py-2" placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} required />
-          <input className="w-full rounded-lg border border-line px-3 py-2" placeholder="Mobile" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+          <PhoneField value={phone} onChange={setPhone} placeholder="Mobile" required />
           <input className="w-full rounded-lg border border-line px-3 py-2" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy || !name.trim() || !phone.trim() || !email.trim()}>
@@ -2226,7 +2226,7 @@ function StudentForgotPage() {
     setError(null);
     try {
       if (method === "otp") {
-        const res = await api<{ phone?: string; devOtp?: string }>("/api/auth/forgot/otp", { method: "POST", body: JSON.stringify({ phone }) });
+        const res = await api<{ phone?: string; devOtp?: string }>("/api/auth/forgot/otp", { method: "POST", body: JSON.stringify({ phone: phoneForApi(phone) }) });
         setSent(res);
       } else {
         const res = await api<{ resetToken?: string }>("/api/auth/forgot/email", { method: "POST", body: JSON.stringify({ email }) });
@@ -2250,7 +2250,7 @@ function StudentForgotPage() {
     setError(null);
     try {
       if (method === "otp") {
-        await api("/api/auth/reset/otp", { method: "POST", body: JSON.stringify({ phone, otp, newPassword: password }) });
+        await api("/api/auth/reset/otp", { method: "POST", body: JSON.stringify({ phone: phoneForApi(phone), otp, newPassword: password }) });
       } else {
         await api("/api/auth/reset/email", { method: "POST", body: JSON.stringify({ token, newPassword: password }) });
       }
@@ -2286,7 +2286,7 @@ function StudentForgotPage() {
           {!sent ? (
             <form className="mt-4 space-y-3" onSubmit={requestReset}>
               {method === "otp" ? (
-                <input className="w-full rounded-lg border border-line px-3 py-2" placeholder="Mobile" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <PhoneField value={phone} onChange={setPhone} placeholder="Mobile" />
               ) : (
                 <input className="w-full rounded-lg border border-line px-3 py-2" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
               )}

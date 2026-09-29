@@ -41,6 +41,7 @@ export function navForRole(role?: string, modules?: string[], capabilities?: str
   }
   if (role === "FACULTY" && caps.includes("STUDENTS") && !flattenNav(base).some((i) => i.to === "/students" || i.to.startsWith("/people"))) {
     base.push({ to: "/people/students", label: "Students" });
+    base.push({ to: "/people/trash", label: "Trash" });
   }
   return filterNav(base, modules);
 }
@@ -95,6 +96,7 @@ function roleNav(role?: string): NavEntry[] {
         { to: "/crm", label: "Leads" },
         { to: "/landing-pages", label: "Landing pages" },
         { to: "/students", label: "Students" },
+        { to: "/people/trash", label: "Trash" },
         { to: "/fees", label: "Fees" },
         { to: "/comms", label: "Notices" },
         { to: "/campaigns", label: "Campaigns" },
@@ -140,6 +142,7 @@ function roleNav(role?: string): NavEntry[] {
             { to: "/people/staff", label: "Staff" },
             { to: "/people/employees", label: "Employees" },
             { to: "/people/alumni", label: "Alumni" },
+            { to: "/people/trash", label: "Trash" },
             { to: "/ess", label: "ESS" },
           ],
         },

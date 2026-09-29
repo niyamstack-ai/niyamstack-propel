@@ -3,7 +3,7 @@ import { api } from "../api";
 import { createRecord } from "../ops";
 import { useAuth } from "../auth";
 import { prettyLabel } from "../labels";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatDay, useApi } from "../ui";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, formatDay, useApi, PhoneField, phoneForApi } from "../ui";
 
 type Drive = { id: string; title: string; packageLpa: number; status: string; locations: string; minAttendancePct?: number; companyId?: string; jobDescription?: string; deadline?: string };
 type Application = { id: string; driveId?: string; studentId?: string; status: string; eligibilityPassed?: boolean; currentRound?: string };
@@ -350,7 +350,7 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
             <FormGrid>
               <Field label="Name" value={recName} onChange={setRecName} />
               <Field label="Email" value={recEmail} onChange={setRecEmail} />
-              <Field label="Mobile" value={recPhone} onChange={setRecPhone} />
+              <PhoneField label="Mobile" value={recPhone} onChange={setRecPhone} />
               <Select label="Company" value={recCompany} onChange={setRecCompany} options={(companies.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
             </FormGrid>
             <div className="mt-3">
@@ -361,7 +361,7 @@ function StaffPlacement({ recruiter }: { recruiter: boolean }) {
                     if (!recCompany) throw new Error("Select a company for the recruiter invite");
                     const row = await api<{ email: string; tempPassword: string }>("/api/actions/placement/recruiters", {
                       method: "POST",
-                      body: JSON.stringify({ fullName: recName, email: recEmail, phone: recPhone, companyId: recCompany }),
+                      body: JSON.stringify({ fullName: recName, email: recEmail, phone: phoneForApi(recPhone), companyId: recCompany }),
                     });
                     setNotice(`Recruiter ${row.email} can sign in. Temporary password: ${row.tempPassword}`);
                     setRecName("");

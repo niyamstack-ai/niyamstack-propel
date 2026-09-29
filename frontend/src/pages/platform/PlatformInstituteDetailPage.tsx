@@ -4,7 +4,7 @@ import { api } from "../../api";
 import { formatInr } from "../../labels";
 import { MODULES, PACKS, modulesForPack, type PackId } from "../../packs";
 import { hasCap, usePlatformAuth } from "../../platformAuth";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, useApi } from "../../ui";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, useApi, PhoneField, phoneForApi } from "../../ui";
 
 type Institute = {
   id: string;
@@ -134,7 +134,7 @@ export function PlatformInstituteDetailPage() {
     try {
       await api(`/api/platform/institutes/${id}/owner-contact`, {
         method: "PUT",
-        body: JSON.stringify({ fullName: ownerName, email: ownerEmail, phone: ownerPhone }),
+        body: JSON.stringify({ fullName: ownerName, email: ownerEmail, phone: phoneForApi(ownerPhone) }),
       });
       rec.reload();
       setNotice("Owner login contact updated. Ask them to verify email/phone after next login if needed.");
@@ -216,7 +216,7 @@ export function PlatformInstituteDetailPage() {
             <FormGrid>
               <Field label="Owner name" value={ownerName} onChange={setOwnerName} />
               <Field label="Login email" value={ownerEmail} onChange={setOwnerEmail} type="email" />
-              <Field label="Login mobile" value={ownerPhone} onChange={setOwnerPhone} placeholder="10-digit" />
+              <PhoneField label="Login mobile" value={ownerPhone} onChange={setOwnerPhone} placeholder="10-digit" />
             </FormGrid>
             <p className="text-xs text-slate-500">
               Verified: email {org?.ownerEmailVerified ? "yes" : "no"} · phone {org?.ownerPhoneVerified ? "yes" : "no"}

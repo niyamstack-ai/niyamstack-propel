@@ -5,7 +5,8 @@ import { createRecord } from "../ops";
 import { useAuth } from "../auth";
 import { prettyLabel } from "../labels";
 import { studentOpenPath } from "./StudentProfilePage";
-import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, formatDay, useApi } from "../ui";
+import { openIdCardPrint } from "../idCardPrint";
+import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, formatDay, useApi, PhoneField, phoneForApi } from "../ui";
 
 type Student = {
   id: string;
@@ -80,7 +81,7 @@ export function MyStudentRecord() {
     try {
       const res = await api<{ token: string; user: { id: string; name: string; email: string; phone?: string; role: string; organizationId: string; packageTier: string } }>(
         "/api/auth/profile",
-        { method: "PATCH", body: JSON.stringify({ name, email, phone }) }
+        { method: "PATCH", body: JSON.stringify({ name, email, phone: phoneForApi(phone) }) }
       );
       applySession(res);
       students.reload();
@@ -154,7 +155,7 @@ export function MyStudentRecord() {
         <FormGrid>
           <Field label="Name" value={name} onChange={setName} />
           <Field label="Email" value={email} onChange={setEmail} type="email" />
-          <Field label="Mobile" value={phone} onChange={setPhone} />
+          <PhoneField label="Mobile" value={phone} onChange={setPhone} />
         </FormGrid>
         <div className="mt-3">
           <PrimaryButton disabled={busy || !name} onClick={() => void saveProfile()}>
@@ -324,7 +325,7 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
         studentCode: code || `STU-${Date.now().toString().slice(-6)}`,
         fullName: name,
         email,
-        phone,
+        phone: phoneForApi(phone),
         courseId: courseId || null,
         batchId: batchId || null,
         centerId: centerId || null,
@@ -338,7 +339,7 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
       if (parentPhone) {
         const invited = await api<{ phone?: string; tempPassword?: string }>(`/api/actions/sis/parents/invite`, {
           method: "POST",
-          body: JSON.stringify({ studentId: created.id, fullName: "Parent", relation: "Parent", phone: parentPhone }),
+          body: JSON.stringify({ studentId: created.id, fullName: "Parent", relation: "Parent", phone: phoneForApi(parentPhone) }),
         });
         parentNote = invited.tempPassword
           ? ` Parent can log in with mobile ${invited.phone} (OTP) or temporary password ${invited.tempPassword}.`
@@ -389,12 +390,12 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
         studentId: gStudent,
         fullName: gName,
         relation: gRel,
-        phone: gPhone,
+        phone: phoneForApi(gPhone),
       });
       if (gPhone) {
         const invited = await api<{ phone?: string; tempPassword?: string }>(`/api/actions/sis/parents/invite`, {
           method: "POST",
-          body: JSON.stringify({ studentId: gStudent, fullName: gName, relation: gRel, phone: gPhone }),
+          body: JSON.stringify({ studentId: gStudent, fullName: gName, relation: gRel, phone: phoneForApi(gPhone) }),
         });
         setNotice(
           invited.tempPassword
@@ -413,16 +414,8 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
   async function printId(s: Student) {
     setError(null);
     try {
-      const rec = await api<{ instituteName?: string; fullName?: string; code?: string; photoUrl?: string }>(`/api/actions/sis/id-card/STUDENT/${s.id}`);
-      const win = window.open("", "_blank");
-      if (!win) {
-        setError("Allow pop-ups to print the ID card.");
-        return;
-      }
-      win.document.write(`<!doctype html><html><head><title>ID</title></head><body>
-        <h1>${rec.instituteName || ""}</h1><h2>${rec.fullName || s.fullName}</h2><p>${rec.code || s.studentCode}</p>
-        <script>window.print()<\/script></body></html>`);
-      win.document.close();
+      const rec = await api<Parameters<typeof openIdCardPrint>[0]>(`/api/actions/sis/id-card/STUDENT/${s.id}`);
+      openIdCardPrint(rec);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -495,10 +488,10 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
           <Field key="enroll-code" name="student-code" label="Student code" value={code} onChange={setCode} placeholder="Auto if blank" />
           <Field key="enroll-name" name="student-name" label="Full name" value={name} onChange={setName} />
           <Field key="enroll-email" name="student-email" label="Email" value={email} onChange={setEmail} />
-          <Field key="enroll-phone" name="student-mobile" label="Phone" value={phone} onChange={setPhone} placeholder="Student mobile" />
+          <PhoneField key="enroll-phone" name="student-mobile" label="Phone" value={phone} onChange={setPhone} placeholder="Student mobile" />
           <Field key="enroll-dob" name="student-dob" label="Date of birth" value={dob} onChange={setDob} type="date" />
           <Field key="enroll-address" name="student-address" label="Address" value={address} onChange={setAddress} />
-          <Field key="enroll-parent-phone" name="parent-mobile" label="Parent phone" value={parentPhone} onChange={setParentPhone} />
+          <PhoneField key="enroll-parent-phone" name="parent-mobile" label="Parent phone" value={parentPhone} onChange={setParentPhone} />
           <FileUpload key="enroll-photo" label="Photo" value={photoUrl} accept="image/*" onChange={setPhotoUrl} />
           <Select key="enroll-center" label="Center" value={centerId} onChange={setCenterId} options={(centers.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
           <Select key="enroll-course" label="Course" value={courseId} onChange={setCourseId} options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))} />
@@ -569,7 +562,7 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
           />
           <Field label="Guardian name" value={gName} onChange={setGName} />
           <Field label="Relation" value={gRel} onChange={setGRel} />
-          <Field label="Phone" value={gPhone} onChange={setGPhone} />
+          <PhoneField label="Phone" value={gPhone} onChange={setGPhone} />
         </FormGrid>
         <div className="mt-3">
           <PrimaryButton disabled={!gStudent || !gName || !gPhone} onClick={addGuardian}>

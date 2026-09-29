@@ -6,7 +6,7 @@ import { api } from "../api";
 import { createRecord, updateRecord } from "../ops";
 import { prettyLabel } from "../labels";
 import { useLocale } from "../locale";
-import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, formatInr, useApi } from "../ui";
+import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, formatInr, useApi, PhoneField, phoneForApi } from "../ui";
 
 type Inquiry = {
   id: string;
@@ -89,7 +89,7 @@ export function CrmPage() {
 
   async function capture() {
     await run(async () => {
-      await createRecord("/api/inquiries", { fullName: name, phone, email: email || undefined, source, stage: "NEW" });
+      await createRecord("/api/inquiries", { fullName: name, phone: phoneForApi(phone), email: email || undefined, source, stage: "NEW" });
       setName("");
       setPhone("");
       setEmail("");
@@ -239,7 +239,7 @@ export function CrmPage() {
       <Card title="Capture inquiry">
         <FormGrid>
           <Field label="Name" value={name} onChange={setName} />
-          <Field label="Phone" value={phone} onChange={setPhone} />
+          <PhoneField label="Phone" value={phone} onChange={setPhone} />
           <Field label="Email" value={email} onChange={setEmail} />
           <Select
             label="Source"

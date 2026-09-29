@@ -253,6 +253,11 @@ public class SisService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("instituteName", org.getName());
         out.put("logoUrl", org.getLogoUrl());
+        out.put("brandPrimary", org.getBrandPrimary());
+        out.put("brandSecondary", org.getBrandSecondary());
+        out.put("website", org.getWebsiteUrl() != null && !org.getWebsiteUrl().isBlank()
+                ? org.getWebsiteUrl()
+                : (org.getSlug() == null ? "" : "https://" + org.getSlug() + ".niyamstack.com"));
         if ("STAFF".equalsIgnoreCase(kind)) {
             Employee e = store.getOwned(Employee.class, id, orgId());
             out.put("kind", "STAFF");
@@ -261,6 +266,7 @@ public class SisService {
             out.put("title", e.getDesignation());
             out.put("department", e.getDepartment());
             out.put("photoUrl", "");
+            out.put("validLabel", "Staff identity card");
             return out;
         }
         Student s = store.getOwned(Student.class, id, orgId());
@@ -272,9 +278,34 @@ public class SisService {
         out.put("kind", "STUDENT");
         out.put("fullName", s.getFullName());
         out.put("code", s.getStudentCode());
-        out.put("title", s.getStatus());
+        out.put("title", "Student");
         out.put("department", "");
         out.put("photoUrl", s.getPhotoUrl());
+        out.put("phone", s.getPhone());
+        if (s.getCourseId() != null) {
+            try {
+                out.put("courseName", store.getOwned(Course.class, s.getCourseId(), orgId()).getName());
+            } catch (Exception ignored) {
+                out.put("courseName", "");
+            }
+        }
+        if (s.getBatchId() != null) {
+            try {
+                out.put("batchName", store.getOwned(Batch.class, s.getBatchId(), orgId()).getName());
+            } catch (Exception ignored) {
+                out.put("batchName", "");
+            }
+        }
+        if (s.getCenterId() != null) {
+            try {
+                out.put("centerName", store.getOwned(Center.class, s.getCenterId(), orgId()).getName());
+            } catch (Exception ignored) {
+                out.put("centerName", "");
+            }
+        }
+        out.put("validLabel", s.getEnrollmentDate() != null
+                ? "Enrolled " + s.getEnrollmentDate()
+                : "Student identity card");
         return out;
     }
 

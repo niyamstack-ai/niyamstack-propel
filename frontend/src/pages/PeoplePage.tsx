@@ -7,7 +7,7 @@ import { StaffStudents } from "./StudentsPage";
 import { useAuth } from "../auth";
 import { STAFF_RIGHTS } from "../packs";
 import { prettyLabel } from "../labels";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, TextArea, useApi, formatDay } from "../ui";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, Select, Table, TextArea, useApi, formatDay, PhoneField, phoneForApi } from "../ui";
 
 type Staff = {
   id: string;
@@ -127,7 +127,7 @@ function InstituteStaff() {
       const created = await createRecord("/api/staff", {
         fullName: memberName,
         email: memberEmail,
-        phone: memberPhone,
+        phone: phoneForApi(memberPhone),
         role: memberRole,
         capabilities: rights,
       }) as Staff & { tempPassword?: string };
@@ -309,7 +309,7 @@ function InstituteStaff() {
       <Card title="Add staff login">
         <FormGrid>
           <Field label="Name" value={memberName} onChange={setMemberName} placeholder="Full name" />
-          <Field label="Phone" value={memberPhone} onChange={setMemberPhone} placeholder="10-digit mobile (needed for WhatsApp/OTP)" />
+          <PhoneField label="Phone" value={memberPhone} onChange={setMemberPhone} placeholder="Mobile (needed for WhatsApp/OTP)" />
           <Field label="Email" value={memberEmail} onChange={setMemberEmail} placeholder="They will log in with this" />
           <Select
             label="Role"
@@ -419,7 +419,7 @@ function InstituteEmployees() {
         fullName,
         employeeCode,
         email,
-        phone,
+        phone: phoneForApi(phone),
         department,
         designation,
         joiningDate: joiningDate || null,
@@ -484,7 +484,7 @@ function InstituteEmployees() {
             <Field label="Name" value={fullName} onChange={setFullName} />
             <Field label="Code" value={employeeCode} onChange={setEmployeeCode} />
             <Field label="Email" value={email} onChange={setEmail} />
-            <Field label="Phone" value={phone} onChange={setPhone} />
+            <PhoneField label="Phone" value={phone} onChange={setPhone} />
             <Field label="Department" value={department} onChange={setDepartment} />
             <Field label="Designation" value={designation} onChange={setDesignation} />
             <Field label="Joining date" type="date" value={joiningDate} onChange={setJoiningDate} />

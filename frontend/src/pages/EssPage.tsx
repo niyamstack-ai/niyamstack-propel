@@ -6,7 +6,7 @@ import { useAuth } from "../auth";
 import { prettyLabel } from "../labels";
 import { useLocale } from "../locale";
 import { hasGrowthTier } from "../packs";
-import { Card, ErrorText, Field, FileUpload, FormGrid, LinkButton, PrimaryButton, Select, Table, TextArea, formatDay, formatInr, formatWhen, useApi } from "../ui";
+import { Card, ErrorText, Field, FileUpload, FormGrid, LinkButton, PrimaryButton, Select, Table, TextArea, formatDay, formatInr, formatWhen, useApi, PhoneField, phoneForApi } from "../ui";
 
 type Employee = {
   id: string;
@@ -232,7 +232,7 @@ function ProfileTab({ hr }: { hr: boolean }) {
     try {
       await api(`/api/employees/${p.id}`, {
         method: "PUT",
-        body: JSON.stringify({ phone, email, bankAccount, pan, uan, esiNumber }),
+        body: JSON.stringify({ phone: phoneForApi(phone), email, bankAccount, pan, uan, esiNumber }),
       });
       profile.reload();
       setNotice("Profile updated.");
@@ -286,7 +286,7 @@ function ProfileTab({ hr }: { hr: boolean }) {
             </p>
             <FormGrid>
               <Field label="Email" value={email} onChange={setEmail} />
-              <Field label="Phone" value={phone} onChange={setPhone} />
+              <PhoneField label="Phone" value={phone} onChange={setPhone} />
               <Field label="Bank account" value={bankAccount} onChange={setBankAccount} />
               <Field label="PAN" value={pan} onChange={setPan} />
               <Field label="UAN" value={uan} onChange={setUan} />
@@ -663,7 +663,7 @@ function EmployeesTab() {
           fullName,
           employeeCode,
           email,
-          phone,
+          phone: phoneForApi(phone),
           department,
           designation,
           joiningDate,
@@ -680,7 +680,7 @@ function EmployeesTab() {
         fullName,
         employeeCode,
         email,
-        phone,
+        phone: phoneForApi(phone),
         department,
         designation,
         joiningDate,
@@ -803,7 +803,7 @@ function EmployeesTab() {
           <Field label="Name" value={fullName} onChange={setFullName} placeholder="Full name" />
           <Field label="Employee code" value={employeeCode} onChange={setEmployeeCode} placeholder="Blank = auto EMP-0001" />
           <Field label="Email" value={email} onChange={setEmail} />
-          <Field label="Phone" value={phone} onChange={setPhone} placeholder="10-digit mobile" />
+          <PhoneField label="Phone" value={phone} onChange={setPhone} placeholder="Mobile number" />
           <Field label="Department" value={department} onChange={setDepartment} placeholder="Academics" />
           <Field label="Designation" value={designation} onChange={setDesignation} placeholder="Faculty / Front desk" />
           <Field label="Joining date" type="date" value={joiningDate} onChange={setJoiningDate} />
@@ -1664,7 +1664,7 @@ function HiringTab() {
   async function addApplicant() {
     setError(null);
     try {
-      await createRecord("/api/staff-candidates", { vacancyId, fullName, email, phone });
+      await createRecord("/api/staff-candidates", { vacancyId, fullName, email, phone: phoneForApi(phone) });
       setFullName("");
       setEmail("");
       setPhone("");
@@ -1754,7 +1754,7 @@ function HiringTab() {
           />
           <Field label="Name" value={fullName} onChange={setFullName} />
           <Field label="Email" value={email} onChange={setEmail} />
-          <Field label="Phone" value={phone} onChange={setPhone} />
+          <PhoneField label="Phone" value={phone} onChange={setPhone} />
         </FormGrid>
         <div className="mt-3">
           <PrimaryButton disabled={!vacancyId || !fullName} onClick={() => void addApplicant()}>

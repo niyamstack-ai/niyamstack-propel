@@ -1,20 +1,43 @@
 import { useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { clearInstituteSession } from "../../api";
 import { NiyamstackLogo } from "../../brand/NiyamstackLogo";
 import { hasCap, usePlatformAuth } from "../../platformAuth";
 
 const nav = [
-  { to: "/platform", label: "Dashboard", end: true, cap: "VIEW_DASHBOARD" },
-  { to: "/platform/institutes", label: "Institutes", end: false, cap: "VIEW_INSTITUTES" },
-  { to: "/platform/employees", label: "Niyamstack staff", end: false, cap: "MANAGE_EMPLOYEES" },
-  { to: "/platform/settings", label: "Settings", end: false, cap: "*" },
-  { to: "/platform/features", label: "License map", end: false, cap: "VIEW_DASHBOARD" },
-];
+  { to: "/platform", label: "Dashboard", end: true, cap: "VIEW_DASHBOARD", match: "dashboard" },
+  { to: "/platform/institutes", label: "Institutes", end: false, cap: "VIEW_INSTITUTES", match: "institutes-live" },
+  { to: "/platform/institutes?filter=trash", label: "Trash", end: false, cap: "VIEW_INSTITUTES", match: "institutes-trash" },
+  { to: "/platform/employees", label: "Niyamstack staff", end: false, cap: "MANAGE_EMPLOYEES", match: "employees" },
+  { to: "/platform/settings", label: "Settings", end: false, cap: "*", match: "settings" },
+  { to: "/platform/features", label: "License map", end: false, cap: "VIEW_DASHBOARD", match: "features" },
+] as const;
+
+function platformNavActive(match: string, pathname: string, search: string) {
+  const filter = new URLSearchParams(search).get("filter");
+  const trash = filter === "trash" || filter === "trashed";
+  switch (match) {
+    case "dashboard":
+      return pathname === "/platform" || pathname === "/platform/";
+    case "institutes-live":
+      return pathname.startsWith("/platform/institutes") && !trash;
+    case "institutes-trash":
+      return pathname.startsWith("/platform/institutes") && trash;
+    case "employees":
+      return pathname.startsWith("/platform/employees");
+    case "settings":
+      return pathname.startsWith("/platform/settings");
+    case "features":
+      return pathname.startsWith("/platform/features");
+    default:
+      return false;
+  }
+}
 
 export function PlatformShell() {
   const { user, logout } = usePlatformAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const items = nav.filter((item) => item.cap === "*" || hasCap(user, item.cap));
 
@@ -39,19 +62,22 @@ export function PlatformShell() {
         <p className="mt-1 text-xs text-slate-300">Institutes, staff, and approvals</p>
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-6">
-        {items.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            onClick={() => setMenuOpen(false)}
-            className={({ isActive }) =>
-              `block rounded-lg px-3 py-2 text-sm ${isActive ? "bg-white/15 text-white" : "text-slate-300 hover:bg-white/5"}`
-            }
-          >
-            {item.label}
-          </NavLink>
-        ))}
+        {items.map((item) => {
+          const active = platformNavActive(item.match, location.pathname, location.search);
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              onClick={() => setMenuOpen(false)}
+              className={() =>
+                `block rounded-lg px-3 py-2 text-sm ${active ? "bg-white/15 text-white" : "text-slate-300 hover:bg-white/5"}`
+              }
+            >
+              {item.label}
+            </NavLink>
+          );
+        })}
       </nav>
     </>
   );

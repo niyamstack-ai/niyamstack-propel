@@ -417,7 +417,15 @@ public class ResourceController {
         return create(body, "FEES");
     }
 
-    @GetMapping("/invoices") public List<Invoice> invoices() { return list(Invoice.class); }
+    @GetMapping("/invoices")
+    public List<Invoice> invoices() {
+        List<Invoice> rows = list(Invoice.class);
+        var trashed = fees.trashedStudentIdsForOrg(Auth.current().organizationId());
+        if (trashed.isEmpty()) {
+            return rows;
+        }
+        return rows.stream().filter(i -> i.getStudentId() == null || !trashed.contains(i.getStudentId())).toList();
+    }
     @PostMapping("/invoices") public Invoice createInvoice(@RequestBody Invoice body) { return fees.finalizeInvoice(create(body, "FEES")); }
 
     @GetMapping("/payments") public List<Payment> payments() { return list(Payment.class); }
@@ -426,7 +434,15 @@ public class ResourceController {
     @GetMapping("/refunds") public List<Refund> refunds() { return list(Refund.class); }
     @PostMapping("/refunds") public Refund createRefund(@RequestBody Refund body) { return create(body, "FEES"); }
 
-    @GetMapping("/installments") public List<FeeInstallment> installments() { return list(FeeInstallment.class); }
+    @GetMapping("/installments")
+    public List<FeeInstallment> installments() {
+        List<FeeInstallment> rows = list(FeeInstallment.class);
+        var trashed = fees.trashedStudentIdsForOrg(Auth.current().organizationId());
+        if (trashed.isEmpty()) {
+            return rows;
+        }
+        return rows.stream().filter(i -> i.getStudentId() == null || !trashed.contains(i.getStudentId())).toList();
+    }
     @GetMapping("/receipts") public List<Receipt> receipts() { return list(Receipt.class); }
     @GetMapping("/exam-attempts") public List<ExamAttempt> attempts() { return list(ExamAttempt.class); }
     @GetMapping("/lms-packages") public List<LmsPackage> packages() { return list(LmsPackage.class); }

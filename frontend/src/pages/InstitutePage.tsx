@@ -4,7 +4,7 @@ import { createRecord, updateRecord } from "../ops";
 import { api } from "../api";
 import { STAFF_RIGHTS } from "../packs";
 import { prettyLabel } from "../labels";
-import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, formatInr, useApi } from "../ui";
+import { Card, ErrorText, Field, FileUpload, FormGrid, PrimaryButton, Select, Table, formatInr, useApi, PhoneField, phoneForApi } from "../ui";
 
 type Org = {
   name: string;
@@ -97,7 +97,7 @@ export function InstitutePage() {
         legalName: legal || org.data?.legalName,
         gstin: gstin || org.data?.gstin,
         email: oEmail || org.data?.email,
-        phone: oPhone || org.data?.phone,
+        phone: phoneForApi(oPhone) || org.data?.phone,
         logoUrl,
         brandPrimary,
         brandSecondary,
@@ -165,7 +165,7 @@ export function InstitutePage() {
           <Field label="Legal name" value={legal} onChange={setLegal} />
           <Field label="GSTIN" value={gstin} onChange={setGstin} placeholder="15-character GSTIN, e.g. 27AABCU9603R1ZX" />
           <Field label="Email" value={oEmail} onChange={setOEmail} />
-          <Field label="Phone" value={oPhone} onChange={setOPhone} />
+          <PhoneField label="Phone" value={oPhone} onChange={setOPhone} />
           <FileUpload label="Logo" value={logoUrl} accept="image/*" onChange={setLogoUrl} />
           <Field label="Brand color" value={brandPrimary} onChange={setBrandPrimary} />
           <Field label="Navy / secondary" value={brandSecondary} onChange={setBrandSecondary} />

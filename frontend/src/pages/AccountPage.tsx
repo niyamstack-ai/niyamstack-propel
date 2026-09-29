@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { Card, ErrorText, Field, FormGrid, PrimaryButton } from "../ui";
+import { Card, ErrorText, Field, FormGrid, PrimaryButton, PhoneField, phoneForApi } from "../ui";
 
 /** Institute staff/owner login identity — email & phone used at /login. */
 export function AccountPage() {
@@ -29,7 +29,7 @@ export function AccountPage() {
     try {
       const res = await api<{ token: string; user: unknown }>("/api/auth/profile", {
         method: "PATCH",
-        body: JSON.stringify({ name, email, phone }),
+        body: JSON.stringify({ name, email, phone: phoneForApi(phone) }),
       });
       applySession(res as never);
       setNotice("Login email/phone saved. If you changed email or phone, verify them when prompted.");
@@ -75,7 +75,7 @@ export function AccountPage() {
         <FormGrid>
           <Field label="Name" value={name} onChange={setName} />
           <Field label="Login email" value={email} onChange={setEmail} type="email" />
-          <Field label="Login mobile" value={phone} onChange={setPhone} placeholder="10-digit" />
+          <PhoneField label="Login mobile" value={phone} onChange={setPhone} placeholder="10-digit" />
         </FormGrid>
         <div className="mt-3">
           <PrimaryButton disabled={busy || !name.trim()} onClick={() => void saveProfile()}>

@@ -93,9 +93,14 @@ public class IntelligenceService {
         long openTickets = store.list(SupportTicket.class, org).stream()
                 .filter(t -> "OPEN".equalsIgnoreCase(t.getStatus()))
                 .count();
+        Set<UUID> trashedStudents = store.list(Student.class, org).stream()
+                .filter(s -> s.getTrashedAt() != null)
+                .map(Student::getId)
+                .collect(Collectors.toSet());
         long overdueInstallments = store.list(FeeInstallment.class, org).stream()
                 .filter(i -> "DUE".equalsIgnoreCase(i.getStatus()))
                 .filter(i -> i.getDueDate() != null && i.getDueDate().isBefore(LocalDate.now()))
+                .filter(i -> i.getStudentId() == null || !trashedStudents.contains(i.getStudentId()))
                 .count();
         BigDecimal payrollLastMonth = payrollCostForMonth(org, YearMonth.now().minusMonths(1));
 
