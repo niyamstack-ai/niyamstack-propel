@@ -10,6 +10,7 @@ import com.niyamstack.propel.domain.Model.PlatformRole;
 import com.niyamstack.propel.domain.Model.PlatformSetting;
 import com.niyamstack.propel.domain.Model.PlatformUserRole;
 import com.niyamstack.propel.domain.TenantEntity;
+import com.niyamstack.propel.security.Phones;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.springframework.http.HttpStatus;
@@ -186,11 +187,16 @@ public class Store {
     }
 
     public AppUser findUserByPhone(String phone) {
-        List<AppUser> users = em.createQuery("select u from AppUser u where u.phone = :p", AppUser.class)
-                .setParameter("p", phone)
-                .setMaxResults(1)
-                .getResultList();
-        return users.isEmpty() ? null : users.getFirst();
+        for (String key : Phones.lookupKeys(phone)) {
+            List<AppUser> users = em.createQuery("select u from AppUser u where u.phone = :p", AppUser.class)
+                    .setParameter("p", key)
+                    .setMaxResults(1)
+                    .getResultList();
+            if (!users.isEmpty()) {
+                return users.getFirst();
+            }
+        }
+        return null;
     }
 
     public Organization findOrgBySlug(String slug) {

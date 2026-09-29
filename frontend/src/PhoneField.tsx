@@ -96,6 +96,14 @@ export function phoneForApi(value: string) {
   return `${dial}${n}`;
 }
 
+/** Display helper for tables: 🇮🇳 +91 98765… */
+export function formatPhoneDisplay(value?: string | null) {
+  if (!value) return "—";
+  const { iso, dial, national } = parsePhoneValue(value);
+  if (!national) return "—";
+  return `${flagOf(iso)} +${dial} ${national}`;
+}
+
 export function PhoneField({
   label,
   value,
@@ -104,6 +112,7 @@ export function PhoneField({
   placeholder,
   required,
   disabled,
+  fullWidth = true,
 }: {
   label?: string;
   value: string;
@@ -112,6 +121,8 @@ export function PhoneField({
   placeholder?: string;
   required?: boolean;
   disabled?: boolean;
+  /** Span both columns inside FormGrid so dial + number stay readable. */
+  fullWidth?: boolean;
 }) {
   const parsed = useMemo(() => parsePhoneValue(value), [value]);
   const [iso, setIso] = useState(parsed.iso);
@@ -134,33 +145,45 @@ export function PhoneField({
   }
 
   return (
-    <label className="block text-sm">
+    <label className={`block text-sm ${fullWidth ? "md:col-span-2" : ""}`}>
       {label ? <span className="text-slate-600">{label}</span> : null}
-      <span className={`flex ${label ? "mt-1" : ""}`}>
-        <select
-          aria-label="Country code"
-          className="shrink-0 rounded-l-lg border border-r-0 border-line bg-mist px-2 py-2 text-sm"
-          value={iso}
-          disabled={disabled}
-          onChange={(e) => emit(e.target.value, national)}
-        >
-          {PHONE_COUNTRIES.map((c) => (
-            <option key={c.iso} value={c.iso}>
-              {flagOf(c.iso)} +{c.dial} {c.name}
-            </option>
-          ))}
-        </select>
+      <span className={`flex min-w-0 overflow-hidden rounded-lg border border-line bg-white ${label ? "mt-1" : ""}`}>
+        <span className="relative shrink-0 border-r border-line bg-mist">
+          {/* Visible dial badge — native <select> closed label is often truncated */}
+          <span className="pointer-events-none absolute inset-0 z-0 flex items-center gap-1 px-2.5 text-sm font-semibold text-navy">
+            <span aria-hidden>{flagOf(country.iso)}</span>
+            <span>+{country.dial}</span>
+            <span className="text-[10px] font-normal text-slate-500">▾</span>
+          </span>
+          <select
+            aria-label="Country code"
+            className="relative z-10 h-full min-h-[2.5rem] min-w-[6.75rem] cursor-pointer appearance-none bg-transparent py-2 pl-2 pr-2 text-sm opacity-0"
+            value={iso}
+            disabled={disabled}
+            onChange={(e) => emit(e.target.value, national)}
+            title={country.name}
+          >
+            {PHONE_COUNTRIES.map((c) => (
+              <option key={c.iso} value={c.iso}>
+                {flagOf(c.iso)} +{c.dial} {c.name}
+              </option>
+            ))}
+          </select>
+        </span>
         <input
           name={name}
           autoComplete={name || "tel-national"}
           inputMode="numeric"
           required={required}
           disabled={disabled}
-          className="w-full min-w-0 rounded-r-lg border border-line px-3 py-2 outline-none focus:border-brand"
+          className="w-full min-w-0 border-0 px-3 py-2 outline-none focus:ring-0"
           value={national}
-          placeholder={placeholder || (country.iso === "IN" ? "10-digit mobile" : "Mobile number")}
+          placeholder={placeholder || (country.iso === "IN" ? "10-digit mobile" : "Local mobile number")}
           onChange={(e) => emit(iso, e.target.value)}
         />
+      </span>
+      <span className="mt-1 block text-[11px] text-slate-400">
+        Default India (+91). Pick another country from the dropdown — type only the local number.
       </span>
     </label>
   );

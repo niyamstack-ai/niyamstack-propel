@@ -1432,7 +1432,7 @@ public class StorefrontService {
             phone = sessionUser.getPhone();
         }
         if (!Phones.isMobile(phone)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a valid 10-digit Indian mobile number");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a valid mobile number with country code");
         }
 
         String name = fullName == null || fullName.isBlank()

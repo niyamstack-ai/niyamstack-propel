@@ -357,7 +357,7 @@ public class PlatformService {
         if (body != null && body.phone() != null && !body.phone().isBlank()) {
             String phone = Phones.normalize(body.phone());
             if (phone.length() != 10) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a valid 10-digit mobile number");
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a valid mobile number with country code");
             }
             AppUser other = store.findUserByPhone(phone);
             if (other != null && !other.getId().equals(owner.getId())) {

@@ -5,6 +5,7 @@ import { compressImage, cropCover } from "./imageUpload";
 import { pairLines, parseSections, parseTestimonials, serializeTestimonials, youtubeId, type SiteSection, type Testimonial } from "./websiteSections";
 import { EnquireForm } from "./EnquireForm";
 import { FormFieldsEditor, parseFormFields, serializeFormFields } from "./formFields";
+import { PhoneField, formatPhoneDisplay, phoneForApi } from "./PhoneField";
 import { Link } from "react-router-dom";
 import { isProductHost } from "./siteHost";
 
@@ -335,7 +336,16 @@ export function SectionView({
         <ul className="mt-3 space-y-1 text-sm text-slate-600">
           {(section.phone || onChange) && (
             <li>
-              Phone <LiveText tag="span" value={section.phone} placeholder="mobile number" onChange={edit?.("phone")} />
+              {onChange ? (
+                <PhoneField
+                  label="Phone"
+                  value={section.phone || ""}
+                  onChange={(v) => onChange({ phone: phoneForApi(v) || "" })}
+                  placeholder="Institute contact mobile"
+                />
+              ) : (
+                <>Phone {formatPhoneDisplay(section.phone)}</>
+              )}
             </li>
           )}
           {(section.email || onChange) && (

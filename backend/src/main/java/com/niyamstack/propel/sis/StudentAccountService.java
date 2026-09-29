@@ -214,7 +214,7 @@ public class StudentAccountService {
     public static String requireMobile(String raw) {
         String phone = Phones.normalize(raw);
         if (!Phones.isMobile(phone)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a valid 10-digit Indian mobile number");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Enter a valid mobile number with country code");
         }
         return phone;
     }

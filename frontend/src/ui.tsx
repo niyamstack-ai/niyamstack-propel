@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { uploadMedia } from "./ops";
 
-export { PhoneField, phoneForApi, formatPhoneValue, parsePhoneValue } from "./PhoneField";
+export { PhoneField, phoneForApi, formatPhoneValue, parsePhoneValue, formatPhoneDisplay } from "./PhoneField";
 
 export function useApi<T>(path: string) {
   const [data, setData] = useState<T | null>(null);
