@@ -719,13 +719,8 @@ public class DemoSeeder implements CommandLineRunner {
             boolean placeholder = desc.isBlank()
                     || desc.equals("dkjagskjdk")
                     || desc.toLowerCase().contains("open this course to see lessons");
-            if (name.toLowerCase().contains("ipc")) {
-                if (course.getFees() == null || course.getFees().compareTo(new BigDecimal("5000")) < 0) {
-                    course.setFees(new BigDecimal("45000"));
-                }
-                if (placeholder) {
-                    course.setDescription("IPC theory and consultancy practice for working professionals.");
-                }
+            if (name.toLowerCase().contains("ipc") && placeholder) {
+                course.setDescription("IPC theory and consultancy practice for working professionals.");
             }
             if (name.toLowerCase().contains("data analytics")) {
                 if (placeholder) {

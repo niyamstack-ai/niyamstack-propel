@@ -143,9 +143,6 @@ public class SchemaPatch {
                 "ALTER TABLE questions ADD COLUMN IF NOT EXISTS language VARCHAR(40)",
                 "ALTER TABLE questions ADD COLUMN IF NOT EXISTS starter_code TEXT",
                 "ALTER TABLE questions ADD COLUMN IF NOT EXISTS tests_json TEXT",
-                "UPDATE courses SET description = 'IPC theory and consultancy practice for working professionals.' WHERE description = 'dkjagskjdk'",
-                "UPDATE assessments SET title = 'IPC basics check' WHERE title = 'abc'",
-                "UPDATE questions SET prompt = 'Choose the correct option.' WHERE prompt = 'fff'",
                 "ALTER TABLE courses ADD COLUMN IF NOT EXISTS bundle_csv VARCHAR(1000)",
                 "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS course_id UUID",
                 "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS buyer_gstin VARCHAR(20)",
@@ -169,11 +166,7 @@ public class SchemaPatch {
                     updated_at TIMESTAMP WITH TIME ZONE NOT NULL
                 )
                 """,
-                "UPDATE courses SET fees = 45000 WHERE fees IS NOT NULL AND fees < 5000 AND (LOWER(TRIM(name)) LIKE '%ipc%' OR LOWER(CAST(description AS VARCHAR(4000))) LIKE '%ipc%')",
                 "UPDATE courses SET name = TRIM(name) WHERE name IS NOT NULL AND name <> TRIM(name)",
-                "UPDATE courses SET description = 'Excel, SQL, Power BI, and Python for working with real business data — live classes, recordings, and placement support.' WHERE LOWER(name) LIKE '%data analytics%' AND (description IS NULL OR LOWER(CAST(description AS VARCHAR(4000))) LIKE '%open this course%')",
-                "UPDATE courses SET description = 'Java, Spring Boot, REST APIs, and PostgreSQL — live classes, recordings, and placement support.' WHERE LOWER(name) LIKE '%java%' AND (description IS NULL OR LOWER(CAST(description AS VARCHAR(4000))) LIKE '%open this course%')",
-                "UPDATE courses SET validity_type = 'MULTIPLE', validity_value = 4, validity_unit = 'MONTH', fees_alt = 42000, validity_alt_value = 12, validity_alt_unit = 'MONTH' WHERE LOWER(name) LIKE '%data analytics%' AND (fees_alt IS NULL OR fees_alt = 0)",
                 "UPDATE live_sessions SET provider = 'JITSI', meeting_url = 'https://meet.jit.si/NiyamstackJpamapping' WHERE meeting_url LIKE '%zoom.us/j/demo%'",
                 "UPDATE users SET failed_logins = 0, locked_until = NULL WHERE LOWER(email) IN ('deepak@yopmail.com', 'owner@aarohan.demo') OR phone = '9876500001'",
                 "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS product_pack VARCHAR(40)",
