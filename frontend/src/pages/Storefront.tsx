@@ -207,7 +207,7 @@ function CourseCover({ slug, courseId, name, className = "" }: { slug: string; c
       <img
         src={`/api/public/sites/${slug}/courses/${courseId}/cover`}
         alt={name}
-        className="h-full w-full object-contain"
+        className="h-full w-full object-cover"
         onError={() => setBroken(true)}
       />
     </div>

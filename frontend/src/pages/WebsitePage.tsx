@@ -330,7 +330,7 @@ export function WebsitePage() {
         <div key={c.id} className="overflow-hidden rounded-2xl border border-line bg-white">
           <div className="aspect-video w-full overflow-hidden bg-navy">
             {c.thumbnailUrl ? (
-              <img src={fileSrc(c.thumbnailUrl)} alt={c.name} className="h-full w-full object-contain" />
+              <img src={fileSrc(c.thumbnailUrl)} alt={c.name} className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full items-center justify-center px-3 text-center text-sm font-semibold text-white">{c.name}</div>
             )}
