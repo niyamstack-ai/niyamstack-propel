@@ -368,10 +368,10 @@ export function CreateCourseWizard() {
                 {thumbnailUrl && (
                   <div className="mt-3 max-w-md overflow-hidden rounded-lg border border-line">
                     <div className="aspect-video w-full overflow-hidden bg-navy">
-                      <img src={fileSrc(thumbnailUrl)} alt="Course thumbnail preview" className="h-full w-full object-cover" />
+                      <img src={fileSrc(thumbnailUrl)} alt="Course thumbnail preview" className="h-full w-full object-contain" />
                     </div>
                     <div className="flex items-center justify-between px-2 py-1">
-                      <p className="text-xs text-slate-500">Preview (student card crop)</p>
+                      <p className="text-xs text-slate-500">Preview (as on catalog)</p>
                       <button
                         type="button"
                         className="text-xs text-brand hover:underline"
@@ -385,7 +385,7 @@ export function CreateCourseWizard() {
                 <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
                   <span className="text-amber-400">💡</span> Recommended: 1280×720 (16:9), PNG or JPEG.
                 </p>
-                <p className="mt-1 text-xs text-slate-500">Avoid important text near top/bottom edges; it may crop on cards.</p>
+                <p className="mt-1 text-xs text-slate-500">Catalog shows the full image (no edge crop). Bars may appear if the ratio is not 16:9.</p>
               </div>
               {categoryRows.map((row, i) => (
                 <div key={i} className="grid min-w-0 gap-3 sm:grid-cols-2">
