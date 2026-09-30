@@ -857,8 +857,10 @@ function CoursePage() {
   const [email, setEmail] = useState(studentBuyer ? user?.email || "" : "");
   const [phone, setPhone] = useState(studentBuyer ? user?.phone || "" : "");
   const [coupon, setCoupon] = useState("");
-  const [price, setPrice] = useState<number | null>(null);
   const [couponOk, setCouponOk] = useState<string | null>(null);
+  const [couponPay, setCouponPay] = useState<number | null>(null);
+  const [couponListPay, setCouponListPay] = useState<number | null>(null);
+  const [couponOriginal, setCouponOriginal] = useState<number | null>(null);
   const [owned, setOwned] = useState(false);
   const [ownedError, setOwnedError] = useState<string | null>(null);
   const [validityOption, setValidityOption] = useState("a");
@@ -874,7 +876,6 @@ function CoursePage() {
       .then(async (row) => {
         if (cancelled) return;
         setCourse(row);
-        setPrice(Number(row.price));
         if (row.validityOptions?.[0]?.id) setValidityOption(row.validityOptions[0].id);
         if (token && user?.role === "STUDENT") {
           setOwnedError(null);
@@ -912,14 +913,22 @@ function CoursePage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await api<{ price: number; code: string }>(`/api/public/sites/${slug}/coupons/apply`, {
-        method: "POST",
-        body: JSON.stringify({ courseId: course.id, code: coupon.trim(), validityOption }),
-      });
-      setPrice(Number(res.price));
+      const res = await api<{ price: number; listPrice?: number; originalPrice?: number; code: string }>(
+        `/api/public/sites/${slug}/coupons/apply`,
+        {
+          method: "POST",
+          body: JSON.stringify({ courseId: course.id, code: coupon.trim(), validityOption }),
+        }
+      );
       setCouponOk(res.code);
+      setCouponPay(Number(res.price));
+      setCouponListPay(Number(res.listPrice ?? res.price));
+      setCouponOriginal(Number(res.originalPrice ?? course.price));
     } catch (err) {
       setCouponOk(null);
+      setCouponPay(null);
+      setCouponListPay(null);
+      setCouponOriginal(null);
       setError((err as Error).message);
     } finally {
       setBusy(false);
@@ -1036,23 +1045,27 @@ function CoursePage() {
 
   const loggedStudent = token && user?.role === "STUDENT";
   const selected = (course.validityOptions ?? []).find((o) => o.id === validityOption);
-  const pay = selected ? Number(selected.price) : price ?? Number(course.price);
-  const listPay = selected ? Number(selected.listPrice ?? selected.price) : Number(course.listPrice ?? course.price);
+  const basePay = selected ? Number(selected.price) : Number(course.price);
+  const baseList = selected ? Number(selected.listPrice ?? selected.price) : Number(course.listPrice ?? course.price);
+  const pay = couponOk && couponPay != null ? couponPay : basePay;
+  const listPay = couponOk && couponListPay != null ? couponListPay : baseList;
   const validity = courseValidityLabel(course);
   const asideAccess = courseBuyAsideAccessLine(course, selected);
   const sellBlocked = pay > 0 && course.courseType !== "FREE" && course.canSell === false;
   const paidCta = pay === 0 ? (course.allowTrial ? "Enroll free" : "Enroll free") : `Pay ${formatInr(pay)}`;
   const folders = outline.filter((row) => row.type === "FOLDER");
 
-  function clearCouponOnValidityChange(nextOption: string, nextPrice: number) {
+  function clearCouponOnValidityChange(nextOption: string) {
     if (otpSent) {
       setOtpSent(null);
       setOtp("");
     }
     setCouponOk(null);
     setCoupon("");
+    setCouponPay(null);
+    setCouponListPay(null);
+    setCouponOriginal(null);
     setValidityOption(nextOption);
-    setPrice(nextPrice);
   }
 
   return (
@@ -1122,6 +1135,12 @@ function CoursePage() {
             <section>
               <p className="text-sm text-slate-500">You pay</p>
               <p className="text-2xl font-bold text-navy">{pay === 0 ? "Free" : formatInr(pay)}</p>
+              {couponOk && couponOriginal != null && couponOriginal > pay && (
+                <p className="text-sm text-slate-500">
+                  <span className="line-through">{formatInr(couponOriginal)}</span>
+                  <span className="ml-2 text-emerald-700">after coupon {couponOk}</span>
+                </p>
+              )}
               <PassThroughPriceLine listPrice={listPay} pay={pay} mode={course.platformFeeMode} />
               {Number(course.discount || 0) > 0 && course.platformFeeMode !== "PASS_STUDENT" && (
                 <p className="text-xs text-slate-400">List price ₹{course.fees}</p>
@@ -1210,7 +1229,7 @@ function CoursePage() {
                       className="mr-2"
                       checked={validityOption === opt.id}
                       disabled={!!otpSent}
-                      onChange={() => clearCouponOnValidityChange(opt.id, Number(opt.price))}
+                      onChange={() => clearCouponOnValidityChange(opt.id)}
                     />
                     {opt.label}
                   </span>

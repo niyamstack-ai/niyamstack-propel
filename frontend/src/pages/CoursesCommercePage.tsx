@@ -699,15 +699,17 @@ function OwnerCourses() {
         />
       )}
 
-      <p className="text-xs text-slate-400">
-        <Link className="hover:text-brand" to="/courses?view=coupons">
+      <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4 text-sm">
+        <Link className="font-semibold text-brand hover:underline" to="/courses?view=coupons">
           Manage coupons
         </Link>
-        {" · "}
-        <Link className="hover:text-brand" to="/courses?view=backend">
+        <span className="text-slate-300" aria-hidden>
+          ·
+        </span>
+        <Link className="font-semibold text-brand hover:underline" to="/courses?view=backend">
           Add students to a course
         </Link>
-      </p>
+      </div>
     </div>
   );
 }
