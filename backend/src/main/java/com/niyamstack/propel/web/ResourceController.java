@@ -234,6 +234,16 @@ public class ResourceController {
         lms.trashCourse(id);
     }
 
+    @GetMapping("/courses/enrollment-counts")
+    public Map<String, Integer> courseEnrollmentCounts() {
+        return sis.courseEnrollmentCounts();
+    }
+
+    @GetMapping("/courses/{id}/students")
+    public List<Map<String, Object>> courseStudents(@PathVariable UUID id) {
+        return sis.studentsForCourse(id);
+    }
+
     @GetMapping("/batches") public List<Batch> batches() { return list(Batch.class); }
     @PostMapping("/batches") public Batch createBatch(@RequestBody Batch body) { return sis.createBatch(body); }
     @PutMapping("/batches/{id}") public Batch updateBatch(@PathVariable UUID id, @RequestBody Batch body) { return update(Batch.class, id, body, "SETUP"); }

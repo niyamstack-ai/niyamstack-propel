@@ -869,6 +869,91 @@ public class SisService {
                 .toList();
     }
 
+    /** Active student counts keyed by course id (enrollment rows + legacy student.courseId). */
+    public Map<String, Integer> courseEnrollmentCounts() {
+        Access.requireTenant(Auth.current());
+        Access.requireAny(Auth.current(), Roles.OWNER, Roles.FACULTY, Roles.COUNSELOR);
+        UUID org = orgId();
+        Map<UUID, Set<UUID>> byCourse = new LinkedHashMap<>();
+        for (CourseEnrollment e : store.list(CourseEnrollment.class, org)) {
+            if (e.getCourseId() == null || e.getStudentId() == null || !enrollmentLive(e)) {
+                continue;
+            }
+            Student s = findLiveStudent(e.getStudentId(), org);
+            if (s == null) {
+                continue;
+            }
+            byCourse.computeIfAbsent(e.getCourseId(), k -> new java.util.LinkedHashSet<>()).add(s.getId());
+        }
+        for (Student s : store.list(Student.class, org)) {
+            if (s.getTrashedAt() != null || s.getCourseId() == null) {
+                continue;
+            }
+            byCourse.computeIfAbsent(s.getCourseId(), k -> new java.util.LinkedHashSet<>()).add(s.getId());
+        }
+        Map<String, Integer> out = new LinkedHashMap<>();
+        for (Map.Entry<UUID, Set<UUID>> entry : byCourse.entrySet()) {
+            out.put(entry.getKey().toString(), entry.getValue().size());
+        }
+        return out;
+    }
+
+    /** Students registered for one course only (not the full institute roster). */
+    public List<Map<String, Object>> studentsForCourse(UUID courseId) {
+        Access.requireTenant(Auth.current());
+        Access.requireAny(Auth.current(), Roles.OWNER, Roles.FACULTY, Roles.COUNSELOR);
+        UUID org = orgId();
+        store.getOwned(Course.class, courseId, org);
+        Map<UUID, Student> byId = new LinkedHashMap<>();
+        for (CourseEnrollment e : store.listBy(CourseEnrollment.class, org, "courseId", courseId)) {
+            if (!enrollmentLive(e) || e.getStudentId() == null) {
+                continue;
+            }
+            Student s = findLiveStudent(e.getStudentId(), org);
+            if (s != null) {
+                byId.put(s.getId(), s);
+            }
+        }
+        for (Student s : store.list(Student.class, org)) {
+            if (s.getTrashedAt() != null || !courseId.equals(s.getCourseId())) {
+                continue;
+            }
+            byId.putIfAbsent(s.getId(), s);
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        byId.values().stream()
+                .sorted((a, b) -> String.valueOf(a.getFullName()).compareToIgnoreCase(String.valueOf(b.getFullName())))
+                .forEach(s -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("id", s.getId());
+                    row.put("studentCode", s.getStudentCode());
+                    row.put("fullName", s.getFullName());
+                    row.put("phone", s.getPhone());
+                    row.put("email", s.getEmail());
+                    row.put("status", s.getStatus());
+                    row.put("enrollmentDate", s.getEnrollmentDate());
+                    row.put("courseId", courseId);
+                    out.add(row);
+                });
+        return out;
+    }
+
+    private Student findLiveStudent(UUID studentId, UUID org) {
+        try {
+            Student s = store.getOwned(Student.class, studentId, org);
+            return s.getTrashedAt() == null ? s : null;
+        } catch (ApiException ex) {
+            return null;
+        }
+    }
+
+    private static boolean enrollmentLive(CourseEnrollment e) {
+        if (e == null || "CANCELLED".equalsIgnoreCase(e.getStatus())) {
+            return false;
+        }
+        return e.getExpiresAt() == null || Instant.now().isBefore(e.getExpiresAt());
+    }
+
     private Student findStudent(String phone, String email, String code) {
         return store.list(Student.class, orgId()).stream()
                 .filter(s -> (!phone.isBlank() && phone.equals(Phones.normalize(s.getPhone())))

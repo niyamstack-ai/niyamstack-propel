@@ -4,8 +4,10 @@ import { api, fileSrc } from "../api";
 import { createRecord, deleteRecord, ensureWebsitePublished, updateRecord } from "../ops";
 import { useAuth } from "../auth";
 import { UserMenu } from "../UserMenu";
-import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, useApi } from "../ui";
+import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, formatDay, useApi } from "../ui";
 import { ShareLinkBar } from "../shareLink";
+import { studentOpenPath } from "./StudentProfilePage";
+import { prettyLabel } from "../labels";
 
 export type Course = {
   id: string;
@@ -58,6 +60,16 @@ type Addition = {
 };
 
 type Student = { id: string; fullName: string; phone?: string; email?: string };
+
+type CourseStudent = {
+  id: string;
+  studentCode?: string;
+  fullName: string;
+  phone?: string;
+  email?: string;
+  status?: string;
+  enrollmentDate?: string;
+};
 
 const COVERS = [
   "bg-gradient-to-br from-[#163a66] to-[#0b2744]",
@@ -155,8 +167,12 @@ function OwnerCourses() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const view = params.get("view");
+  const rosterCourseId = view === "students" ? params.get("courseId") : null;
   const listTab = params.get("tab") === "trash" ? "trash" : params.get("tab") === "unpublished" ? "unpublished" : "published";
   const courses = useApi<Course[]>(listTab === "trash" ? "/api/courses?view=trash" : "/api/courses");
+  const enrollmentCounts = useApi<Record<string, number>>(
+    listTab === "trash" || view === "coupons" || view === "backend" ? "" : "/api/courses/enrollment-counts"
+  );
   const coupons = useApi<Coupon[]>("/api/coupons");
   const additions = useApi<Addition[]>("/api/backend-additions");
   const students = useApi<Student[]>("/api/students");
@@ -427,6 +443,33 @@ function OwnerCourses() {
     }
   }
 
+  function openCourseStudents(c: Course) {
+    patchParams((next) => {
+      next.set("view", "students");
+      next.set("courseId", c.id);
+      next.delete("tab");
+    });
+  }
+
+  if (rosterCourseId) {
+    const course =
+      (courses.data ?? []).find((c) => c.id === rosterCourseId) ||
+      (liveCourses.data ?? []).find((c) => c.id === rosterCourseId) ||
+      null;
+    return (
+      <CourseStudentsRoster
+        courseId={rosterCourseId}
+        courseName={course ? courseName(course) : "Course"}
+        onBack={() =>
+          patchParams((next) => {
+            next.delete("view");
+            next.delete("courseId");
+          })
+        }
+      />
+    );
+  }
+
   if (view === "coupons" || view === "backend") {
     return (
       <div className="space-y-6">
@@ -692,10 +735,12 @@ function OwnerCourses() {
           courses={filtered}
           empty={courses.error ? "Could not load courses." : emptyCopy()}
           trashMode={listTab === "trash"}
+          enrollmentCounts={enrollmentCounts.data ?? {}}
           onPublish={listTab === "trash" ? undefined : togglePublish}
           onFeature={listTab === "trash" ? undefined : toggleFeatured}
           onTrash={listTab === "trash" ? undefined : moveToTrash}
           onRestore={listTab === "trash" ? restoreCourse : undefined}
+          onStudents={listTab === "trash" ? undefined : openCourseStudents}
         />
       )}
 
@@ -730,24 +775,82 @@ function SearchBar({ value, onChange, className = "" }: { value: string; onChang
   );
 }
 
+function CourseStudentsRoster({
+  courseId,
+  courseName: title,
+  onBack,
+}: {
+  courseId: string;
+  courseName: string;
+  onBack: () => void;
+}) {
+  const roster = useApi<CourseStudent[]>(`/api/courses/${courseId}/students`);
+  const rows = roster.data ?? [];
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <button type="button" className="text-sm font-medium text-brand hover:underline" onClick={onBack}>
+            ← Your Courses
+          </button>
+          <h1 className="mt-1 text-[28px] font-bold text-navy">Students · {title}</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Only students registered in this course ({roster.data ? rows.length : "…"}). Open a profile for full details.
+          </p>
+        </div>
+        <UserMenu />
+      </div>
+      <ErrorText error={roster.error} />
+      {!roster.data && !roster.error ? (
+        <p className="text-sm text-slate-500">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-slate-500">No students registered in this course yet.</p>
+      ) : (
+        <Card title={`Registered (${rows.length})`}>
+          <Table
+            columns={["Student", "Mobile", "Email", "Status", "Enrolled", ""]}
+            rows={rows.map((s) => [
+              <div key={`${s.id}-name`}>
+                <p className="font-medium text-navy">{s.fullName}</p>
+                {s.studentCode ? <p className="text-xs text-slate-500">{s.studentCode}</p> : null}
+              </div>,
+              s.phone || "—",
+              s.email || "—",
+              prettyLabel(s.status || "—"),
+              s.enrollmentDate ? formatDay(s.enrollmentDate) : "—",
+              <Link key={`${s.id}-open`} className="font-semibold text-brand hover:underline" to={studentOpenPath(s.id, false)}>
+                Open profile
+              </Link>,
+            ])}
+          />
+        </Card>
+      )}
+    </div>
+  );
+}
+
 function CourseGrid({
   courses,
   empty,
   actionLabel,
   trashMode,
+  enrollmentCounts,
   onPublish,
   onFeature,
   onTrash,
   onRestore,
+  onStudents,
 }: {
   courses: Course[];
   empty: string;
   actionLabel?: string;
   trashMode?: boolean;
+  enrollmentCounts?: Record<string, number>;
   onPublish?: (c: Course) => void;
   onFeature?: (c: Course) => void;
   onTrash?: (c: Course) => void;
   onRestore?: (c: Course) => void;
+  onStudents?: (c: Course) => void;
 }) {
   if (courses.length === 0) return <p className="text-sm text-slate-500">{empty}</p>;
   return (
@@ -758,10 +861,12 @@ function CourseGrid({
           course={c}
           actionLabel={actionLabel}
           trashMode={trashMode}
+          studentCount={enrollmentCounts?.[c.id] ?? 0}
           onPublish={onPublish}
           onFeature={onFeature}
           onTrash={onTrash}
           onRestore={onRestore}
+          onStudents={onStudents}
         />
       ))}
     </div>
@@ -772,24 +877,29 @@ function CourseCard({
   course: c,
   actionLabel,
   trashMode,
+  studentCount,
   onPublish,
   onFeature,
   onTrash,
   onRestore,
+  onStudents,
 }: {
   course: Course;
   actionLabel?: string;
   trashMode?: boolean;
+  studentCount?: number;
   onPublish?: (c: Course) => void;
   onFeature?: (c: Course) => void;
   onTrash?: (c: Course) => void;
   onRestore?: (c: Course) => void;
+  onStudents?: (c: Course) => void;
 }) {
   const { user } = useAuth();
   const duration = formatDuration(c);
   const price = formatFees(c);
   const title = courseName(c);
   const href = c.published === false ? `/courses/${c.id}/edit` : `/courses/${c.id}`;
+  const count = studentCount ?? 0;
   return (
     <article className="overflow-hidden rounded-2xl border border-line bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
       {trashMode ? (
@@ -829,6 +939,15 @@ function CourseCard({
           </Link>
         )}
         <p className="mt-1 text-xs text-slate-500">{createdByLine(user?.role)}</p>
+        {!trashMode && onStudents && (
+          <button
+            type="button"
+            className="mt-2 text-sm font-semibold text-brand hover:underline"
+            onClick={() => onStudents(c)}
+          >
+            {count === 1 ? "1 student registered" : `${count} students registered`}
+          </button>
+        )}
         {duration && <span className="mt-3 inline-block rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-700">{duration}</span>}
         <div className="mt-3 flex items-end justify-between gap-2">
           <p className="text-lg font-bold text-navy">{price}</p>
@@ -872,6 +991,11 @@ function CourseCard({
             <Link className="text-xs text-brand hover:underline" to={href}>
               {c.published === false ? "Continue setup" : "Open course"}
             </Link>
+            {onStudents && (
+              <button type="button" className="text-xs text-brand hover:underline" onClick={() => onStudents(c)}>
+                View students
+              </button>
+            )}
             {onTrash && (
               <button type="button" className="text-xs text-red-700 hover:underline" onClick={() => onTrash(c)}>
                 Move to trash
