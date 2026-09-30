@@ -1,8 +1,8 @@
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useState } from "react";
 import { useAuth } from "../auth";
-import { fileSrc } from "../api";
-import { deleteRecord, ensureWebsitePublished, updateRecord } from "../ops";
+import { api, fileSrc } from "../api";
+import { ensureWebsitePublished, updateRecord } from "../ops";
 import { ShareLinkBar } from "../shareLink";
 import { ErrorText, useApi } from "../ui";
 import { UserMenu } from "../UserMenu";
@@ -71,12 +71,18 @@ export function CourseWorkspacePage() {
   }
 
   async function removeDraft() {
-    if (!window.confirm("Delete this unpublished course? Folders and files in it will be removed.")) return;
+    if (
+      !window.confirm(
+        "Move this course to Trash? Enrolled students and their progress stay. You can restore it from Courses → Trash."
+      )
+    ) {
+      return;
+    }
     setError(null);
     setBusy(true);
     try {
-      await deleteRecord(`/api/courses/${selected.id}`);
-      navigate("/courses");
+      await api(`/api/courses/${selected.id}/trash`, { method: "POST", body: "{}" });
+      navigate("/courses?tab=trash");
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);
@@ -133,7 +139,7 @@ export function CourseWorkspacePage() {
               Publish
             </button>
             <button type="button" disabled={busy} className="rounded-lg px-3 py-1.5 text-red-700 hover:underline" onClick={removeDraft}>
-              Delete draft
+              Move to trash
             </button>
           </div>
         </div>

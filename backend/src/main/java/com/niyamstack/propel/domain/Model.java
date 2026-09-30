@@ -168,6 +168,7 @@ public final class Model {
         private UUID termId;
         private String shareSlug;
         private boolean active = true;
+        private Instant trashedAt;
     }
 
     @Entity(name = "Batch") @Table(name = "batches") @Getter @Setter

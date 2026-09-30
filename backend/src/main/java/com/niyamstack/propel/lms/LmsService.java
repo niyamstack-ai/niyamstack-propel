@@ -118,21 +118,42 @@ public class LmsService {
     }
 
     @Transactional
-    public void deleteCourse(UUID id) {
+    public Course trashCourse(UUID id) {
         PropelUser user = Auth.current();
         Access.requireAny(user, Roles.OWNER);
         Access.requireWrite(user, "SETUP");
         Course course = store.getOwned(Course.class, id, user.organizationId());
-        for (ContentItem item : store.listBy(ContentItem.class, user.organizationId(), "courseId", id)) {
-            if (item.getParentFolderId() == null) {
-                deleteContent(item.getId());
-            }
+        if (course.getTrashedAt() != null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "This course is already in Trash.");
         }
-        for (Assessment exam : store.listBy(Assessment.class, user.organizationId(), "courseId", id)) {
-            deleteAssessment(exam.getId());
+        course.setTrashedAt(Instant.now());
+        course.setPublished(false);
+        course.setFeatured(false);
+        course = store.save(course);
+        audit.log("COURSE_TRASH", "Course", course.getId(), course.getName());
+        return course;
+    }
+
+    @Transactional
+    public Course restoreCourse(UUID id) {
+        PropelUser user = Auth.current();
+        Access.requireAny(user, Roles.OWNER);
+        Access.requireWrite(user, "SETUP");
+        Course course = store.getOwned(Course.class, id, user.organizationId());
+        if (course.getTrashedAt() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "This course is not in Trash.");
         }
-        store.deleteOwned(Course.class, id, user.organizationId());
-        audit.log("COURSE_DELETE", "Course", id, course.getName());
+        course.setTrashedAt(null);
+        course.setPublished(false);
+        course = store.save(course);
+        audit.log("COURSE_RESTORE", "Course", course.getId(), course.getName());
+        return course;
+    }
+
+    /** @deprecated Prefer trashCourse — hard delete removes content/tests and orphans enrollments. */
+    @Transactional
+    public void deleteCourse(UUID id) {
+        trashCourse(id);
     }
 
     @Transactional

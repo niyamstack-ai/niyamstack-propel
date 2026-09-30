@@ -192,13 +192,24 @@ public class ResourceController {
     @GetMapping("/terms") public List<Term> terms() { return list(Term.class); }
     @PostMapping("/terms") public Term createTerm(@RequestBody Term body) { return create(body, "SETUP"); }
 
-    @GetMapping("/courses") public List<Course> courses() { return list(Course.class); }
+    @GetMapping("/courses")
+    public List<Course> courses(@RequestParam(required = false) String view) {
+        List<Course> rows = list(Course.class);
+        boolean trash = "trash".equalsIgnoreCase(view);
+        return rows.stream().filter(c -> trash == (c.getTrashedAt() != null)).toList();
+    }
     @PostMapping("/courses") public Course createCourse(@RequestBody Course body) {
         body.setTermId(sis.resolveTermId(body.getTermId()));
+        body.setTrashedAt(null);
         applyShareSlug(body, null);
         return create(body, "SETUP");
     }
     @PutMapping("/courses/{id}") public Course updateCourse(@PathVariable UUID id, @RequestBody Course body) {
+        Course existing = store.getOwned(Course.class, id, Auth.current().organizationId());
+        if (existing.getTrashedAt() != null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Restore this course from Trash before editing.");
+        }
+        body.setTrashedAt(null);
         applyShareSlug(body, id);
         return update(Course.class, id, body, "SETUP");
     }
@@ -209,9 +220,19 @@ public class ResourceController {
         boolean available = normalized.isEmpty() || shareSlugFree(normalized, courseId, Auth.current().organizationId());
         return Map.of("slug", normalized, "available", available);
     }
+    @PostMapping("/courses/{id}/trash")
+    public Course trashCourse(@PathVariable UUID id) {
+        return lms.trashCourse(id);
+    }
+    @PostMapping("/courses/{id}/restore")
+    public Course restoreCourse(@PathVariable UUID id) {
+        return lms.restoreCourse(id);
+    }
     @DeleteMapping("/courses/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteCourse(@PathVariable UUID id) { lms.deleteCourse(id); }
+    public void deleteCourse(@PathVariable UUID id) {
+        lms.trashCourse(id);
+    }
 
     @GetMapping("/batches") public List<Batch> batches() { return list(Batch.class); }
     @PostMapping("/batches") public Batch createBatch(@RequestBody Batch body) { return sis.createBatch(body); }
@@ -983,6 +1004,7 @@ public class ResourceController {
 
     private boolean shareSlugFree(String slug, UUID ignoreId, UUID orgId) {
         return store.list(Course.class, orgId).stream()
+                .filter(c -> c.getTrashedAt() == null)
                 .noneMatch(c -> slug.equalsIgnoreCase(nz(c.getShareSlug()))
                         && (ignoreId == null || !ignoreId.equals(c.getId())));
     }

@@ -820,7 +820,9 @@ public class SchemaPatch {
                 )
                 """,
                 "CREATE UNIQUE INDEX IF NOT EXISTS uk_platform_commissions_org_student_course ON platform_commissions (organization_id, student_id, course_id)",
-                "CREATE INDEX IF NOT EXISTS idx_platform_commissions_org_status ON platform_commissions (organization_id, status)"
+                "CREATE INDEX IF NOT EXISTS idx_platform_commissions_org_status ON platform_commissions (organization_id, status)",
+                "ALTER TABLE courses ADD COLUMN IF NOT EXISTS trashed_at TIMESTAMP WITH TIME ZONE",
+                "CREATE INDEX IF NOT EXISTS idx_courses_org_trashed ON courses (organization_id, trashed_at)"
         );
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
             for (String sql : statements) {

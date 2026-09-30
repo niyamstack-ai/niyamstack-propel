@@ -176,7 +176,7 @@ public class StorefrontService {
 
     public List<Map<String, Object>> catalog(Organization org) {
         return store.list(Course.class, org.getId()).stream()
-                .filter(c -> c.isActive() && c.isPublished())
+                .filter(c -> c.isActive() && c.isPublished() && c.getTrashedAt() == null)
                 .map(this::publicCourse)
                 .toList();
     }
@@ -191,7 +191,7 @@ public class StorefrontService {
 
     public Course resolvePublishedCourse(Organization org, String courseKey) {
         Course course = resolveCourse(org, courseKey);
-        if (!course.isActive() || !course.isPublished()) {
+        if (!course.isActive() || !course.isPublished() || course.getTrashedAt() != null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Course not found");
         }
         return course;
@@ -1417,7 +1417,7 @@ public class StorefrontService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Course is required");
         }
         Course course = store.getOwned(Course.class, courseId, org.getId());
-        if (!course.isActive() || !course.isPublished()) {
+        if (!course.isActive() || !course.isPublished() || course.getTrashedAt() != null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "This course is not published yet");
         }
 

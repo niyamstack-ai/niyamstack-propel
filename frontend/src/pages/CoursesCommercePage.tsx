@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { api, fileSrc } from "../api";
 import { createRecord, deleteRecord, ensureWebsitePublished, updateRecord } from "../ops";
-import { fileSrc } from "../api";
 import { useAuth } from "../auth";
 import { UserMenu } from "../UserMenu";
 import { Card, ErrorText, Field, FormGrid, LinkButton, PrimaryButton, Select, Table, useApi } from "../ui";
@@ -30,6 +30,7 @@ export type Course = {
   allowPreview?: boolean;
   allowLive?: boolean;
   active?: boolean;
+  trashedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -154,11 +155,13 @@ function OwnerCourses() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const view = params.get("view");
-  const courses = useApi<Course[]>("/api/courses");
+  const listTab = params.get("tab") === "trash" ? "trash" : params.get("tab") === "unpublished" ? "unpublished" : "published";
+  const courses = useApi<Course[]>(listTab === "trash" ? "/api/courses?view=trash" : "/api/courses");
   const coupons = useApi<Coupon[]>("/api/coupons");
   const additions = useApi<Addition[]>("/api/backend-additions");
   const students = useApi<Student[]>("/api/students");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("recent");
   const [filter, setFilter] = useState("all");
@@ -178,9 +181,10 @@ function OwnerCourses() {
   const [addStudent, setAddStudent] = useState("");
   const [addNote, setAddNote] = useState("");
 
-  const listTab = params.get("tab") === "unpublished" ? "unpublished" : "published";
-  const publishedCount = (courses.data ?? []).filter((c) => c.published !== false).length;
-  const unpublishedCount = (courses.data ?? []).filter((c) => c.published === false).length;
+  const liveCourses = useApi<Course[]>(listTab === "trash" ? "/api/courses" : "");
+  const catalogForPickers = listTab === "trash" ? liveCourses.data ?? [] : courses.data ?? [];
+  const publishedCount = catalogForPickers.filter((c) => c.published !== false).length;
+  const unpublishedCount = catalogForPickers.filter((c) => c.published === false).length;
   const helpOpen = params.get("view") === "help";
   const loadingList = !courses.data && !courses.error;
 
@@ -195,7 +199,7 @@ function OwnerCourses() {
   const filtered = useMemo(() => {
     let list = [...(courses.data ?? [])];
     if (listTab === "unpublished") list = list.filter((c) => c.published === false);
-    else list = list.filter((c) => c.published !== false);
+    else if (listTab === "published") list = list.filter((c) => c.published !== false);
     const s = q.trim().toLowerCase();
     if (s) list = list.filter((c) => courseName(c).toLowerCase().includes(s) || c.code?.toLowerCase().includes(s));
     if (filter === "featured") list = list.filter((c) => c.featured);
@@ -216,16 +220,18 @@ function OwnerCourses() {
     setParams(next);
   }
 
-  function setListTab(tab: "published" | "unpublished") {
+  function setListTab(tab: "published" | "unpublished" | "trash") {
     patchParams((next) => {
       next.delete("view");
       if (tab === "unpublished") next.set("tab", "unpublished");
+      else if (tab === "trash") next.set("tab", "trash");
       else next.delete("tab");
     });
   }
 
   function emptyCopy() {
     if (q.trim()) return `No courses match “${q.trim()}”.`;
+    if (listTab === "trash") return "Trash is empty.";
     if (filter === "free") return "No free courses in this tab.";
     if (filter === "paid") return "No paid courses in this tab.";
     if (filter === "featured") return "No featured courses in this tab.";
@@ -235,11 +241,13 @@ function OwnerCourses() {
 
   function courseLabel(id?: string) {
     if (!id) return "All courses";
-    return courseName((courses.data ?? []).find((c) => c.id === id) || { name: "—" });
+    return courseName(catalogForPickers.find((c) => c.id === id) || (courses.data ?? []).find((c) => c.id === id) || { name: "—" });
   }
 
   async function togglePublish(c: Course) {
     try {
+      setError(null);
+      setNotice(null);
       const willUnpublish = c.published !== false;
       if (willUnpublish && !window.confirm(`Unpublish “${courseName(c)}”? Students will not see or buy it until you publish again.`)) {
         return;
@@ -261,8 +269,44 @@ function OwnerCourses() {
 
   async function toggleFeatured(c: Course) {
     try {
+      setError(null);
       await updateRecord(`/api/courses/${c.id}`, { ...c, featured: !c.featured });
       courses.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function moveToTrash(c: Course) {
+    if (
+      !window.confirm(
+        `Move “${courseName(c)}” to Trash? It leaves Your Courses and the website, but enrolled students and their progress stay.`
+      )
+    ) {
+      return;
+    }
+    try {
+      setError(null);
+      setNotice(null);
+      await api(`/api/courses/${c.id}/trash`, { method: "POST", body: "{}" });
+      courses.reload();
+      liveCourses.reload();
+      setNotice(`“${courseName(c)}” moved to Trash.`);
+      setListTab("trash");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function restoreCourse(c: Course) {
+    try {
+      setError(null);
+      setNotice(null);
+      await api(`/api/courses/${c.id}/restore`, { method: "POST", body: "{}" });
+      courses.reload();
+      liveCourses.reload();
+      setNotice(`“${courseName(c)}” restored as unpublished. Publish again when ready.`);
+      setListTab("unpublished");
     } catch (e) {
       setError((e as Error).message);
     }
@@ -415,7 +459,7 @@ function OwnerCourses() {
                 label="Course (optional)"
                 value={couponCourse}
                 onChange={setCouponCourse}
-                options={(courses.data ?? []).map((c) => ({ value: c.id, label: courseName(c) }))}
+                options={catalogForPickers.map((c) => ({ value: c.id, label: courseName(c) }))}
               />
               <Field label="Starts" value={couponStart} onChange={setCouponStart} type="date" />
               <Field label="Ends" value={couponEnd} onChange={setCouponEnd} type="date" />
@@ -452,7 +496,7 @@ function OwnerCourses() {
                 label="Course"
                 value={addCourse}
                 onChange={setAddCourse}
-                options={(courses.data ?? []).map((c) => ({ value: c.id, label: courseName(c) }))}
+                options={catalogForPickers.map((c) => ({ value: c.id, label: courseName(c) }))}
               />
               <Select
                 label="Student"
@@ -495,23 +539,31 @@ function OwnerCourses() {
           <h1 className="text-[28px] font-bold leading-tight text-navy">
             {loadingList
               ? "Your Courses"
-              : listTab === "unpublished"
-                ? `Unpublished Courses (${unpublishedCount})`
-                : `Your Courses (${publishedCount})`}
+              : listTab === "trash"
+                ? `Course trash (${filtered.length})`
+                : listTab === "unpublished"
+                  ? `Unpublished Courses (${unpublishedCount})`
+                  : `Your Courses (${publishedCount})`}
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Add/View courses of your brand{" "}
-            <button
-              type="button"
-              className="font-medium text-brand"
-              onClick={() =>
-                patchParams((next) => {
-                  next.set("view", "help");
-                })
-              }
-            >
-              Learn how →
-            </button>
+            {listTab === "trash"
+              ? "Trashed courses stay here with student enrollments and progress. Restore to edit or publish again."
+              : (
+                <>
+                  Add/View courses of your brand{" "}
+                  <button
+                    type="button"
+                    className="font-medium text-brand"
+                    onClick={() =>
+                      patchParams((next) => {
+                        next.set("view", "help");
+                      })
+                    }
+                  >
+                    Learn how →
+                  </button>
+                </>
+              )}
           </p>
           {helpOpen && (
             <p className="mt-2 max-w-xl text-sm text-slate-500">
@@ -542,7 +594,7 @@ function OwnerCourses() {
           }`}
           onClick={() => setListTab("published")}
         >
-          Published ({loadingList ? "…" : publishedCount})
+          Published ({loadingList && listTab !== "trash" ? "…" : publishedCount})
         </button>
         <button
           type="button"
@@ -551,9 +603,21 @@ function OwnerCourses() {
           }`}
           onClick={() => setListTab("unpublished")}
         >
-          Unpublished ({loadingList ? "…" : unpublishedCount})
+          Unpublished ({loadingList && listTab !== "trash" ? "…" : unpublishedCount})
+        </button>
+        <button
+          type="button"
+          className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
+            listTab === "trash" ? "border-brand text-brand" : "border-transparent text-slate-500 hover:text-navy"
+          }`}
+          onClick={() => setListTab("trash")}
+        >
+          Trash{listTab === "trash" && !loadingList ? ` (${courses.data?.length ?? 0})` : ""}
         </button>
       </div>
+
+      <ErrorText error={error || courses.error} />
+      {notice && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p>}
 
       <div className="flex flex-wrap items-center gap-2">
         <SearchBar value={q} onChange={setQ} className="min-w-0 flex-1" />
@@ -612,6 +676,8 @@ function OwnerCourses() {
           type="button"
           className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm"
           onClick={() => navigate("/courses/new")}
+          disabled={listTab === "trash"}
+          hidden={listTab === "trash"}
         >
           Create Course
         </button>
@@ -622,7 +688,15 @@ function OwnerCourses() {
       {loadingList ? (
         <p className="text-sm text-slate-500">Loading…</p>
       ) : (
-        <CourseGrid courses={filtered} empty={courses.error ? "Could not load courses." : emptyCopy()} onPublish={togglePublish} onFeature={toggleFeatured} />
+        <CourseGrid
+          courses={filtered}
+          empty={courses.error ? "Could not load courses." : emptyCopy()}
+          trashMode={listTab === "trash"}
+          onPublish={listTab === "trash" ? undefined : togglePublish}
+          onFeature={listTab === "trash" ? undefined : toggleFeatured}
+          onTrash={listTab === "trash" ? undefined : moveToTrash}
+          onRestore={listTab === "trash" ? restoreCourse : undefined}
+        />
       )}
 
       <p className="text-xs text-slate-400">
@@ -658,20 +732,35 @@ function CourseGrid({
   courses,
   empty,
   actionLabel,
+  trashMode,
   onPublish,
   onFeature,
+  onTrash,
+  onRestore,
 }: {
   courses: Course[];
   empty: string;
   actionLabel?: string;
+  trashMode?: boolean;
   onPublish?: (c: Course) => void;
   onFeature?: (c: Course) => void;
+  onTrash?: (c: Course) => void;
+  onRestore?: (c: Course) => void;
 }) {
   if (courses.length === 0) return <p className="text-sm text-slate-500">{empty}</p>;
   return (
     <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
       {courses.map((c) => (
-        <CourseCard key={c.id} course={c} actionLabel={actionLabel} onPublish={onPublish} onFeature={onFeature} />
+        <CourseCard
+          key={c.id}
+          course={c}
+          actionLabel={actionLabel}
+          trashMode={trashMode}
+          onPublish={onPublish}
+          onFeature={onFeature}
+          onTrash={onTrash}
+          onRestore={onRestore}
+        />
       ))}
     </div>
   );
@@ -680,13 +769,19 @@ function CourseGrid({
 function CourseCard({
   course: c,
   actionLabel,
+  trashMode,
   onPublish,
   onFeature,
+  onTrash,
+  onRestore,
 }: {
   course: Course;
   actionLabel?: string;
+  trashMode?: boolean;
   onPublish?: (c: Course) => void;
   onFeature?: (c: Course) => void;
+  onTrash?: (c: Course) => void;
+  onRestore?: (c: Course) => void;
 }) {
   const { user } = useAuth();
   const duration = formatDuration(c);
@@ -695,37 +790,65 @@ function CourseCard({
   const href = c.published === false ? `/courses/${c.id}/edit` : `/courses/${c.id}`;
   return (
     <article className="overflow-hidden rounded-2xl border border-line bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
-      <Link to={href} className="block">
+      {trashMode ? (
         <div className={`relative aspect-video w-full overflow-hidden p-4 text-white ${coverClass(c.id + title)}`}>
           {c.thumbnailUrl && (
             <>
               <img src={fileSrc(c.thumbnailUrl)} alt={title} className="absolute inset-0 h-full w-full object-cover" />
-              <div className="absolute inset-0 bg-black/25" />
+              <div className="absolute inset-0 bg-black/40" />
             </>
           )}
-          {c.published === false && (
-            <span className="relative z-10 rounded bg-white/85 px-2 py-0.5 text-[10px] font-medium text-slate-700">Unpublished Course</span>
-          )}
-          {c.featured && c.published !== false && (
-            <span className="relative z-10 rounded bg-amber-300/90 px-2 py-0.5 text-[10px] font-medium text-navy">Featured</span>
-          )}
+          <span className="relative z-10 rounded bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-950">In trash</span>
         </div>
-      </Link>
-      <div className="p-4">
-        <Link to={href} className="font-semibold text-navy hover:underline">
-          {title}
+      ) : (
+        <Link to={href} className="block">
+          <div className={`relative aspect-video w-full overflow-hidden p-4 text-white ${coverClass(c.id + title)}`}>
+            {c.thumbnailUrl && (
+              <>
+                <img src={fileSrc(c.thumbnailUrl)} alt={title} className="absolute inset-0 h-full w-full object-cover" />
+                <div className="absolute inset-0 bg-black/25" />
+              </>
+            )}
+            {c.published === false && (
+              <span className="relative z-10 rounded bg-white/85 px-2 py-0.5 text-[10px] font-medium text-slate-700">Unpublished Course</span>
+            )}
+            {c.featured && c.published !== false && (
+              <span className="relative z-10 rounded bg-amber-300/90 px-2 py-0.5 text-[10px] font-medium text-navy">Featured</span>
+            )}
+          </div>
         </Link>
+      )}
+      <div className="p-4">
+        {trashMode ? (
+          <p className="font-semibold text-navy">{title}</p>
+        ) : (
+          <Link to={href} className="font-semibold text-navy hover:underline">
+            {title}
+          </Link>
+        )}
         <p className="mt-1 text-xs text-slate-500">{createdByLine(user?.role)}</p>
         {duration && <span className="mt-3 inline-block rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-700">{duration}</span>}
         <div className="mt-3 flex items-end justify-between gap-2">
           <p className="text-lg font-bold text-navy">{price}</p>
-          {actionLabel && (
+          {actionLabel && !trashMode && (
             <Link to={href} className="text-sm font-medium text-brand">
               {actionLabel} →
             </Link>
           )}
         </div>
-        {onPublish && onFeature && (
+        {trashMode && onRestore && (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white"
+              onClick={() => onRestore(c)}
+            >
+              Restore
+            </button>
+            <p className="text-xs text-slate-500">Student enrollments and content stay linked.</p>
+          </div>
+        )}
+        {!trashMode && onPublish && onFeature && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -747,9 +870,14 @@ function CourseCard({
             <Link className="text-xs text-brand hover:underline" to={href}>
               {c.published === false ? "Continue setup" : "Open course"}
             </Link>
+            {onTrash && (
+              <button type="button" className="text-xs text-red-700 hover:underline" onClick={() => onTrash(c)}>
+                Move to trash
+              </button>
+            )}
           </div>
         )}
-        {c.published !== false && user?.orgSlug && (
+        {!trashMode && c.published !== false && user?.orgSlug && (
           <div className="mt-3">
             <ShareLinkBar slug={user.orgSlug} courseId={c.id} shareSlug={c.shareSlug} published compact />
           </div>
