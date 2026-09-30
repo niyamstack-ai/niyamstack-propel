@@ -1,4 +1,4 @@
-import { FormEvent, createContext, useContext, useEffect, useMemo, useState } from "react";
+import { FormEvent, createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth, type SessionUser } from "../auth";
@@ -725,6 +725,98 @@ function CmsPageView() {
   return <PageSections body={page.body} slug={slug} />;
 }
 
+function catalogGridClass(total: number) {
+  if (total <= 2) return "grid gap-4 sm:grid-cols-2 lg:max-w-4xl";
+  if (total === 3) return "grid gap-4 sm:grid-cols-2 lg:grid-cols-3";
+  return "grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4";
+}
+
+const CATALOG_PAGE_SIZE = 4;
+
+function CatalogCourseGrid({
+  courses,
+  slug,
+  owned,
+  emptyHint,
+}: {
+  courses: PublicCourse[];
+  slug: string;
+  owned: Set<string>;
+  emptyHint?: ReactNode;
+}) {
+  const [page, setPage] = useState(0);
+  const total = courses.length;
+  const pageCount = Math.max(1, Math.ceil(total / CATALOG_PAGE_SIZE));
+  const paging = total > CATALOG_PAGE_SIZE;
+
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount - 1));
+  }, [pageCount]);
+
+  const slice = paging
+    ? courses.slice(page * CATALOG_PAGE_SIZE, page * CATALOG_PAGE_SIZE + CATALOG_PAGE_SIZE)
+    : courses;
+  const cols = catalogGridClass(paging ? CATALOG_PAGE_SIZE : total);
+
+  return (
+    <div className="space-y-4">
+      <div className={cols}>
+        {total === 0 && (
+          <div className="sm:col-span-2 text-sm text-slate-500">{emptyHint || <p>No published courses yet.</p>}</div>
+        )}
+        {slice.map((c) => (
+          <Link
+            key={c.id}
+            to={`${sitePath(slug)}/courses/${c.shareSlug || c.id}`}
+            className="overflow-hidden rounded-2xl border border-line bg-white hover:border-brand"
+          >
+            <CourseCover slug={slug} courseId={c.id} name={c.name} />
+            <div className="p-5">
+              <p className="text-xs uppercase tracking-wide text-slate-400">{courseCategoryLine(c)}</p>
+              <h2 className="mt-1 text-lg font-semibold text-navy">{c.name}</h2>
+              <p className="mt-2 line-clamp-2 text-sm text-slate-500">
+                {stripHtml(c.description) || "Open this course to see lessons, fees, and how to enrol."}
+              </p>
+              <p className="mt-4 text-lg font-bold text-navy">
+                {owned.has(c.id) ? "Continue learning" : c.price === 0 ? "Free" : formatInr(c.price)}
+              </p>
+              <PassThroughPriceLine listPrice={Number(c.listPrice ?? c.price)} pay={Number(c.price)} mode={c.platformFeeMode} />
+            </div>
+          </Link>
+        ))}
+      </div>
+      {paging && (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          <p className="text-slate-500">
+            Showing {page * CATALOG_PAGE_SIZE + 1}–{Math.min(total, (page + 1) * CATALOG_PAGE_SIZE)} of {total}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="rounded-lg border border-line px-3 py-1.5 font-medium text-navy disabled:opacity-40"
+              disabled={page <= 0}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+            >
+              Previous
+            </button>
+            <span className="text-slate-500">
+              Page {page + 1} / {pageCount}
+            </span>
+            <button
+              type="button"
+              className="rounded-lg border border-line px-3 py-1.5 font-medium text-navy disabled:opacity-40"
+              disabled={page >= pageCount - 1}
+              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CatalogPage() {
   const slug = useSlug();
   const { token, user } = useAuth();
@@ -765,9 +857,12 @@ function CatalogPage() {
   if (!courses) return <p className="text-sm text-slate-500">Loading courses…</p>;
 
   const grid = (
-    <div className="grid gap-4 sm:grid-cols-2">
-      {courses.length === 0 && (
-        <div className="sm:col-span-2 text-sm text-slate-500">
+    <CatalogCourseGrid
+      courses={courses}
+      slug={slug!}
+      owned={owned}
+      emptyHint={
+        <>
           <p>No published courses yet.</p>
           {(site?.phone || site?.email) && (
             <p className="mt-2">
@@ -785,23 +880,9 @@ function CatalogPage() {
               ) : null}
             </p>
           )}
-        </div>
-      )}
-      {courses.map((c) => (
-        <Link key={c.id} to={`${sitePath(slug)}/courses/${c.shareSlug || c.id}`} className="overflow-hidden rounded-2xl border border-line bg-white hover:border-brand">
-          <CourseCover slug={slug!} courseId={c.id} name={c.name} />
-          <div className="p-5">
-            <p className="text-xs uppercase tracking-wide text-slate-400">{courseCategoryLine(c)}</p>
-            <h2 className="mt-1 text-lg font-semibold text-navy">{c.name}</h2>
-            <p className="mt-2 line-clamp-2 text-sm text-slate-500">{stripHtml(c.description) || "Open this course to see lessons, fees, and how to enrol."}</p>
-            <p className="mt-4 text-lg font-bold text-navy">
-              {owned.has(c.id) ? "Continue learning" : c.price === 0 ? "Free" : formatInr(c.price)}
-            </p>
-            <PassThroughPriceLine listPrice={Number(c.listPrice ?? c.price)} pay={Number(c.price)} mode={c.platformFeeMode} />
-          </div>
-        </Link>
-      ))}
-    </div>
+        </>
+      }
+    />
   );
 
   return (
