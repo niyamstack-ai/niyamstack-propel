@@ -1411,7 +1411,7 @@ function StudentLoginPage() {
   const [otp, setOtp] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [sent, setSent] = useState<{ phone?: string; devOtp?: string } | null>(null);
+  const [sent, setSent] = useState<{ phone?: string; emailMasked?: string; channel?: string; devOtp?: string } | null>(null);
   const [mode, setMode] = useState<"otp" | "email">("otp");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1433,7 +1433,7 @@ function StudentLoginPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await api<{ phone?: string; devOtp?: string }>("/api/auth/otp/request", {
+      const res = await api<{ phone?: string; emailMasked?: string; channel?: string; devOtp?: string }>("/api/auth/otp/request", {
         method: "POST",
         body: JSON.stringify({ phone: phoneForApi(phone) }),
       });
@@ -1484,13 +1484,17 @@ function StudentLoginPage() {
   return (
     <div className="mx-auto max-w-md rounded-2xl border border-line bg-white p-6">
       <h1 className="text-xl font-bold text-navy">Student login</h1>
-      <p className="mt-1 text-sm text-slate-500">Use the mobile you registered, enrolled with, or purchased with.</p>
+      <p className="mt-1 text-sm text-slate-500">
+        {mode === "otp"
+          ? "Enter the mobile you registered, enrolled, or purchased with. We’ll send a login code to the email on that account — not as an SMS."
+          : "Sign in with the email and password on your student account."}
+      </p>
       {(error || oauthError) && (
         <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">{error || oauthError}</p>
       )}
       <div className="mt-4 flex gap-2">
         <button type="button" className={`rounded-full px-3 py-1 text-sm ${mode === "otp" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => setMode("otp")}>
-          Mobile OTP
+          OTP login
         </button>
         <button type="button" className={`rounded-full px-3 py-1 text-sm ${mode === "email" ? "bg-navy text-white" : "bg-mist"}`} onClick={() => setMode("email")}>
           Email
@@ -1500,7 +1504,7 @@ function StudentLoginPage() {
         <form className="mt-4 space-y-3" onSubmit={sendOtp}>
           <PhoneField value={phone} onChange={setPhone} placeholder="Mobile" />
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
-            {busy ? "Sending…" : "Send OTP"}
+            {busy ? "Sending…" : "Send code"}
           </button>
           <p className="text-center text-xs">
             <Link className="text-brand" to={`${sitePath(slug)}/forgot`}>
@@ -1511,8 +1515,11 @@ function StudentLoginPage() {
       )}
       {mode === "otp" && sent && (
         <form className="mt-4 space-y-3" onSubmit={verify}>
+          <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-navy">
+            Code sent to <span className="font-semibold">{sent.emailMasked || "the email on this mobile"}</span>. Check inbox and spam — it is not sent as SMS.
+          </div>
           {sent.devOtp && <p className="text-xs text-slate-400">Local OTP: {sent.devOtp}</p>}
-          <input className="w-full rounded-lg border border-line px-3 py-2 tracking-[0.3em]" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="OTP" />
+          <input className="w-full rounded-lg border border-line px-3 py-2 tracking-[0.3em]" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="6-digit code" />
           <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white" disabled={busy}>
             {busy ? "Signing in…" : "Login"}
           </button>
@@ -1521,7 +1528,7 @@ function StudentLoginPage() {
               Change number
             </button>
             <button type="button" className="text-brand" disabled={busy} onClick={() => void sendOtp({ preventDefault() {} } as FormEvent)}>
-              Resend OTP
+              Resend code
             </button>
           </div>
         </form>
