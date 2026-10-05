@@ -92,9 +92,9 @@ export function CreateCourseWizard() {
   const [enableContents, setEnableContents] = useState(true);
   const [enableTests, setEnableTests] = useState(true);
   const [enableCoding, setEnableCoding] = useState(true);
-  const [enableTimetable, setEnableTimetable] = useState(true);
-  const [enableAssignments, setEnableAssignments] = useState(true);
-  const [enableDoubts, setEnableDoubts] = useState(true);
+  const [enableTimetable, setEnableTimetable] = useState(false);
+  const [enableAssignments, setEnableAssignments] = useState(false);
+  const [enableDoubts, setEnableDoubts] = useState(false);
   const [installmentsOn, setInstallmentsOn] = useState(false);
   const [installmentCount, setInstallmentCount] = useState("3");
   const [featured, setFeatured] = useState(false);
@@ -144,9 +144,9 @@ export function CreateCourseWizard() {
     setEnableContents(existing.enableContents !== false);
     setEnableTests(existing.enableTests !== false);
     setEnableCoding(existing.enableCoding !== false);
-    setEnableTimetable(existing.enableTimetable !== false);
-    setEnableAssignments(existing.enableAssignments !== false);
-    setEnableDoubts(existing.enableDoubts !== false);
+    setEnableTimetable(Boolean(existing.enableTimetable));
+    setEnableAssignments(Boolean(existing.enableAssignments));
+    setEnableDoubts(Boolean(existing.enableDoubts));
     setFeatured(Boolean(existing.featured));
     setBundleIds((existing.bundleCsv || "").split(",").filter(Boolean));
     const plan = (feePlans.data ?? []).find((p) => p.courseId === existing.id);
@@ -739,6 +739,9 @@ export function CreateCourseWizard() {
             taxPercent,
             allowOffline,
             allowLive,
+            enableTimetable,
+            enableAssignments,
+            enableDoubts,
             featured,
             allowTrial,
             allowPreview,
@@ -749,6 +752,9 @@ export function CreateCourseWizard() {
               taxPercent: (v) => setTaxPercent(String(v)),
               allowOffline: (v) => setAllowOffline(Boolean(v)),
               allowLive: (v) => setAllowLive(Boolean(v)),
+              enableTimetable: (v) => setEnableTimetable(Boolean(v)),
+              enableAssignments: (v) => setEnableAssignments(Boolean(v)),
+              enableDoubts: (v) => setEnableDoubts(Boolean(v)),
               featured: (v) => setFeatured(Boolean(v)),
               allowTrial: (v) => setAllowTrial(Boolean(v)),
               allowPreview: (v) => setAllowPreview(Boolean(v)),
@@ -907,6 +913,9 @@ function AdvancedSettings({
           </SettingCard>
           <SettingCard title="Offline Download Of Videos" hint="Students can download videos in the student app" on={b("allowOffline")} onChange={(v) => onChange("allowOffline", v)} />
           <SettingCard title="LIVE Classes" hint="You can schedule live classes for this course" on={b("allowLive")} onChange={(v) => onChange("allowLive", v)} />
+          <SettingCard title="Timetable" hint="Show the timetable tab to students for this course" on={b("enableTimetable")} onChange={(v) => onChange("enableTimetable", v)} />
+          <SettingCard title="Assignments" hint="Show the assignments tab to students for this course" on={b("enableAssignments")} onChange={(v) => onChange("enableAssignments", v)} />
+          <SettingCard title="Doubts" hint="Show the doubts tab to students for this course" on={b("enableDoubts")} onChange={(v) => onChange("enableDoubts", v)} />
           <SettingCard title="Mark as Featured" hint="Show this course first on the student catalog" on={b("featured")} onChange={(v) => onChange("featured", v)} />
           <SettingCard title="Promote with trial" hint="Let students try this course before buying" on={b("allowTrial")} onChange={(v) => onChange("allowTrial", v)} />
           <SettingCard title="Allow course preview" hint="Let visitors preview selected lessons" on={b("allowPreview")} onChange={(v) => onChange("allowPreview", v)} />
