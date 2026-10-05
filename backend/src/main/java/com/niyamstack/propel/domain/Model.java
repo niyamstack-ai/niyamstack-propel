@@ -154,6 +154,9 @@ public final class Model {
         private boolean enableContents = true;
         private boolean enableTests = true;
         private boolean enableCoding = true;
+        private boolean enableTimetable = true;
+        private boolean enableAssignments = true;
+        private boolean enableDoubts = true;
         private Integer likesCount = 0;
         private Integer durationMonths;
         private BigDecimal fees;

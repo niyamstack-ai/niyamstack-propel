@@ -723,6 +723,9 @@ public class SchemaPatch {
                 "ALTER TABLE courses ADD COLUMN IF NOT EXISTS enable_contents BOOLEAN DEFAULT TRUE",
                 "ALTER TABLE courses ADD COLUMN IF NOT EXISTS enable_tests BOOLEAN DEFAULT TRUE",
                 "ALTER TABLE courses ADD COLUMN IF NOT EXISTS enable_coding BOOLEAN DEFAULT TRUE",
+                "ALTER TABLE courses ADD COLUMN IF NOT EXISTS enable_timetable BOOLEAN DEFAULT TRUE",
+                "ALTER TABLE courses ADD COLUMN IF NOT EXISTS enable_assignments BOOLEAN DEFAULT TRUE",
+                "ALTER TABLE courses ADD COLUMN IF NOT EXISTS enable_doubts BOOLEAN DEFAULT TRUE",
                 """
                 CREATE TABLE IF NOT EXISTS settlement_entries (
                     id UUID PRIMARY KEY,

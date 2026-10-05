@@ -32,6 +32,9 @@ type Draft = {
   enableContents?: boolean;
   enableTests?: boolean;
   enableCoding?: boolean;
+  enableTimetable?: boolean;
+  enableAssignments?: boolean;
+  enableDoubts?: boolean;
   featured?: boolean;
   shareSlug?: string;
   bundleCsv?: string;
@@ -89,6 +92,9 @@ export function CreateCourseWizard() {
   const [enableContents, setEnableContents] = useState(true);
   const [enableTests, setEnableTests] = useState(true);
   const [enableCoding, setEnableCoding] = useState(true);
+  const [enableTimetable, setEnableTimetable] = useState(true);
+  const [enableAssignments, setEnableAssignments] = useState(true);
+  const [enableDoubts, setEnableDoubts] = useState(true);
   const [installmentsOn, setInstallmentsOn] = useState(false);
   const [installmentCount, setInstallmentCount] = useState("3");
   const [featured, setFeatured] = useState(false);
@@ -138,6 +144,9 @@ export function CreateCourseWizard() {
     setEnableContents(existing.enableContents !== false);
     setEnableTests(existing.enableTests !== false);
     setEnableCoding(existing.enableCoding !== false);
+    setEnableTimetable(existing.enableTimetable !== false);
+    setEnableAssignments(existing.enableAssignments !== false);
+    setEnableDoubts(existing.enableDoubts !== false);
     setFeatured(Boolean(existing.featured));
     setBundleIds((existing.bundleCsv || "").split(",").filter(Boolean));
     const plan = (feePlans.data ?? []).find((p) => p.courseId === existing.id);
@@ -220,6 +229,9 @@ export function CreateCourseWizard() {
       enableContents,
       enableTests,
       enableCoding,
+      enableTimetable,
+      enableAssignments,
+      enableDoubts,
       bundleCsv: bundleIds.join(","),
       active: true,
       termId: terms.data?.[0]?.id || null,
@@ -474,6 +486,18 @@ export function CreateCourseWizard() {
                 <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
                   <span>Coding practice</span>
                   <Toggle on={enableCoding} onChange={setEnableCoding} />
+                </li>
+                <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
+                  <span>Timetable</span>
+                  <Toggle on={enableTimetable} onChange={setEnableTimetable} />
+                </li>
+                <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
+                  <span>Assignments</span>
+                  <Toggle on={enableAssignments} onChange={setEnableAssignments} />
+                </li>
+                <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
+                  <span>Doubts</span>
+                  <Toggle on={enableDoubts} onChange={setEnableDoubts} />
                 </li>
                 <li className="flex items-center justify-between gap-3 text-sm text-slate-700">
                   <span>Course preview</span>

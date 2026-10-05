@@ -111,6 +111,9 @@ type PublicCourse = {
   enableContents?: boolean;
   enableTests?: boolean;
   enableCoding?: boolean;
+  enableTimetable?: boolean;
+  enableAssignments?: boolean;
+  enableDoubts?: boolean;
   instituteName?: string;
   fees: number;
   discount?: number;
@@ -1890,14 +1893,23 @@ function StudyPage() {
       ...(course.enableCoding !== false ? (["practice"] as const) : []),
       ...(course.enableTests !== false ? (["tests"] as const) : []),
       ...(course.allowLive ? (["live", "recordings"] as const) : []),
-      "timetable",
-      "assignments",
-      "doubts",
+      ...(course.enableTimetable !== false ? (["timetable"] as const) : []),
+      ...(course.enableAssignments !== false ? (["assignments"] as const) : []),
+      ...(course.enableDoubts !== false ? (["doubts"] as const) : []),
     ];
     if (items.length > 0) {
       setTab((current) => (items.includes(current) ? current : items[0]));
     }
-  }, [course?.id, course?.enableContents, course?.enableCoding, course?.enableTests, course?.allowLive]);
+  }, [
+    course?.id,
+    course?.enableContents,
+    course?.enableCoding,
+    course?.enableTests,
+    course?.allowLive,
+    course?.enableTimetable,
+    course?.enableAssignments,
+    course?.enableDoubts,
+  ]);
 
   useEffect(() => {
     setLoadError(null);
@@ -1935,9 +1947,9 @@ function StudyPage() {
     course?.enableTests !== false ? { id: "tests" as const, label: "Tests" } : null,
     course?.allowLive ? { id: "live" as const, label: "Live class" } : null,
     course?.allowLive ? { id: "recordings" as const, label: "Recordings" } : null,
-    { id: "timetable" as const, label: "Timetable" },
-    { id: "assignments" as const, label: "Assignments" },
-    { id: "doubts" as const, label: "Doubts" },
+    course?.enableTimetable !== false ? { id: "timetable" as const, label: "Timetable" } : null,
+    course?.enableAssignments !== false ? { id: "assignments" as const, label: "Assignments" } : null,
+    course?.enableDoubts !== false ? { id: "doubts" as const, label: "Doubts" } : null,
   ].filter(Boolean) as { id: StudySection; label: string }[];
 
   if (loadError) {

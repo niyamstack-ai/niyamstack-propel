@@ -922,6 +922,9 @@ public class StorefrontService {
         out.put("enableContents", course.isEnableContents());
         out.put("enableTests", course.isEnableTests());
         out.put("enableCoding", course.isEnableCoding());
+        out.put("enableTimetable", course.isEnableTimetable());
+        out.put("enableAssignments", course.isEnableAssignments());
+        out.put("enableDoubts", course.isEnableDoubts());
         out.put("instituteName", org.getName());
         out.put("fees", fees);
         out.put("discount", discount);
