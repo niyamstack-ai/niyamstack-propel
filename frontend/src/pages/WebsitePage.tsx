@@ -64,6 +64,25 @@ function stripHtml(html?: string) {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function parseOrgSettings(json?: string): Record<string, unknown> {
+  try {
+    return JSON.parse(json || "{}") as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+/** Normalize logo click URL: allow https://…, http://…, or /path. Bare domains get https://. */
+function normalizeLogoHref(raw: string): string {
+  const v = raw.trim();
+  if (!v) return "";
+  const lower = v.toLowerCase();
+  if (lower.startsWith("javascript:") || lower.startsWith("data:") || lower.startsWith("vbscript:")) return "";
+  if (v.startsWith("/") || lower.startsWith("https://") || lower.startsWith("http://")) return v;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}([/:].*)?$/i.test(v)) return `https://${v}`;
+  return "";
+}
+
 function catalogPrice(c: Course) {
   return Math.max(0, Number(c.fees || 0) - Number(c.discount || 0));
 }
@@ -105,6 +124,9 @@ export function WebsitePage() {
   const [picked, setPicked] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [customDomain, setCustomDomain] = useState("");
+  const [logoHref, setLogoHref] = useState("");
+  const [logoEditOpen, setLogoEditOpen] = useState(false);
+  const [logoSaving, setLogoSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const seeding = useRef(false);
   const saveTimer = useRef<number>(0);
@@ -124,7 +146,10 @@ export function WebsitePage() {
   const liveCourses = (courses.data ?? []).filter((c) => c.published !== false).slice(0, 4);
 
   useEffect(() => {
-    if (org.data) setCustomDomain(org.data.customDomain || "");
+    if (!org.data) return;
+    setCustomDomain(org.data.customDomain || "");
+    const settings = parseOrgSettings(org.data.settingsJson);
+    setLogoHref(typeof settings.logoHref === "string" ? settings.logoHref : "");
   }, [org.data]);
 
   useEffect(() => {
@@ -216,22 +241,45 @@ export function WebsitePage() {
     setError(null);
     try {
       const domain = cleanHost(customDomain);
-      const previous = (() => {
-        try {
-          return JSON.parse(org.data.settingsJson || "{}") as Record<string, unknown>;
-        } catch {
-          return {};
-        }
-      })();
+      const previous = parseOrgSettings(org.data.settingsJson);
       await updateRecord("/api/organization", {
         ...org.data,
         customDomain: domain,
         websiteUrl: domain ? `https://${domain}` : previewPath,
-        settingsJson: JSON.stringify({ ...previous, domain: { hostTarget: HOST_TARGET, status: domain ? "PENDING" : "" } }),
+        settingsJson: JSON.stringify({
+          ...previous,
+          logoHref: normalizeLogoHref(logoHref),
+          domain: { hostTarget: HOST_TARGET, status: domain ? "PENDING" : "" },
+        }),
       });
       org.reload();
     } catch (e) {
       setError((e as Error).message);
+    }
+  }
+
+  async function saveLogoHref() {
+    if (!org.data || demoLocked) return;
+    setError(null);
+    setLogoSaving(true);
+    try {
+      const cleaned = normalizeLogoHref(logoHref);
+      if (logoHref.trim() && !cleaned) {
+        setError("Enter a full link like https://nexusitacad.com/ or a path like /courses");
+        return;
+      }
+      const previous = parseOrgSettings(org.data.settingsJson);
+      await updateRecord("/api/organization", {
+        ...org.data,
+        settingsJson: JSON.stringify({ ...previous, logoHref: cleaned }),
+      });
+      setLogoHref(cleaned);
+      setLogoEditOpen(false);
+      org.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLogoSaving(false);
     }
   }
 
@@ -432,27 +480,95 @@ export function WebsitePage() {
 
         <div className="min-h-0 overflow-auto p-6">
           <div className="mx-auto min-h-full max-w-4xl rounded-2xl bg-white shadow-sm">
-            <header className="flex items-center justify-between border-b border-line px-6 py-4">
-              <div className="flex items-center gap-2">
-                {org.data?.logoUrl ? (
-                  <img src={fileSrc(org.data.logoUrl)} alt="" className="h-9 w-9 rounded-lg object-cover" />
-                ) : (
-                  <span className="grid h-9 w-9 place-items-center rounded-lg bg-navy text-xs font-bold text-white">
-                    {(institute[0] || "I").toUpperCase()}
-                  </span>
-                )}
-                <p className="font-bold text-navy">{institute}</p>
+            <header
+              className={`border-b border-line px-6 py-4 ${logoEditOpen ? "ring-2 ring-brand" : "hover:ring-1 hover:ring-slate-200"}`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  className="flex min-w-0 items-center gap-2 rounded-lg text-left"
+                  title="Click to set where the logo goes"
+                  onClick={() => {
+                    setPicked(null);
+                    setLogoEditOpen(true);
+                  }}
+                >
+                  {org.data?.logoUrl ? (
+                    <img src={fileSrc(org.data.logoUrl)} alt="" className="h-9 w-9 rounded-lg object-cover" />
+                  ) : (
+                    <span className="grid h-9 w-9 place-items-center rounded-lg bg-navy text-xs font-bold text-white">
+                      {(institute[0] || "I").toUpperCase()}
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <p className="font-bold text-navy">{institute}</p>
+                    <p className="truncate text-[11px] text-slate-400">
+                      {logoHref.trim() ? `Logo → ${logoHref.trim()}` : "Logo → site home (click to change)"}
+                    </p>
+                  </div>
+                </button>
+                <div className="hidden gap-3 text-sm text-slate-500 sm:flex">
+                  {sorted.slice(0, 5).map((p) => (
+                    <span key={p.id} className={p.id === current?.id ? "font-medium text-navy" : ""}>
+                      {p.title}
+                    </span>
+                  ))}
+                  <span className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-400">Login (preview)</span>
+                </div>
               </div>
-              <div className="hidden gap-3 text-sm text-slate-500 sm:flex">
-                {sorted.slice(0, 5).map((p) => (
-                  <span key={p.id} className={p.id === current?.id ? "font-medium text-navy" : ""}>
-                    {p.title}
-                  </span>
-                ))}
-                <span className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-400">Login (preview)</span>
-              </div>
+              {logoEditOpen && (
+                <div className="mt-4 space-y-2 rounded-xl border border-line bg-mist p-3" onClick={(e) => e.stopPropagation()}>
+                  <Field
+                    label="When students click the logo, open"
+                    value={logoHref}
+                    onChange={setLogoHref}
+                    placeholder="https://nexusitacad.com/  (leave blank for this site)"
+                  />
+                  <p className="text-xs text-slate-500">
+                    Use your main website, or leave blank to stay on this Propel site home.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={demoLocked || logoSaving}
+                      className="rounded-full bg-navy px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                      onClick={() => void saveLogoHref()}
+                    >
+                      {logoSaving ? "Saving…" : "Save logo link"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full border border-line px-3 py-1.5 text-sm"
+                      onClick={() => {
+                        const settings = parseOrgSettings(org.data?.settingsJson);
+                        setLogoHref(typeof settings.logoHref === "string" ? settings.logoHref : "");
+                        setLogoEditOpen(false);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    {logoHref.trim() && (
+                      <button
+                        type="button"
+                        disabled={demoLocked || logoSaving}
+                        className="rounded-full border border-line px-3 py-1.5 text-sm text-slate-600 disabled:opacity-50"
+                        onClick={() => {
+                          setLogoHref("");
+                        }}
+                      >
+                        Use site home
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </header>
-            <div className="space-y-6 p-6">
+            <div
+              className="space-y-6 p-6"
+              onClick={() => {
+                if (logoEditOpen) setLogoEditOpen(false);
+              }}
+            >
               {sections.length === 0 && (
                 <button
                   type="button"
@@ -466,7 +582,10 @@ export function WebsitePage() {
                 <div
                   key={section.id}
                   className={`group relative rounded-2xl ${picked === section.id ? "ring-2 ring-brand" : "hover:ring-1 hover:ring-slate-200"}`}
-                  onClick={() => setPicked(section.id)}
+                  onClick={() => {
+                    setLogoEditOpen(false);
+                    setPicked(section.id);
+                  }}
                 >
                   <div className="absolute -top-3 right-3 z-10 flex gap-1">
                     <button type="button" className="rounded bg-white px-2 py-0.5 text-[11px] shadow" onClick={() => move(index, -1)}>

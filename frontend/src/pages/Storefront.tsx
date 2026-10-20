@@ -28,6 +28,8 @@ type Site = {
   name: string;
   slug: string;
   logoUrl?: string;
+  /** Custom logo click target (https://… or /path). Empty = site home. */
+  logoHref?: string;
   brandPrimary?: string;
   brandSecondary?: string;
   customDomain?: string;
@@ -44,6 +46,16 @@ type Site = {
   googleAdsId?: string;
   pages?: CmsPage[];
 };
+
+function siteLogoTarget(site: Site, slug: string | undefined) {
+  const raw = (site.logoHref || "").trim();
+  if (/^https?:\/\//i.test(raw)) return { external: true as const, href: raw };
+  if (raw.startsWith("/")) {
+    const path = isProductHost() && slug && !raw.startsWith(`/s/${slug}`) ? `/s/${slug}${raw}` : raw;
+    return { external: false as const, to: path };
+  }
+  return { external: false as const, to: sitePath(slug) || "/" };
+}
 
 const SiteNav = createContext({ slug: "", base: "" });
 
@@ -611,18 +623,42 @@ function StorefrontShell() {
     <div className="min-h-svh bg-mist" style={{ ["--color-brand" as string]: accent }}>
       <header className={`sticky top-0 border-b border-line bg-white ${examLock ? "z-0 pointer-events-none" : "z-10"}`}>
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
-          <Link to={sitePath(slug) || "/"} className={`flex items-center gap-2 ${examLock ? "pointer-events-none opacity-40" : ""}`} tabIndex={examLock ? -1 : 0} aria-hidden={examLock}>
-            {site.logoUrl ? (
-              <img src={site.logoUrl} alt="" className="h-9 w-9 rounded-lg object-contain" />
-            ) : (
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-navy text-sm font-bold text-white">
-                {initialsOf(site.name)}
-              </span>
-            )}
-            <div>
-              <p className="text-sm font-bold text-navy">{site.name}</p>
-            </div>
-          </Link>
+          {(() => {
+            const logo = siteLogoTarget(site, slug);
+            const logoClass = `flex items-center gap-2 ${examLock ? "pointer-events-none opacity-40" : ""}`;
+            const logoInner = (
+              <>
+                {site.logoUrl ? (
+                  <img src={site.logoUrl} alt="" className="h-9 w-9 rounded-lg object-contain" />
+                ) : (
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-navy text-sm font-bold text-white">
+                    {initialsOf(site.name)}
+                  </span>
+                )}
+                <div>
+                  <p className="text-sm font-bold text-navy">{site.name}</p>
+                </div>
+              </>
+            );
+            if (logo.external) {
+              return (
+                <a
+                  href={logo.href}
+                  className={logoClass}
+                  tabIndex={examLock ? -1 : 0}
+                  aria-hidden={examLock}
+                  rel="noopener noreferrer"
+                >
+                  {logoInner}
+                </a>
+              );
+            }
+            return (
+              <Link to={logo.to} className={logoClass} tabIndex={examLock ? -1 : 0} aria-hidden={examLock}>
+                {logoInner}
+              </Link>
+            );
+          })()}
           <nav className={`flex flex-wrap items-center gap-2 text-sm ${examLock ? "pointer-events-none opacity-40" : ""}`} aria-hidden={examLock}>
             <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={sitePath(slug) || "/"} tabIndex={examLock ? -1 : 0}>
               Courses

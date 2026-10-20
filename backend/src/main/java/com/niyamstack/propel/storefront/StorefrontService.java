@@ -42,6 +42,7 @@ import com.niyamstack.propel.security.Roles;
 import com.niyamstack.propel.security.SessionService;
 import com.niyamstack.propel.sis.StudentAccountService;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
@@ -130,6 +131,7 @@ public class StorefrontService {
         out.put("name", org.getName());
         out.put("slug", org.getSlug());
         out.put("logoUrl", org.getLogoUrl());
+        out.put("logoHref", logoHrefFromSettings(org));
         out.put("brandPrimary", org.getBrandPrimary() == null ? "#0078f0" : org.getBrandPrimary());
         out.put("brandSecondary", org.getBrandSecondary() == null ? "#071a33" : org.getBrandSecondary());
         out.put("customDomain", org.getCustomDomain());
@@ -150,6 +152,30 @@ public class StorefrontService {
             out.put("pages", List.of());
         }
         return out;
+    }
+
+    /** Safe logo click target from org settingsJson.logoHref (http/https or site-relative path). */
+    private String logoHrefFromSettings(Organization org) {
+        if (org == null || org.getSettingsJson() == null || org.getSettingsJson().isBlank()) {
+            return "";
+        }
+        try {
+            JsonNode root = json.readTree(org.getSettingsJson());
+            String raw = root.path("logoHref").asText("").trim();
+            if (raw.isEmpty()) {
+                return "";
+            }
+            String lower = raw.toLowerCase();
+            if (lower.startsWith("javascript:") || lower.startsWith("data:") || lower.startsWith("vbscript:")) {
+                return "";
+            }
+            if (raw.startsWith("/") || lower.startsWith("https://") || lower.startsWith("http://")) {
+                return raw;
+            }
+            return "";
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 
     public List<Map<String, Object>> publicPages(Organization org) {
