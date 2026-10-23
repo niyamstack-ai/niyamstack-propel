@@ -2885,7 +2885,7 @@ function HiringTab() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "APPLIED" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED" | "LETTERS">("LETTERS");
+  const [letterFilter, setLetterFilter] = useState<"ALL" | "DRAFT" | "SENT_FOR_SIGNATURE" | "PUBLISHED">("ALL");
   const [showSetup, setShowSetup] = useState(false);
   const [title, setTitle] = useState("");
   const [department, setDepartment] = useState("");
@@ -2904,16 +2904,15 @@ function HiringTab() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (applicants.data ?? []).filter((c) => {
-      if (statusFilter === "LETTERS") {
-        if (c.status !== "OFFER" && c.status !== "HIRED") return false;
-      } else if (statusFilter !== "ALL" && (c.status || "").toUpperCase() !== statusFilter) {
-        return false;
-      }
+      // Offer Letters list: only rows with a letter (offer issued or hired)
+      if (c.status !== "OFFER" && c.status !== "HIRED") return false;
+      const letterStatus = (c.offerLetterStatus || "DRAFT").toUpperCase();
+      if (letterFilter !== "ALL" && letterStatus !== letterFilter) return false;
       if (!q) return true;
-      const hay = `${c.letterNo || ""} ${c.fullName || ""} ${c.jobTitle || ""} ${c.department || ""} ${c.email || ""} ${c.offerLetterStatus || ""}`.toLowerCase();
+      const hay = `${c.letterNo || ""} ${c.fullName || ""} ${c.jobTitle || ""} ${c.department || ""} ${c.email || ""} ${letterStatus}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [applicants.data, search, statusFilter]);
+  }, [applicants.data, search, letterFilter]);
 
   const offerCount = (applicants.data ?? []).filter((c) => c.status === "OFFER" || c.status === "HIRED").length;
 
@@ -2954,7 +2953,7 @@ function HiringTab() {
         setOfferForId(null);
         setOfferCtc("");
         setNotice("Offer letter created as Draft. Send it from the Actions column.");
-        setStatusFilter("LETTERS");
+        setLetterFilter("DRAFT");
       }
     } catch (e) {
       setError((e as Error).message);
@@ -3104,20 +3103,25 @@ function HiringTab() {
             <Field label="Search" value={search} onChange={setSearch} placeholder="Letter no, name, role…" />
           </div>
           <div className="flex flex-wrap gap-2 pb-1">
-            {(["LETTERS", "ALL", "APPLIED", "INTERVIEW", "OFFER", "HIRED", "REJECTED"] as const).map((f) => (
+            {([
+              { id: "ALL" as const, label: "All letters" },
+              { id: "DRAFT" as const, label: "Draft" },
+              { id: "SENT_FOR_SIGNATURE" as const, label: "Sent" },
+              { id: "PUBLISHED" as const, label: "Published" },
+            ]).map((f) => (
               <button
-                key={f}
+                key={f.id}
                 type="button"
-                onClick={() => setStatusFilter(f)}
-                className={`rounded-full px-3 py-1.5 text-sm ${statusFilter === f ? "bg-navy text-white" : "bg-mist"}`}
+                onClick={() => setLetterFilter(f.id)}
+                className={`rounded-full px-3 py-1.5 text-sm ${letterFilter === f.id ? "bg-navy text-white" : "bg-mist"}`}
               >
-                {f === "ALL" ? "All pipeline" : f === "LETTERS" ? "Letters" : prettyLabel(f)}
+                {f.label}
               </button>
             ))}
           </div>
         </div>
         <p className="mb-3 text-xs text-slate-500">
-          Create a letter, send it by email from this list, then hire when accepted. Showing {filtered.length} of {(applicants.data ?? []).length}.
+          Create, send, and track offer letters. Hiring pipeline (Applied → Interview) stays under Jobs & applicants setup. Showing {filtered.length} of {offerCount}.
         </p>
         <Table
           empty="No offer letters yet. Click + Create Letter to generate one."
