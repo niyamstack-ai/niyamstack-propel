@@ -107,6 +107,7 @@ type Candidate = {
   id: string;
   vacancyId: string;
   jobTitle?: string;
+  department?: string;
   fullName: string;
   email?: string;
   phone?: string;
@@ -114,6 +115,9 @@ type Candidate = {
   interviewAt?: string;
   offerCtc?: number;
   offerJoiningDate?: string;
+  letterNo?: string;
+  canViewLetter?: boolean;
+  hiredEmployeeId?: string;
 };
 type Center = { id: string; name: string };
 type Reg = {
@@ -764,7 +768,10 @@ function StaffKycUpload() {
 function HiringSection() {
   return (
     <>
-      <PageHeader title="Hiring" subtitle="Post institute jobs, track applicants, set offer CTC, and hire into employee master." />
+      <PageHeader
+        title="Offer Letters"
+        subtitle="Post jobs, move applicants to offer, view/print the letter, then hire into employee master."
+      />
       <HiringTab />
     </>
   );
@@ -2381,6 +2388,9 @@ function HiringTab() {
   const applicants = useApi<Candidate[]>("/api/staff-candidates");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "APPLIED" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED">("ALL");
+  const [showSetup, setShowSetup] = useState(false);
   const [title, setTitle] = useState("");
   const [department, setDepartment] = useState("");
   const [openings, setOpenings] = useState("1");
@@ -2389,6 +2399,21 @@ function HiringTab() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [offerForId, setOfferForId] = useState<string | null>(null);
+  const [offerCtc, setOfferCtc] = useState("");
+  const [offerJoining, setOfferJoining] = useState(today());
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (applicants.data ?? []).filter((c) => {
+      if (statusFilter !== "ALL" && (c.status || "").toUpperCase() !== statusFilter) return false;
+      if (!q) return true;
+      const hay = `${c.letterNo || ""} ${c.fullName || ""} ${c.jobTitle || ""} ${c.department || ""} ${c.email || ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [applicants.data, search, statusFilter]);
+
+  const offerCount = (applicants.data ?? []).filter((c) => c.status === "OFFER" || c.status === "HIRED").length;
 
   async function addJob() {
     setError(null);
@@ -2398,6 +2423,7 @@ function HiringTab() {
       setDepartment("");
       setDescription("");
       jobs.reload();
+      setNotice("Job posted.");
     } catch (e) {
       setError((e as Error).message);
     }
@@ -2411,19 +2437,31 @@ function HiringTab() {
       setEmail("");
       setPhone("");
       applicants.reload();
+      setNotice("Applicant added.");
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
-  async function advance(id: string, status: string) {
+  async function advance(id: string, status: string, extra: Record<string, unknown> = {}) {
     setError(null);
     try {
-      await api(`/api/actions/ess/candidates/${id}/advance`, { method: "POST", body: JSON.stringify({ status }) });
+      await api(`/api/actions/ess/candidates/${id}/advance`, { method: "POST", body: JSON.stringify({ status, ...extra }) });
       applicants.reload();
+      if (status === "OFFER") {
+        setOfferForId(null);
+        setOfferCtc("");
+        setNotice("Offer letter issued. Use View / Print on the row.");
+        setStatusFilter("OFFER");
+      }
     } catch (e) {
       setError((e as Error).message);
     }
+  }
+
+  async function issueOffer() {
+    if (!offerForId) return;
+    await advance(offerForId, "OFFER", { offerCtc, offerJoiningDate: offerJoining });
   }
 
   async function hire(id: string) {
@@ -2437,6 +2475,44 @@ function HiringTab() {
       applicants.reload();
       jobs.reload();
       setNotice(`${out.employee?.fullName || "Candidate"} is now on the employee master.`);
+      setStatusFilter("HIRED");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function viewLetter(id: string) {
+    setError(null);
+    try {
+      const letter = await api<{
+        letterNo?: string;
+        instituteName?: string;
+        fullName?: string;
+        roleTitle?: string;
+        department?: string;
+        offerCtc?: number;
+        offerJoiningDate?: string;
+        body?: string;
+        status?: string;
+      }>(`/api/actions/ess/candidates/${id}/letter`);
+      const win = window.open("", "_blank", "noopener,noreferrer,width=720,height=900");
+      if (!win) {
+        setError("Pop-up blocked. Allow pop-ups to view the offer letter.");
+        return;
+      }
+      win.document.write(`<!doctype html><html><head><title>${escHtml(letter.letterNo || "Offer letter")}</title>
+        <style>
+          body{font-family:Georgia,serif;max-width:640px;margin:40px auto;padding:0 24px;color:#111;line-height:1.5}
+          h1{font-size:22px;margin:0 0 4px} .meta{color:#555;font-size:13px;margin-bottom:24px}
+          pre{white-space:pre-wrap;font-family:Georgia,serif;font-size:15px}
+          .actions{margin-top:28px} button{padding:8px 14px;font-size:14px}
+        </style></head><body>
+          <h1>${escHtml(letter.instituteName || "Offer letter")}</h1>
+          <p class="meta">${escHtml(letter.letterNo || "")} · ${escHtml(prettyLabel(letter.status))} · ${escHtml(letter.fullName || "")}</p>
+          <pre>${escHtml(letter.body || "")}</pre>
+          <div class="actions"><button onclick="window.print()">Print / Save PDF</button></div>
+        </body></html>`);
+      win.document.close();
     } catch (e) {
       setError((e as Error).message);
     }
@@ -2444,65 +2520,145 @@ function HiringTab() {
 
   return (
     <>
-      <ErrorText error={error} />
+      <ErrorText error={error || applicants.error || jobs.error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
-      <Card title="Institute jobs">
-        <p className="mb-3 text-sm text-slate-500">Hire faculty and counselors here. Student placement ATS stays under Placement.</p>
-        <Table
-          empty="No openings yet."
-          columns={["Title", "Department", "Openings", "Status"]}
-          rows={(jobs.data ?? []).map((j) => [j.title, j.department || "—", String(j.openings ?? 1), prettyLabel(j.status)])}
-        />
-        <FormGrid>
-          <Field label="Title" value={title} onChange={setTitle} placeholder="Java faculty" />
-          <Field label="Department" value={department} onChange={setDepartment} />
-          <Field label="Openings" value={openings} onChange={setOpenings} />
-        </FormGrid>
-        <div className="mt-3">
-          <TextArea label="Description" value={description} onChange={setDescription} rows={3} />
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard label="Open jobs" value={String((jobs.data ?? []).filter((j) => j.status !== "CLOSED").length)} />
+        <StatCard label="Applicants" value={String((applicants.data ?? []).length)} />
+        <StatCard label="Offer letters" value={String(offerCount)} />
+      </div>
+
+      <Card title="Offer letter workflow">
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <div className="min-w-[14rem] flex-1">
+            <Field label="Search" value={search} onChange={setSearch} placeholder="Letter no, name, role…" />
+          </div>
+          <div className="flex flex-wrap gap-2 pb-1">
+            {(["ALL", "APPLIED", "INTERVIEW", "OFFER", "HIRED", "REJECTED"] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setStatusFilter(f)}
+                className={`rounded-full px-3 py-1.5 text-sm ${statusFilter === f ? "bg-navy text-white" : "bg-mist"}`}
+              >
+                {f === "ALL" ? "All" : prettyLabel(f)}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="mt-3">
-          <PrimaryButton disabled={!title} onClick={() => void addJob()}>
-            Post job
-          </PrimaryButton>
-        </div>
-      </Card>
-      <Card title="Applicants">
+        <p className="mb-3 text-xs text-slate-500">
+          Showing {filtered.length} of {(applicants.data ?? []).length}. Flow: Applied → Interview → Issue offer → View/Print letter → Hire.
+        </p>
         <Table
-          empty="No applicants yet."
-          columns={["Name", "Job", "Status", ""]}
-          rows={(applicants.data ?? []).map((c) => [
-            c.fullName,
-            c.jobTitle || "—",
-            prettyLabel(c.status),
-            c.status === "HIRED" || c.status === "REJECTED" ? (
-              prettyLabel(c.status)
-            ) : (
-              <span key={c.id} className="flex flex-wrap gap-2">
-                {c.status === "APPLIED" && <LinkButton onClick={() => void advance(c.id, "INTERVIEW")}>Interview</LinkButton>}
-                {c.status === "INTERVIEW" && <LinkButton onClick={() => void advance(c.id, "OFFER")}>Offer</LinkButton>}
-                {c.status === "OFFER" && <LinkButton onClick={() => void hire(c.id)}>Hire</LinkButton>}
+          empty="No applicants yet. Post a job and add an applicant below."
+          columns={["Letter no.", "Candidate", "Role", "Start date", "Honorarium", "Status", ""]}
+          rows={filtered.map((c) => [
+            c.letterNo || "—",
+            <span key={`${c.id}-name`}>
+              {c.fullName}
+              <span className="block text-xs text-slate-500">{c.email || c.phone || ""}</span>
+            </span>,
+            <span key={`${c.id}-role`}>
+              {c.jobTitle || "—"}
+              <span className="block text-xs text-slate-500">{c.department || ""}</span>
+            </span>,
+            formatDay(c.offerJoiningDate) || "—",
+            c.offerCtc != null ? formatInr(c.offerCtc) : "—",
+            statusBadge(c.status),
+            <span key={`${c.id}-act`} className="flex flex-wrap gap-2">
+              {c.canViewLetter && <LinkButton onClick={() => void viewLetter(c.id)}>View</LinkButton>}
+              {c.canViewLetter && <LinkButton onClick={() => void viewLetter(c.id)}>Print</LinkButton>}
+              {c.status === "APPLIED" && <LinkButton onClick={() => void advance(c.id, "INTERVIEW")}>Interview</LinkButton>}
+              {c.status === "INTERVIEW" && (
+                <LinkButton
+                  onClick={() => {
+                    setOfferForId(c.id);
+                    setOfferCtc(c.offerCtc != null ? String(c.offerCtc) : "");
+                    setOfferJoining(c.offerJoiningDate ? String(c.offerJoiningDate).slice(0, 10) : today());
+                  }}
+                >
+                  Issue offer
+                </LinkButton>
+              )}
+              {c.status === "OFFER" && <LinkButton onClick={() => void hire(c.id)}>Hire</LinkButton>}
+              {c.status !== "HIRED" && c.status !== "REJECTED" && (
                 <LinkButton onClick={() => void advance(c.id, "REJECTED")}>Reject</LinkButton>
-              </span>
-            ),
+              )}
+            </span>,
           ])}
         />
-        <FormGrid>
-          <Select
-            label="Job"
-            value={vacancyId}
-            onChange={setVacancyId}
-            options={(jobs.data ?? []).filter((j) => j.status !== "CLOSED").map((j) => ({ value: j.id, label: j.title }))}
-          />
-          <Field label="Name" value={fullName} onChange={setFullName} />
-          <Field label="Email" value={email} onChange={setEmail} />
-          <PhoneField label="Phone" value={phone} onChange={setPhone} />
-        </FormGrid>
-        <div className="mt-3">
-          <PrimaryButton disabled={!vacancyId || !fullName} onClick={() => void addApplicant()}>
-            Add applicant
-          </PrimaryButton>
-        </div>
+        {offerForId && (
+          <div className="mt-4 rounded-xl border border-line bg-mist/40 p-4">
+            <p className="mb-3 text-sm font-semibold text-navy">Issue offer letter</p>
+            <FormGrid>
+              <Field label="Monthly honorarium / CTC (₹)" value={offerCtc} onChange={setOfferCtc} placeholder="8000" />
+              <Field label="Joining date" type="date" value={offerJoining} onChange={setOfferJoining} />
+            </FormGrid>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <PrimaryButton disabled={!offerCtc || !offerJoining} onClick={() => void issueOffer()}>
+                Create offer letter
+              </PrimaryButton>
+              <LinkButton onClick={() => setOfferForId(null)}>Cancel</LinkButton>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      <Card
+        title="Jobs & applicants setup"
+        action={
+          <LinkButton onClick={() => setShowSetup((v) => !v)}>{showSetup ? "Hide" : "Show"}</LinkButton>
+        }
+      >
+        {!showSetup ? (
+          <p className="text-sm text-slate-500">
+            Post institute jobs and add applicants here when needed. Student placement ATS stays under Placement.
+          </p>
+        ) : (
+          <div className="space-y-6">
+            <div>
+              <p className="mb-2 text-sm font-semibold text-navy">Post job</p>
+              <Table
+                empty="No openings yet."
+                columns={["Title", "Department", "Openings", "Status"]}
+                rows={(jobs.data ?? []).map((j) => [j.title, j.department || "—", String(j.openings ?? 1), prettyLabel(j.status)])}
+              />
+              <FormGrid>
+                <Field label="Title" value={title} onChange={setTitle} placeholder="Java faculty" />
+                <Field label="Department" value={department} onChange={setDepartment} />
+                <Field label="Openings" value={openings} onChange={setOpenings} />
+              </FormGrid>
+              <div className="mt-3">
+                <TextArea label="Description" value={description} onChange={setDescription} rows={2} />
+              </div>
+              <div className="mt-3">
+                <PrimaryButton disabled={!title} onClick={() => void addJob()}>
+                  Post job
+                </PrimaryButton>
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-sm font-semibold text-navy">Add applicant</p>
+              <FormGrid>
+                <Select
+                  label="Job"
+                  value={vacancyId}
+                  onChange={setVacancyId}
+                  options={(jobs.data ?? []).filter((j) => j.status !== "CLOSED").map((j) => ({ value: j.id, label: j.title }))}
+                />
+                <Field label="Name" value={fullName} onChange={setFullName} />
+                <Field label="Email" value={email} onChange={setEmail} />
+                <PhoneField label="Phone" value={phone} onChange={setPhone} />
+              </FormGrid>
+              <div className="mt-3">
+                <PrimaryButton disabled={!vacancyId || !fullName} onClick={() => void addApplicant()}>
+                  Add applicant
+                </PrimaryButton>
+              </div>
+            </div>
+          </div>
+        )}
       </Card>
     </>
   );

@@ -739,6 +739,11 @@ public class ActionsController {
         return ess.hire(id, body == null ? Map.of() : body);
     }
 
+    @GetMapping("/ess/candidates/{id}/letter")
+    public Map<String, Object> staffOfferLetter(@PathVariable UUID id) {
+        return ess.staffOfferLetter(id);
+    }
+
     @PostMapping("/sis/import/students")
     public Map<String, Object> importStudents(@RequestBody Map<String, Object> body) {
         return sis.importStudents(body);

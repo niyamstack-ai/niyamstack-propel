@@ -1268,6 +1268,17 @@ public class EssService {
         if (!Set.of("APPLIED", "INTERVIEW", "OFFER", "HIRED", "REJECTED").contains(status)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Unknown hiring status");
         }
+        if ("OFFER".equals(status)) {
+            if (!body.containsKey("offerCtc") || str(body, "offerCtc").isBlank()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Offer CTC is required to issue an offer letter");
+            }
+            LocalDate joiningRequired = date(body, "offerJoiningDate");
+            if (joiningRequired == null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Joining date is required to issue an offer letter");
+            }
+            c.setOfferCtc(money(body, "offerCtc"));
+            c.setOfferJoiningDate(joiningRequired);
+        }
         c.setStatus(status);
         if (!str(body, "interviewAt").isBlank()) {
             c.setInterviewAt(parseInstant(str(body, "interviewAt")));
@@ -1275,12 +1286,14 @@ public class EssService {
         if (body.containsKey("interviewNotes")) {
             c.setInterviewNotes(str(body, "interviewNotes"));
         }
-        if (body.containsKey("offerCtc") && !str(body, "offerCtc").isBlank()) {
+        if (!"OFFER".equals(status) && body.containsKey("offerCtc") && !str(body, "offerCtc").isBlank()) {
             c.setOfferCtc(money(body, "offerCtc"));
         }
-        LocalDate joining = date(body, "offerJoiningDate");
-        if (joining != null) {
-            c.setOfferJoiningDate(joining);
+        if (!"OFFER".equals(status)) {
+            LocalDate joining = date(body, "offerJoiningDate");
+            if (joining != null) {
+                c.setOfferJoiningDate(joining);
+            }
         }
         c = store.save(c);
         return candidateView(c, store.list(StaffVacancy.class, orgId()));
@@ -1292,6 +1305,12 @@ public class EssService {
         requireHrAdmin();
         StaffCandidate c = store.getOwned(StaffCandidate.class, candidateId, orgId());
         StaffVacancy job = store.getOwned(StaffVacancy.class, c.getVacancyId(), orgId());
+        if (!"OFFER".equalsIgnoreCase(c.getStatus()) && !"HIRED".equalsIgnoreCase(c.getStatus())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Issue an offer (CTC + joining date) before hiring");
+        }
+        if (c.getOfferCtc() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Set offer CTC before hiring");
+        }
         Map<String, Object> empBody = new LinkedHashMap<>();
         empBody.put("fullName", c.getFullName());
         empBody.put("email", c.getEmail());
@@ -1317,6 +1336,52 @@ public class EssService {
         out.put("candidate", candidateView(c, List.of(job)));
         out.put("employee", employee);
         return out;
+    }
+
+    /** Printable staff offer letter for candidates in OFFER or HIRED status. */
+    public Map<String, Object> staffOfferLetter(UUID candidateId) {
+        requireEss();
+        requireHrAdmin();
+        StaffCandidate c = store.getOwned(StaffCandidate.class, candidateId, orgId());
+        if (!Set.of("OFFER", "HIRED").contains(blank(c.getStatus(), "").toUpperCase())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Offer letter is available after status is Offer or Hired");
+        }
+        StaffVacancy job = store.getOwned(StaffVacancy.class, c.getVacancyId(), orgId());
+        Organization org = store.get(Organization.class, orgId());
+        String letterNo = staffLetterNo(c);
+        String joining = c.getOfferJoiningDate() == null ? "—" : c.getOfferJoiningDate().toString();
+        String ctc = c.getOfferCtc() == null ? "—" : c.getOfferCtc().toPlainString();
+        String body = org.getName() + "\nOffer letter\nLetter no. " + letterNo + "\n\n"
+                + "Dear " + blank(c.getFullName(), "Candidate") + ",\n\n"
+                + "We are pleased to offer you the role of " + blank(job.getTitle(), "Staff")
+                + (blank(job.getDepartment(), "").isBlank() ? "" : " in the " + job.getDepartment() + " department")
+                + " at " + org.getName() + ".\n\n"
+                + "Monthly honorarium / CTC: Rs. " + ctc + "\n"
+                + "Proposed joining date: " + joining + "\n"
+                + (blank(c.getEmail(), "").isBlank() ? "" : "Email: " + c.getEmail() + "\n")
+                + (blank(c.getPhone(), "").isBlank() ? "" : "Phone: " + c.getPhone() + "\n")
+                + "\nPlease confirm acceptance. On joining, HR will create your employee profile and ESS login.\n\n"
+                + "For " + org.getName() + "\nHR / Administration\n";
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("letterNo", letterNo);
+        out.put("candidateId", c.getId());
+        out.put("status", c.getStatus());
+        out.put("fullName", c.getFullName());
+        out.put("email", c.getEmail());
+        out.put("phone", c.getPhone());
+        out.put("roleTitle", job.getTitle());
+        out.put("department", job.getDepartment());
+        out.put("offerCtc", c.getOfferCtc());
+        out.put("offerJoiningDate", c.getOfferJoiningDate());
+        out.put("instituteName", org.getName());
+        out.put("body", body);
+        return out;
+    }
+
+    private static String staffLetterNo(StaffCandidate c) {
+        LocalDate day = c.getCreatedAt() == null ? LocalDate.now() : c.getCreatedAt().atZone(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate();
+        String shortId = c.getId() == null ? "00000" : c.getId().toString().replace("-", "").substring(0, 5).toUpperCase();
+        return "RL-" + day.toString().replace("-", "") + "-" + shortId;
     }
 
     private Map<String, Object> punch(UUID org, String code, String deviceId, String punchType, String rawRef,
@@ -2291,14 +2356,15 @@ public class EssService {
     }
 
     private Map<String, Object> candidateView(StaffCandidate c, List<StaffVacancy> jobs) {
+        StaffVacancy job = jobs.stream()
+                .filter(j -> j.getId().equals(c.getVacancyId()))
+                .findFirst()
+                .orElse(null);
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", c.getId());
         row.put("vacancyId", c.getVacancyId());
-        row.put("jobTitle", jobs.stream()
-                .filter(j -> j.getId().equals(c.getVacancyId()))
-                .map(StaffVacancy::getTitle)
-                .findFirst()
-                .orElse(""));
+        row.put("jobTitle", job == null ? "" : blank(job.getTitle(), ""));
+        row.put("department", job == null ? "" : blank(job.getDepartment(), ""));
         row.put("fullName", c.getFullName());
         row.put("email", c.getEmail());
         row.put("phone", c.getPhone());
@@ -2308,6 +2374,9 @@ public class EssService {
         row.put("offerCtc", c.getOfferCtc());
         row.put("offerJoiningDate", c.getOfferJoiningDate());
         row.put("hiredEmployeeId", c.getHiredEmployeeId());
+        row.put("letterNo", staffLetterNo(c));
+        row.put("createdAt", c.getCreatedAt());
+        row.put("canViewLetter", Set.of("OFFER", "HIRED").contains(blank(c.getStatus(), "").toUpperCase()));
         return row;
     }
 
