@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, Navigate, useOutletContext, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { createRecord, deleteRecord, updateRecord } from "../ops";
 import { useAuth } from "../auth";
@@ -122,6 +122,8 @@ type Candidate = {
   canViewLetter?: boolean;
   canSendLetter?: boolean;
   canEditLetter?: boolean;
+  letterContent?: string;
+  jobDescription?: string;
   hiredEmployeeId?: string;
 };
 type Center = { id: string; name: string };
@@ -171,6 +173,8 @@ type EssSection =
   | "employees"
   | "documents"
   | "hiring"
+  | "offer-create"
+  | "settings"
   | "payroll"
   | "payslips"
   | "attendance"
@@ -180,6 +184,23 @@ type EssSection =
   | "team"
   | "devices"
   | "profile";
+
+type EssConfig = {
+  instituteName?: string;
+  organization?: { signatoryName?: string; signatoryTitle?: string; logoUrl?: string };
+  offerLetterTemplate?: string;
+  revisionLetterTemplate?: string;
+  payslipTemplate?: string;
+  emailTemplate?: string;
+  jobDescriptions?: { id?: string; role: string; body: string }[];
+  lookups?: {
+    departments?: string[];
+    roles?: string[];
+    documentTypes?: string[];
+    statuses?: string[];
+  };
+  placeholders?: string[];
+};
 
 function useEssAccess(): EssOutletAccess {
   const ctx = useOutletContext<EssOutletAccess | null>();
@@ -196,6 +217,8 @@ function sectionAllowed(section: EssSection, access: EssOutletAccess) {
   switch (section) {
     case "employees":
     case "hiring":
+    case "offer-create":
+    case "settings":
     case "devices":
       return access.hr;
     case "payroll":
@@ -231,6 +254,8 @@ export function EssPage() {
       {section === "employees" && access.hr && <EmployeesSection />}
       {section === "documents" && <DocumentsSection hr={access.hr} />}
       {section === "hiring" && access.hr && <HiringSection />}
+      {section === "offer-create" && access.hr && <OfferCreateSection />}
+      {section === "settings" && access.hr && <EssSettingsSection />}
       {section === "payroll" && access.payroll && <PayrollSection hr={access.hr || access.payroll} />}
       {section === "payslips" && <PayslipsSection hr={access.hr || access.payroll} />}
       {section === "attendance" && <AttendanceSection hr={access.hr || access.payroll} />}
@@ -788,7 +813,7 @@ function HiringSection() {
     <>
       <PageHeader
         title="Offer Letters"
-        subtitle="Post jobs, move applicants to offer, view/print the letter, then hire into employee master."
+        subtitle="Create letters from templates, send by email, then hire into the employee master. Use CTC / salary wording — edit templates under Settings."
       />
       <HiringTab />
     </>
@@ -2401,16 +2426,435 @@ function PayrollTab({ hr, focus = "full" }: { hr: boolean; focus?: "full" | "pay
   );
 }
 
+function EssSettingsSection() {
+  const config = useApi<EssConfig>("/api/actions/ess/config");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [panel, setPanel] = useState<"org" | "letters" | "email" | "jd" | "lookups" | null>(null);
+  const [signatoryName, setSignatoryName] = useState("");
+  const [signatoryTitle, setSignatoryTitle] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
+  const [offerTpl, setOfferTpl] = useState("");
+  const [revisionTpl, setRevisionTpl] = useState("");
+  const [payslipTpl, setPayslipTpl] = useState("");
+  const [emailTpl, setEmailTpl] = useState("");
+  const [jds, setJds] = useState<{ role: string; body: string }[]>([]);
+  const [departments, setDepartments] = useState("");
+  const [roles, setRoles] = useState("");
+  const [documentTypes, setDocumentTypes] = useState("");
+  const [statuses, setStatuses] = useState("");
+
+  useEffect(() => {
+    const d = config.data;
+    if (!d) return;
+    setSignatoryName(d.organization?.signatoryName || "");
+    setSignatoryTitle(d.organization?.signatoryTitle || "HR / Administration");
+    setLogoUrl(d.organization?.logoUrl || "");
+    setOfferTpl(d.offerLetterTemplate || "");
+    setRevisionTpl(d.revisionLetterTemplate || "");
+    setPayslipTpl(d.payslipTemplate || "");
+    setEmailTpl(d.emailTemplate || "");
+    setJds((d.jobDescriptions ?? []).map((j) => ({ role: j.role, body: j.body })));
+    setDepartments((d.lookups?.departments ?? []).join("\n"));
+    setRoles((d.lookups?.roles ?? []).join("\n"));
+    setDocumentTypes((d.lookups?.documentTypes ?? []).join("\n"));
+    setStatuses((d.lookups?.statuses ?? []).join("\n"));
+  }, [config.data]);
+
+  function lines(value: string) {
+    return value
+      .split(/\n|,/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  async function save(partial: Record<string, unknown>) {
+    setError(null);
+    setNotice(null);
+    try {
+      await api("/api/actions/ess/config", { method: "POST", body: JSON.stringify(partial) });
+      config.reload();
+      setNotice("ESS configuration saved.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  const rows: { key: typeof panel; title: string; hint: string }[] = [
+    { key: "org", title: "Organization details, logo, and signatory", hint: "Used on offer letters and emails." },
+    { key: "letters", title: "Offer letter, revision letter, and payslip template text", hint: "Placeholders like {name}, {role}, {ctc}, {joining_date}." },
+    { key: "email", title: "Email templates and notification wording", hint: "Subject line can start with Subject: …" },
+    { key: "jd", title: "Role-wise job description templates", hint: "Loaded automatically when you pick an employee role." },
+    { key: "lookups", title: "Document types, departments, roles, and statuses", hint: "One value per line." },
+  ];
+
+  return (
+    <>
+      <PageHeader
+        title="Settings"
+        subtitle="Manage the defaults used for letters, documents, departments, roles, and signatory details."
+      />
+      <ErrorText error={error || config.error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <Card title="ESS Configuration">
+        <p className="mb-4 text-sm text-slate-500">
+          Corporate wording uses CTC / salary (not honorarium). Placeholders: {(config.data?.placeholders ?? []).join(", ")}.
+        </p>
+        <div className="space-y-2">
+          {rows.map((r) => (
+            <div key={r.key} className="rounded-xl border border-line">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                onClick={() => setPanel((p) => (p === r.key ? null : r.key))}
+              >
+                <span>
+                  <span className="block text-sm font-semibold text-navy">{r.title}</span>
+                  <span className="text-xs text-slate-500">{r.hint}</span>
+                </span>
+                <span className="text-sm text-brand">{panel === r.key ? "Close" : "Edit"}</span>
+              </button>
+              {panel === r.key && r.key === "org" && (
+                <div className="border-t border-line px-4 py-4">
+                  <FormGrid>
+                    <Field label="Signatory name" value={signatoryName} onChange={setSignatoryName} />
+                    <Field label="Signatory title" value={signatoryTitle} onChange={setSignatoryTitle} />
+                    <Field label="Logo URL (optional)" value={logoUrl} onChange={setLogoUrl} />
+                  </FormGrid>
+                  <div className="mt-3">
+                    <PrimaryButton
+                      onClick={() =>
+                        void save({ organization: { signatoryName, signatoryTitle, logoUrl } })
+                      }
+                    >
+                      Save
+                    </PrimaryButton>
+                  </div>
+                </div>
+              )}
+              {panel === r.key && r.key === "letters" && (
+                <div className="space-y-4 border-t border-line px-4 py-4">
+                  <TextArea label="Offer letter template" value={offerTpl} onChange={setOfferTpl} rows={14} />
+                  <TextArea label="Revision letter template" value={revisionTpl} onChange={setRevisionTpl} rows={8} />
+                  <TextArea label="Payslip template text" value={payslipTpl} onChange={setPayslipTpl} rows={6} />
+                  <PrimaryButton
+                    onClick={() =>
+                      void save({
+                        offerLetterTemplate: offerTpl,
+                        revisionLetterTemplate: revisionTpl,
+                        payslipTemplate: payslipTpl,
+                      })
+                    }
+                  >
+                    Save templates
+                  </PrimaryButton>
+                </div>
+              )}
+              {panel === r.key && r.key === "email" && (
+                <div className="border-t border-line px-4 py-4">
+                  <TextArea label="Offer email template" value={emailTpl} onChange={setEmailTpl} rows={12} />
+                  <div className="mt-3">
+                    <PrimaryButton onClick={() => void save({ emailTemplate: emailTpl })}>Save email template</PrimaryButton>
+                  </div>
+                </div>
+              )}
+              {panel === r.key && r.key === "jd" && (
+                <div className="space-y-4 border-t border-line px-4 py-4">
+                  {jds.map((j, idx) => (
+                    <div key={`${j.role}-${idx}`} className="rounded-lg border border-line p-3">
+                      <FormGrid>
+                        <Field
+                          label="Role"
+                          value={j.role}
+                          onChange={(v) => setJds((rows) => rows.map((x, i) => (i === idx ? { ...x, role: v } : x)))}
+                        />
+                      </FormGrid>
+                      <div className="mt-2">
+                        <TextArea
+                          label="Job description / Annexure A"
+                          value={j.body}
+                          onChange={(v) => setJds((rows) => rows.map((x, i) => (i === idx ? { ...x, body: v } : x)))}
+                          rows={8}
+                        />
+                      </div>
+                      <div className="mt-2">
+                        <LinkButton onClick={() => setJds((rows) => rows.filter((_, i) => i !== idx))}>Remove</LinkButton>
+                      </div>
+                    </div>
+                  ))}
+                  <LinkButton onClick={() => setJds((rows) => [...rows, { role: "New role", body: "" }])}>+ Add role JD</LinkButton>
+                  <div>
+                    <PrimaryButton onClick={() => void save({ jobDescriptions: jds })}>Save job descriptions</PrimaryButton>
+                  </div>
+                </div>
+              )}
+              {panel === r.key && r.key === "lookups" && (
+                <div className="border-t border-line px-4 py-4">
+                  <FormGrid>
+                    <TextArea label="Departments" value={departments} onChange={setDepartments} rows={5} />
+                    <TextArea label="Roles" value={roles} onChange={setRoles} rows={5} />
+                    <TextArea label="Document types" value={documentTypes} onChange={setDocumentTypes} rows={5} />
+                    <TextArea label="Letter statuses" value={statuses} onChange={setStatuses} rows={4} />
+                  </FormGrid>
+                  <div className="mt-3">
+                    <PrimaryButton
+                      onClick={() =>
+                        void save({
+                          lookups: {
+                            departments: lines(departments),
+                            roles: lines(roles),
+                            documentTypes: lines(documentTypes),
+                            statuses: lines(statuses),
+                          },
+                        })
+                      }
+                    >
+                      Save lookups
+                    </PrimaryButton>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </Card>
+    </>
+  );
+}
+
+function OfferCreateSection() {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const editId = params.get("id");
+  const people = useApi<Employee[]>("/api/employees");
+  const config = useApi<EssConfig>("/api/actions/ess/config");
+  const existing = useApi<Candidate[]>(editId ? "/api/staff-candidates" : "");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [employeeId, setEmployeeId] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [roleTitle, setRoleTitle] = useState("");
+  const [department, setDepartment] = useState("");
+  const [offerCtc, setOfferCtc] = useState("0");
+  const [offerJoining, setOfferJoining] = useState(today());
+  const [letterContent, setLetterContent] = useState("");
+  const [jobDescription, setJobDescription] = useState("");
+  const [autoFilled, setAutoFilled] = useState(false);
+
+  const editRow = useMemo(() => (existing.data ?? []).find((c) => c.id === editId), [existing.data, editId]);
+
+  useEffect(() => {
+    if (!editRow) return;
+    setFullName(editRow.fullName || "");
+    setEmail(editRow.email || "");
+    setPhone(editRow.phone || "");
+    setRoleTitle(editRow.jobTitle || "");
+    setDepartment(editRow.department || "");
+    setOfferCtc(editRow.offerCtc != null ? String(editRow.offerCtc) : "0");
+    setOfferJoining(editRow.offerJoiningDate ? String(editRow.offerJoiningDate).slice(0, 10) : today());
+    setLetterContent(editRow.letterContent || "");
+    setJobDescription(editRow.jobDescription || "");
+    setAutoFilled(true);
+  }, [editRow]);
+
+  async function generateFromDetails(seed?: Partial<{ employeeId: string; fullName: string; roleTitle: string; department: string; offerCtc: string; offerJoiningDate: string; email: string; phone: string }>) {
+    setError(null);
+    try {
+      const body = {
+        employeeId: seed?.employeeId ?? (employeeId || undefined),
+        fullName: seed?.fullName ?? fullName,
+        email: seed?.email ?? email,
+        phone: phoneForApi(seed?.phone ?? phone),
+        roleTitle: seed?.roleTitle ?? roleTitle,
+        department: seed?.department ?? department,
+        offerCtc: seed?.offerCtc ?? offerCtc,
+        offerJoiningDate: seed?.offerJoiningDate ?? offerJoining,
+      };
+      const out = await api<{ letterContent?: string; jobDescription?: string; roleTitle?: string; department?: string; fullName?: string; email?: string; phone?: string }>(
+        "/api/actions/ess/offer-letters/preview",
+        { method: "POST", body: JSON.stringify(body) },
+      );
+      setLetterContent(out.letterContent || "");
+      setJobDescription(out.jobDescription || "");
+      if (out.roleTitle) setRoleTitle(out.roleTitle);
+      if (out.department) setDepartment(out.department);
+      if (out.fullName) setFullName(out.fullName);
+      if (out.email) setEmail(out.email);
+      if (out.phone) setPhone(out.phone);
+      setAutoFilled(true);
+      setNotice("Letter content generated from ESS templates.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function pickEmployee(id: string) {
+    setEmployeeId(id);
+    const e = (people.data ?? []).find((x) => x.id === id);
+    if (!e) return;
+    const next = {
+      employeeId: id,
+      fullName: e.fullName || "",
+      email: e.email || "",
+      phone: e.phone || "",
+      roleTitle: e.designation || "",
+      department: e.department || "",
+      offerCtc,
+      offerJoiningDate: e.joiningDate ? String(e.joiningDate).slice(0, 10) : offerJoining,
+    };
+    setFullName(next.fullName);
+    setEmail(next.email);
+    setPhone(next.phone);
+    setRoleTitle(next.roleTitle);
+    setDepartment(next.department);
+    if (e.joiningDate) setOfferJoining(next.offerJoiningDate);
+    void generateFromDetails(next);
+  }
+
+  async function preview() {
+    setError(null);
+    try {
+      const win = window.open("", "_blank", "noopener,noreferrer,width=720,height=900");
+      if (!win) {
+        setError("Pop-up blocked. Allow pop-ups to preview.");
+        return;
+      }
+      const content = `${letterContent}\n\n--- Annexure A: Job description ---\n\n${jobDescription}`;
+      win.document.write(`<!doctype html><html><head><title>Offer letter preview</title>
+        <style>body{font-family:Georgia,serif;max-width:640px;margin:40px auto;padding:0 24px;line-height:1.5}pre{white-space:pre-wrap;font-family:Georgia,serif}</style>
+        </head><body><pre>${escHtml(content)}</pre><div style="margin-top:24px"><button onclick="window.print()">Print / Save PDF</button></div></body></html>`);
+      win.document.close();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function saveDraft() {
+    setError(null);
+    setNotice(null);
+    try {
+      const body = {
+        employeeId: employeeId || undefined,
+        fullName,
+        email,
+        phone: phoneForApi(phone),
+        roleTitle,
+        department,
+        offerCtc,
+        offerJoiningDate: offerJoining,
+        letterContent,
+        jobDescription,
+      };
+      if (editId) {
+        await api(`/api/actions/ess/offer-letters/${editId}`, { method: "POST", body: JSON.stringify(body) });
+        setNotice("Draft saved.");
+      } else {
+        const out = await api<Candidate>("/api/actions/ess/offer-letters", { method: "POST", body: JSON.stringify(body) });
+        setNotice(`Draft ${out.letterNo || ""} saved.`);
+        navigate(`/ess/offer-create?id=${out.id}`, { replace: true });
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  const roleOptions = useMemo(() => {
+    const fromConfig = config.data?.lookups?.roles ?? [];
+    const fromJd = (config.data?.jobDescriptions ?? []).map((j) => j.role);
+    const fromPeople = (people.data ?? []).map((e) => e.designation || "").filter(Boolean);
+    return Array.from(new Set([...fromConfig, ...fromJd, ...fromPeople, roleTitle].filter(Boolean)));
+  }, [config.data, people.data, roleTitle]);
+
+  const deptOptions = useMemo(() => {
+    const fromConfig = config.data?.lookups?.departments ?? [];
+    const fromPeople = (people.data ?? []).map((e) => e.department || "").filter(Boolean);
+    return Array.from(new Set([...fromConfig, ...fromPeople, department].filter(Boolean)));
+  }, [config.data, people.data, department]);
+
+  return (
+    <>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PageHeader
+          title={editId ? "Edit Offer Letter" : "Create Offer Letter"}
+          subtitle="Select an employee (or enter details) — letter content and role JD fill from ESS Settings templates. Uses CTC / salary."
+        />
+        <Link className="text-sm font-medium text-brand hover:underline" to="/ess/hiring">
+          ← Back
+        </Link>
+      </div>
+      <ErrorText error={error || people.error || config.error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <Card title="Offer details">
+        <FormGrid>
+          <Select
+            label="Employee"
+            value={employeeId}
+            onChange={pickEmployee}
+            options={(people.data ?? []).map((e) => ({
+              value: e.id,
+              label: `${e.fullName}${e.employeeCode ? ` (${e.employeeCode})` : ""}`,
+            }))}
+          />
+          <Field label="Name" value={fullName} onChange={setFullName} />
+          <Field label="Email" value={email} onChange={setEmail} />
+          <PhoneField label="Phone" value={phone} onChange={setPhone} />
+          <Field
+            label="Role"
+            value={roleTitle}
+            onChange={(v) => {
+              setRoleTitle(v);
+            }}
+            placeholder={roleOptions[0] || "Faculty"}
+          />
+          <Field label="Department" value={department} onChange={setDepartment} placeholder={deptOptions[0] || "Academics"} />
+          <Field label="Start date" type="date" value={offerJoining} onChange={setOfferJoining} />
+          <Field label="Monthly CTC / Salary (₹)" value={offerCtc} onChange={setOfferCtc} placeholder="8000" />
+        </FormGrid>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <PrimaryButton
+            disabled={!fullName || !roleTitle}
+            onClick={() => void generateFromDetails()}
+          >
+            {autoFilled ? "Regenerate from templates" : "Generate letter"}
+          </PrimaryButton>
+          <Link className="text-sm font-medium text-brand hover:underline self-center" to="/ess/settings">
+            Edit templates in Settings
+          </Link>
+        </div>
+      </Card>
+      <Card title="Letter content">
+        <TextArea label="Letter content" value={letterContent} onChange={setLetterContent} rows={16} />
+      </Card>
+      <Card title="Role-wise job description / Annexure A">
+        <TextArea label="Job description" value={jobDescription} onChange={setJobDescription} rows={10} />
+        <p className="mt-2 text-xs text-slate-500">
+          Loaded automatically from the active JD template matching this employee role. You can edit it for this letter.
+        </p>
+      </Card>
+      <div className="flex flex-wrap gap-2">
+        <PrimaryButton onClick={() => void preview()} disabled={!letterContent}>
+          Preview
+        </PrimaryButton>
+        <PrimaryButton onClick={() => void saveDraft()} disabled={!fullName || !roleTitle || !offerJoining}>
+          Save Draft
+        </PrimaryButton>
+        <LinkButton onClick={() => navigate("/ess/hiring")}>Cancel</LinkButton>
+      </div>
+    </>
+  );
+}
+
 function HiringTab() {
+  const navigate = useNavigate();
   const jobs = useApi<Vacancy[]>("/api/staff-vacancies");
   const applicants = useApi<Candidate[]>("/api/staff-candidates");
-  const people = useApi<Employee[]>("/api/employees");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "APPLIED" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED" | "LETTERS">("LETTERS");
   const [showSetup, setShowSetup] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
   const [title, setTitle] = useState("");
   const [department, setDepartment] = useState("");
   const [openings, setOpenings] = useState("1");
@@ -2419,10 +2863,7 @@ function HiringTab() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [roleTitle, setRoleTitle] = useState("");
-  const [employeeId, setEmployeeId] = useState("");
   const [offerForId, setOfferForId] = useState<string | null>(null);
-  const [editId, setEditId] = useState<string | null>(null);
   const [offerCtc, setOfferCtc] = useState("");
   const [offerJoining, setOfferJoining] = useState(today());
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -2443,45 +2884,6 @@ function HiringTab() {
   }, [applicants.data, search, statusFilter]);
 
   const offerCount = (applicants.data ?? []).filter((c) => c.status === "OFFER" || c.status === "HIRED").length;
-
-  function resetCreateForm() {
-    setEmployeeId("");
-    setFullName("");
-    setEmail("");
-    setPhone("");
-    setRoleTitle("");
-    setDepartment("");
-    setVacancyId("");
-    setOfferCtc("");
-    setOfferJoining(today());
-    setEditId(null);
-  }
-
-  function fillFromEmployee(id: string) {
-    setEmployeeId(id);
-    const e = (people.data ?? []).find((x) => x.id === id);
-    if (!e) return;
-    setFullName(e.fullName || "");
-    setEmail(e.email || "");
-    setPhone(e.phone || "");
-    setRoleTitle(e.designation || "");
-    setDepartment(e.department || "");
-    if (e.joiningDate) setOfferJoining(String(e.joiningDate).slice(0, 10));
-  }
-
-  function openEdit(c: Candidate) {
-    setShowCreate(true);
-    setEditId(c.id);
-    setEmployeeId("");
-    setFullName(c.fullName || "");
-    setEmail(c.email || "");
-    setPhone(c.phone || "");
-    setRoleTitle(c.jobTitle || "");
-    setDepartment(c.department || "");
-    setVacancyId(c.vacancyId || "");
-    setOfferCtc(c.offerCtc != null ? String(c.offerCtc) : "");
-    setOfferJoining(c.offerJoiningDate ? String(c.offerJoiningDate).slice(0, 10) : today());
-  }
 
   async function addJob() {
     setError(null);
@@ -2530,49 +2932,6 @@ function HiringTab() {
   async function issueOffer() {
     if (!offerForId) return;
     await advance(offerForId, "OFFER", { offerCtc, offerJoiningDate: offerJoining });
-  }
-
-  async function createOrUpdateLetter(sendNow: boolean) {
-    setError(null);
-    setNotice(null);
-    try {
-      const body = {
-        employeeId: employeeId || undefined,
-        vacancyId: vacancyId || undefined,
-        fullName,
-        email,
-        phone: phoneForApi(phone),
-        roleTitle,
-        department,
-        offerCtc,
-        offerJoiningDate: offerJoining,
-        sendNow,
-      };
-      if (editId) {
-        await api(`/api/actions/ess/offer-letters/${editId}`, { method: "POST", body: JSON.stringify(body) });
-        if (sendNow) {
-          await api(`/api/actions/ess/offer-letters/${editId}/send`, { method: "POST", body: "{}" });
-        }
-        setNotice(sendNow ? "Letter updated and sent." : "Letter updated.");
-      } else {
-        const out = await api<Candidate & { delivery?: string; deliveryMessage?: string }>("/api/actions/ess/offer-letters", {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
-        setNotice(
-          sendNow
-            ? `Letter ${out.letterNo || ""} sent (${out.delivery || "QUEUED"}).`
-            : `Letter ${out.letterNo || ""} saved as Draft.`,
-        );
-      }
-      resetCreateForm();
-      setShowCreate(false);
-      applicants.reload();
-      jobs.reload();
-      setStatusFilter("LETTERS");
-    } catch (e) {
-      setError((e as Error).message);
-    }
   }
 
   async function sendLetter(id: string) {
@@ -2665,8 +3024,6 @@ function HiringTab() {
     }
   }
 
-  const canSubmitLetter = !!fullName && !!roleTitle && !!offerCtc && !!offerJoining;
-
   return (
     <>
       <ErrorText error={error || applicants.error || jobs.error} />
@@ -2681,71 +3038,9 @@ function HiringTab() {
       <Card
         title="Offer letter workflow"
         action={
-          <PrimaryButton
-            onClick={() => {
-              resetCreateForm();
-              setShowCreate((v) => !v);
-            }}
-          >
-            {showCreate ? "Close" : "+ Create Letter"}
-          </PrimaryButton>
+          <PrimaryButton onClick={() => navigate("/ess/offer-create")}>+ Create Letter</PrimaryButton>
         }
       >
-        {showCreate && (
-          <div className="mb-4 rounded-xl border border-line bg-mist/40 p-4">
-            <p className="mb-3 text-sm font-semibold text-navy">{editId ? "Edit offer letter" : "Create letter"}</p>
-            <FormGrid>
-              {!editId && (
-                <Select
-                  label="From employee (optional)"
-                  value={employeeId}
-                  onChange={fillFromEmployee}
-                  options={(people.data ?? []).map((e) => ({
-                    value: e.id,
-                    label: `${e.fullName}${e.employeeCode ? ` (${e.employeeCode})` : ""}`,
-                  }))}
-                />
-              )}
-              <Select
-                label="Job opening (optional)"
-                value={vacancyId}
-                onChange={(id) => {
-                  setVacancyId(id);
-                  const j = (jobs.data ?? []).find((x) => x.id === id);
-                  if (j) {
-                    setRoleTitle(j.title || "");
-                    setDepartment(j.department || "");
-                  }
-                }}
-                options={(jobs.data ?? []).filter((j) => j.status !== "CLOSED").map((j) => ({ value: j.id, label: j.title }))}
-              />
-              <Field label="Volunteer / candidate name" value={fullName} onChange={setFullName} />
-              <Field label="Email" value={email} onChange={setEmail} placeholder="name@email.com" />
-              <PhoneField label="Phone" value={phone} onChange={setPhone} />
-              <Field label="Role" value={roleTitle} onChange={setRoleTitle} placeholder="Media Executive" />
-              <Field label="Department" value={department} onChange={setDepartment} />
-              <Field label="Start date" type="date" value={offerJoining} onChange={setOfferJoining} />
-              <Field label="Honorarium / CTC (₹)" value={offerCtc} onChange={setOfferCtc} placeholder="8000" />
-            </FormGrid>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <PrimaryButton disabled={!canSubmitLetter} onClick={() => void createOrUpdateLetter(false)}>
-                {editId ? "Save draft" : "Create letter"}
-              </PrimaryButton>
-              <PrimaryButton disabled={!canSubmitLetter || !email} onClick={() => void createOrUpdateLetter(true)}>
-                {editId ? "Save & send" : "Create & send"}
-              </PrimaryButton>
-              <LinkButton
-                onClick={() => {
-                  setShowCreate(false);
-                  resetCreateForm();
-                }}
-              >
-                Cancel
-              </LinkButton>
-            </div>
-          </div>
-        )}
-
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <div className="min-w-[14rem] flex-1">
             <Field label="Search" value={search} onChange={setSearch} placeholder="Letter no, name, role…" />
@@ -2792,7 +3087,7 @@ function HiringTab() {
             <span key={`${c.id}-act`} className="flex flex-wrap items-center gap-2">
               {c.canViewLetter && <LinkButton onClick={() => void viewLetter(c.id)}>View</LinkButton>}
               {c.canViewLetter && <LinkButton onClick={() => void viewLetter(c.id, true)}>Download PDF</LinkButton>}
-              {c.canEditLetter && <LinkButton onClick={() => openEdit(c)}>Edit</LinkButton>}
+              {c.canEditLetter && <LinkButton onClick={() => navigate(`/ess/offer-create?id=${c.id}`)}>Edit</LinkButton>}
               {c.canSendLetter && (
                 <LinkButton disabled={busyId === c.id} onClick={() => void sendLetter(c.id)}>
                   {busyId === c.id

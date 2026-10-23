@@ -1348,17 +1348,137 @@ public class EssService {
         return out;
     }
 
+    private static final String TPL_OFFER = "ESS_OFFER_LETTER";
+    private static final String TPL_REVISION = "ESS_REVISION_LETTER";
+    private static final String TPL_PAYSLIP = "ESS_PAYSLIP";
+    private static final String TPL_EMAIL = "ESS_OFFER_EMAIL";
+    private static final String TPL_JD = "ESS_JOB_DESCRIPTION";
+    private static final String TPL_ORG = "ESS_ORG";
+    private static final String TPL_LOOKUPS = "ESS_LOOKUPS";
+
+    @Transactional
+    public Map<String, Object> essConfig() {
+        requireEss();
+        requireHrAdmin();
+        ensureEssTemplates();
+        Organization org = store.get(Organization.class, orgId());
+        Map<String, Object> orgMeta = readJsonMap(templateBody(TPL_ORG, "defaults"));
+        Map<String, Object> lookups = readJsonMap(templateBody(TPL_LOOKUPS, "defaults"));
+        List<Map<String, Object>> jds = store.list(DocumentTemplate.class, orgId()).stream()
+                .filter(t -> TPL_JD.equalsIgnoreCase(blank(t.getKind(), "")))
+                .map(t -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("id", t.getId());
+                    row.put("role", blank(t.getName(), ""));
+                    row.put("body", blank(t.getBody(), ""));
+                    return row;
+                })
+                .toList();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("instituteName", org.getName());
+        out.put("organization", orgMeta);
+        out.put("offerLetterTemplate", templateBody(TPL_OFFER, "Offer letter"));
+        out.put("revisionLetterTemplate", templateBody(TPL_REVISION, "Revision letter"));
+        out.put("payslipTemplate", templateBody(TPL_PAYSLIP, "Payslip"));
+        out.put("emailTemplate", templateBody(TPL_EMAIL, "Offer email"));
+        out.put("jobDescriptions", jds);
+        out.put("lookups", lookups);
+        out.put("placeholders", List.of(
+                "name", "employee_code", "role", "department", "joining_date", "start_date",
+                "ctc", "salary", "letter_no", "institute_name", "email", "phone",
+                "signatory_name", "signatory_title", "letter_body", "job_description"));
+        return out;
+    }
+
+    @Transactional
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> saveEssConfig(Map<String, Object> body) {
+        requireEss();
+        requireHrAdmin();
+        ensureEssTemplates();
+        if (body.containsKey("offerLetterTemplate")) {
+            saveTemplate(TPL_OFFER, "Offer letter", String.valueOf(body.get("offerLetterTemplate")));
+        }
+        if (body.containsKey("revisionLetterTemplate")) {
+            saveTemplate(TPL_REVISION, "Revision letter", String.valueOf(body.get("revisionLetterTemplate")));
+        }
+        if (body.containsKey("payslipTemplate")) {
+            saveTemplate(TPL_PAYSLIP, "Payslip", String.valueOf(body.get("payslipTemplate")));
+        }
+        if (body.containsKey("emailTemplate")) {
+            saveTemplate(TPL_EMAIL, "Offer email", String.valueOf(body.get("emailTemplate")));
+        }
+        if (body.get("organization") instanceof Map<?, ?> orgMap) {
+            saveTemplate(TPL_ORG, "defaults", writeJson(orgMap));
+        }
+        if (body.get("lookups") instanceof Map<?, ?> lookups) {
+            saveTemplate(TPL_LOOKUPS, "defaults", writeJson(lookups));
+        }
+        if (body.get("jobDescriptions") instanceof List<?> list) {
+            Set<String> keep = new HashSet<>();
+            for (Object item : list) {
+                if (!(item instanceof Map<?, ?> raw)) {
+                    continue;
+                }
+                Map<String, Object> row = (Map<String, Object>) raw;
+                String role = blank(str(row, "role"), "");
+                if (role.isBlank()) {
+                    continue;
+                }
+                keep.add(role.toLowerCase());
+                upsertJdTemplate(role, str(row, "body"));
+            }
+            for (DocumentTemplate t : store.list(DocumentTemplate.class, orgId())) {
+                if (TPL_JD.equalsIgnoreCase(blank(t.getKind(), ""))
+                        && !keep.contains(blank(t.getName(), "").toLowerCase())) {
+                    store.deleteOwned(DocumentTemplate.class, t.getId(), orgId());
+                }
+            }
+        }
+        return essConfig();
+    }
+
+    /** Render letter + JD from templates using basic details (auto-generate). */
+    @Transactional
+    public Map<String, Object> previewOfferLetter(Map<String, Object> body) {
+        requireEss();
+        requireHrAdmin();
+        ensureEssTemplates();
+        Map<String, String> vars = offerVars(body, null);
+        String letterTpl = blank(str(body, "letterTemplate"), templateBody(TPL_OFFER, "Offer letter"));
+        String role = blank(vars.get("role"), "Staff");
+        String jdTpl = blank(str(body, "jobDescriptionTemplate"), jdTemplateForRole(role));
+        String letterContent = fillPlaceholders(letterTpl, vars);
+        String jobDescription = fillPlaceholders(jdTpl, vars);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("letterContent", letterContent);
+        out.put("jobDescription", jobDescription);
+        out.put("roleTitle", role);
+        out.put("department", vars.get("department"));
+        out.put("fullName", vars.get("name"));
+        out.put("email", vars.get("email"));
+        out.put("phone", vars.get("phone"));
+        out.put("employeeCode", vars.get("employee_code"));
+        out.put("offerCtc", vars.get("ctc"));
+        out.put("offerJoiningDate", vars.get("joining_date"));
+        out.put("instituteName", vars.get("institute_name"));
+        out.put("body", letterContent + (jobDescription.isBlank() ? "" : "\n\n--- Annexure A: Job description ---\n\n" + jobDescription));
+        return out;
+    }
+
     /** Create an offer letter directly (DRAFT). Optionally from an existing employee or job opening. */
     @Transactional
     public Map<String, Object> createOfferLetter(Map<String, Object> body) {
         requireEss();
         requireHrAdmin();
+        ensureEssTemplates();
         UUID employeeId = uuid(body, "employeeId");
         String name;
         String email;
         String phone;
         String roleTitle;
         String department;
+        String employeeCode = "";
         if (employeeId != null) {
             Employee e = store.getOwned(Employee.class, employeeId, orgId());
             name = blank(str(body, "fullName"), blank(e.getFullName(), ""));
@@ -1366,12 +1486,14 @@ public class EssService {
             phone = blank(str(body, "phone"), blank(e.getPhone(), ""));
             roleTitle = blank(str(body, "roleTitle"), blank(e.getDesignation(), "Staff"));
             department = blank(str(body, "department"), blank(e.getDepartment(), ""));
+            employeeCode = blank(e.getEmployeeCode(), "");
         } else {
             name = str(body, "fullName");
             email = str(body, "email");
             phone = str(body, "phone");
             roleTitle = blank(str(body, "roleTitle"), str(body, "title"));
             department = str(body, "department");
+            employeeCode = str(body, "employeeCode");
         }
         if (name.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Name is required");
@@ -1380,7 +1502,7 @@ public class EssService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Role / designation is required");
         }
         if (!body.containsKey("offerCtc") || str(body, "offerCtc").isBlank()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Honorarium / CTC is required");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Monthly CTC / salary is required");
         }
         LocalDate joining = date(body, "offerJoiningDate");
         if (joining == null) {
@@ -1397,6 +1519,20 @@ public class EssService {
         c.setOfferCtc(money(body, "offerCtc"));
         c.setOfferJoiningDate(joining);
         c.setOfferLetterStatus("DRAFT");
+        c = store.save(c);
+        Map<String, Object> previewBody = new LinkedHashMap<>(body);
+        previewBody.put("fullName", name);
+        previewBody.put("email", email);
+        previewBody.put("phone", phone);
+        previewBody.put("roleTitle", roleTitle);
+        previewBody.put("department", department);
+        previewBody.put("employeeCode", employeeCode);
+        previewBody.put("letterNo", staffLetterNo(c));
+        Map<String, Object> rendered = previewOfferLetter(previewBody);
+        String letterContent = blank(str(body, "letterContent"), blank(str(body, "letterBody"), String.valueOf(rendered.get("letterContent"))));
+        String jobDescription = blank(str(body, "jobDescription"), String.valueOf(rendered.get("jobDescription")));
+        c.setLetterBody(letterContent);
+        c.setJobDescription(jobDescription);
         c = store.save(c);
         Map<String, Object> out = candidateView(c, store.list(StaffVacancy.class, orgId()));
         if (bool(body, "sendNow")) {
@@ -1437,6 +1573,12 @@ public class EssService {
                     blank(department, store.getOwned(StaffVacancy.class, c.getVacancyId(), orgId()).getDepartment()));
             c.setVacancyId(job.getId());
         }
+        if (body.containsKey("letterContent") || body.containsKey("letterBody")) {
+            c.setLetterBody(blank(str(body, "letterContent"), str(body, "letterBody")));
+        }
+        if (body.containsKey("jobDescription")) {
+            c.setJobDescription(str(body, "jobDescription"));
+        }
         String letterStatus = upper(str(body, "offerLetterStatus"), "");
         if (Set.of("DRAFT", "SENT_FOR_SIGNATURE", "PUBLISHED").contains(letterStatus)) {
             c.setOfferLetterStatus(letterStatus);
@@ -1452,6 +1594,7 @@ public class EssService {
     public Map<String, Object> sendOfferLetter(UUID candidateId) {
         requireEss();
         requireHrAdmin();
+        ensureEssTemplates();
         Map<String, Object> letter = staffOfferLetter(candidateId);
         StaffCandidate c = store.getOwned(StaffCandidate.class, candidateId, orgId());
         String email = blank(c.getEmail(), "");
@@ -1459,9 +1602,30 @@ public class EssService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Candidate email is required to send the offer letter");
         }
         String letterNo = String.valueOf(letter.get("letterNo"));
-        String title = "Offer letter " + letterNo + " — " + blank(String.valueOf(letter.get("instituteName")), "Institute");
-        String body = String.valueOf(letter.get("body"));
-        MessagingGateway.SendResult send = messaging.send(orgId(), "EMAIL", email, title, body);
+        Map<String, String> vars = offerVars(Map.of(
+                "fullName", blank(c.getFullName(), ""),
+                "email", email,
+                "phone", blank(c.getPhone(), ""),
+                "roleTitle", String.valueOf(letter.get("roleTitle")),
+                "department", String.valueOf(letter.get("department")),
+                "offerCtc", c.getOfferCtc() == null ? "" : c.getOfferCtc().toPlainString(),
+                "offerJoiningDate", c.getOfferJoiningDate() == null ? "" : c.getOfferJoiningDate().toString(),
+                "letterNo", letterNo,
+                "letterContent", String.valueOf(letter.get("letterContent")),
+                "jobDescription", String.valueOf(letter.get("jobDescription"))
+        ), c);
+        vars.put("letter_body", String.valueOf(letter.get("body")));
+        String emailTpl = templateBody(TPL_EMAIL, "Offer email");
+        String emailBody = fillPlaceholders(emailTpl, vars);
+        String title = "Offer letter " + letterNo + " — " + blank(vars.get("institute_name"), "Institute");
+        if (emailBody.startsWith("Subject:")) {
+            int nl = emailBody.indexOf('\n');
+            if (nl > 0) {
+                title = emailBody.substring("Subject:".length(), nl).trim();
+                emailBody = emailBody.substring(nl + 1).trim();
+            }
+        }
+        MessagingGateway.SendResult send = messaging.send(orgId(), "EMAIL", email, title, emailBody);
         c.setOfferLetterStatus("SENT_FOR_SIGNATURE");
         c.setOfferSentAt(Instant.now());
         c.setOfferSentChannel("EMAIL");
@@ -1499,6 +1663,7 @@ public class EssService {
     public Map<String, Object> staffOfferLetter(UUID candidateId) {
         requireEss();
         requireHrAdmin();
+        ensureEssTemplates();
         StaffCandidate c = store.getOwned(StaffCandidate.class, candidateId, orgId());
         if (!Set.of("OFFER", "HIRED").contains(blank(c.getStatus(), "").toUpperCase())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Offer letter is available after status is Offer or Hired");
@@ -1506,19 +1671,28 @@ public class EssService {
         StaffVacancy job = store.getOwned(StaffVacancy.class, c.getVacancyId(), orgId());
         Organization org = store.get(Organization.class, orgId());
         String letterNo = staffLetterNo(c);
-        String joining = c.getOfferJoiningDate() == null ? "—" : c.getOfferJoiningDate().toString();
-        String ctc = c.getOfferCtc() == null ? "—" : c.getOfferCtc().toPlainString();
-        String body = org.getName() + "\nOffer letter\nLetter no. " + letterNo + "\n\n"
-                + "Dear " + blank(c.getFullName(), "Candidate") + ",\n\n"
-                + "We are pleased to offer you the role of " + blank(job.getTitle(), "Staff")
-                + (blank(job.getDepartment(), "").isBlank() ? "" : " in the " + job.getDepartment() + " department")
-                + " at " + org.getName() + ".\n\n"
-                + "Monthly honorarium / CTC: Rs. " + ctc + "\n"
-                + "Proposed joining date: " + joining + "\n"
-                + (blank(c.getEmail(), "").isBlank() ? "" : "Email: " + c.getEmail() + "\n")
-                + (blank(c.getPhone(), "").isBlank() ? "" : "Phone: " + c.getPhone() + "\n")
-                + "\nPlease confirm acceptance. On joining, HR will create your employee profile and ESS login.\n\n"
-                + "For " + org.getName() + "\nHR / Administration\n";
+        Map<String, Object> seed = new LinkedHashMap<>();
+        seed.put("fullName", c.getFullName());
+        seed.put("email", c.getEmail());
+        seed.put("phone", c.getPhone());
+        seed.put("roleTitle", job.getTitle());
+        seed.put("department", job.getDepartment());
+        seed.put("offerCtc", c.getOfferCtc() == null ? "" : c.getOfferCtc().toPlainString());
+        seed.put("offerJoiningDate", c.getOfferJoiningDate() == null ? "" : c.getOfferJoiningDate().toString());
+        seed.put("letterNo", letterNo);
+        Map<String, String> vars = offerVars(seed, c);
+        String letterContent = blank(c.getLetterBody(), "");
+        if (letterContent.isBlank()) {
+            letterContent = fillPlaceholders(templateBody(TPL_OFFER, "Offer letter"), vars);
+        }
+        String jobDescription = blank(c.getJobDescription(), "");
+        if (jobDescription.isBlank()) {
+            jobDescription = fillPlaceholders(jdTemplateForRole(blank(job.getTitle(), "Staff")), vars);
+        }
+        String body = letterContent;
+        if (!jobDescription.isBlank()) {
+            body = letterContent + "\n\n--- Annexure A: Job description ---\n\n" + jobDescription;
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("letterNo", letterNo);
         out.put("candidateId", c.getId());
@@ -1534,8 +1708,281 @@ public class EssService {
         out.put("offerCtc", c.getOfferCtc());
         out.put("offerJoiningDate", c.getOfferJoiningDate());
         out.put("instituteName", org.getName());
+        out.put("letterContent", letterContent);
+        out.put("jobDescription", jobDescription);
         out.put("body", body);
         return out;
+    }
+
+    private void ensureEssTemplates() {
+        upsertTemplate(TPL_OFFER, "Offer letter", defaultOfferLetterTemplate());
+        upsertTemplate(TPL_REVISION, "Revision letter", defaultRevisionLetterTemplate());
+        upsertTemplate(TPL_PAYSLIP, "Payslip", defaultPayslipTemplate());
+        upsertTemplate(TPL_EMAIL, "Offer email", defaultOfferEmailTemplate());
+        if (findTemplate(TPL_ORG, "defaults") == null) {
+            upsertTemplate(TPL_ORG, "defaults", "{\"signatoryName\":\"\",\"signatoryTitle\":\"HR / Administration\",\"logoUrl\":\"\"}");
+        }
+        if (findTemplate(TPL_LOOKUPS, "defaults") == null) {
+            upsertTemplate(TPL_LOOKUPS, "defaults",
+                    "{\"departments\":[\"Academics\",\"Administration\",\"Admissions\",\"Finance\",\"IT\",\"Media\"],"
+                            + "\"roles\":[\"Faculty\",\"Counselor\",\"Accountant\",\"Media Executive\",\"HR Executive\"],"
+                            + "\"documentTypes\":[\"PAN\",\"AADHAAR\",\"BANK\",\"OFFER_LETTER\",\"RESUME\"],"
+                            + "\"statuses\":[\"DRAFT\",\"SENT_FOR_SIGNATURE\",\"PUBLISHED\"]}");
+        }
+        if (store.list(DocumentTemplate.class, orgId()).stream().noneMatch(t -> TPL_JD.equalsIgnoreCase(blank(t.getKind(), "")))) {
+            upsertJdTemplate("Staff", defaultJdTemplate());
+            upsertJdTemplate("Media Executive", defaultJdTemplate());
+        }
+    }
+
+    private String defaultOfferLetterTemplate() {
+        return """
+                {institute_name}
+                Offer Letter
+                Letter no. {letter_no}
+
+                To,
+                {name}
+                Employee code: {employee_code}
+
+                Subject: Offer of Employment as {role}
+
+                Dear {name},
+
+                We are pleased to offer you employment with {institute_name} as {role} in the {department} department, effective from {joining_date}.
+
+                This offer is subject to verification of identity, address, bank account, qualifications, and other particulars submitted by you.
+
+                1. Position and employment details
+                   Designation: {role}
+                   Department: {department}
+                   Monthly CTC / Salary: Rs. {ctc}
+                   Proposed start date: {joining_date}
+
+                2. On joining, HR will complete your employee profile and ESS login.
+
+                Please confirm acceptance of this offer.
+
+                For {institute_name}
+                {signatory_name}
+                {signatory_title}
+                """;
+    }
+
+    private String defaultRevisionLetterTemplate() {
+        return """
+                {institute_name}
+                Salary / CTC revision letter
+                Letter no. {letter_no}
+
+                Dear {name},
+
+                This letter confirms the revision of your monthly CTC / salary to Rs. {ctc}, effective {joining_date}, for your role as {role} in {department}.
+
+                For {institute_name}
+                {signatory_name}
+                {signatory_title}
+                """;
+    }
+
+    private String defaultPayslipTemplate() {
+        return """
+                {institute_name}
+                Payslip
+
+                Employee: {name} ({employee_code})
+                Role: {role}
+                Department: {department}
+                """;
+    }
+
+    private String defaultOfferEmailTemplate() {
+        return """
+                Subject: Offer letter {letter_no} — {institute_name}
+
+                Dear {name},
+
+                Please find your offer letter for the role of {role} at {institute_name}.
+                Monthly CTC / Salary: Rs. {ctc}
+                Start date: {joining_date}
+
+                {letter_body}
+
+                Regards,
+                {signatory_name}
+                {signatory_title}
+                """;
+    }
+
+    private String defaultJdTemplate() {
+        return """
+                {institute_name}
+                Job / Role Description — {role}
+
+                Department: {department}
+
+                Key responsibilities:
+                - Deliver outcomes for the {role} role
+                - Collaborate with {department} and cross-functional teams
+                - Maintain compliance with institute policies
+
+                (Edit this role-wise JD template under ESS Settings.)
+                """;
+    }
+
+    private DocumentTemplate findTemplate(String kind, String name) {
+        return store.list(DocumentTemplate.class, orgId()).stream()
+                .filter(t -> kind.equalsIgnoreCase(blank(t.getKind(), ""))
+                        && name.equalsIgnoreCase(blank(t.getName(), "")))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String templateBody(String kind, String name) {
+        DocumentTemplate t = findTemplate(kind, name);
+        return t == null ? "" : blank(t.getBody(), "");
+    }
+
+    private void upsertTemplate(String kind, String name, String body) {
+        DocumentTemplate t = findTemplate(kind, name);
+        if (t == null) {
+            saveTemplate(kind, name, body);
+            return;
+        }
+        if (blank(t.getBody(), "").isBlank() && !blank(body, "").isBlank()) {
+            t.setBody(body);
+            store.save(t);
+        }
+    }
+
+    private void saveTemplate(String kind, String name, String body) {
+        DocumentTemplate t = findTemplate(kind, name);
+        if (t == null) {
+            t = new DocumentTemplate();
+            t.setOrganizationId(orgId());
+            t.setKind(kind);
+            t.setName(name);
+        }
+        t.setBody(body);
+        store.save(t);
+    }
+
+    private void upsertJdTemplate(String role, String body) {
+        DocumentTemplate t = store.list(DocumentTemplate.class, orgId()).stream()
+                .filter(x -> TPL_JD.equalsIgnoreCase(blank(x.getKind(), ""))
+                        && role.equalsIgnoreCase(blank(x.getName(), "")))
+                .findFirst()
+                .orElse(null);
+        if (t == null) {
+            t = new DocumentTemplate();
+            t.setOrganizationId(orgId());
+            t.setKind(TPL_JD);
+            t.setName(role);
+            t.setBody(blank(body, defaultJdTemplate()));
+            store.save(t);
+            return;
+        }
+        t.setBody(body);
+        store.save(t);
+    }
+
+    private String jdTemplateForRole(String role) {
+        String wanted = blank(role, "Staff");
+        return store.list(DocumentTemplate.class, orgId()).stream()
+                .filter(t -> TPL_JD.equalsIgnoreCase(blank(t.getKind(), "")))
+                .filter(t -> wanted.equalsIgnoreCase(blank(t.getName(), "")))
+                .map(t -> blank(t.getBody(), ""))
+                .filter(b -> !b.isBlank())
+                .findFirst()
+                .orElseGet(() -> store.list(DocumentTemplate.class, orgId()).stream()
+                        .filter(t -> TPL_JD.equalsIgnoreCase(blank(t.getKind(), "")))
+                        .map(t -> blank(t.getBody(), ""))
+                        .filter(b -> !b.isBlank())
+                        .findFirst()
+                        .orElse(defaultJdTemplate()));
+    }
+
+    private Map<String, String> offerVars(Map<String, Object> body, StaffCandidate existing) {
+        Organization org = store.get(Organization.class, orgId());
+        Map<String, Object> orgMeta = readJsonMap(templateBody(TPL_ORG, "defaults"));
+        UUID employeeId = uuid(body, "employeeId");
+        String name = str(body, "fullName");
+        String email = str(body, "email");
+        String phone = str(body, "phone");
+        String role = blank(str(body, "roleTitle"), str(body, "title"));
+        String department = str(body, "department");
+        String employeeCode = str(body, "employeeCode");
+        String ctc = str(body, "offerCtc");
+        String joining = str(body, "offerJoiningDate");
+        String letterNo = blank(str(body, "letterNo"), existing == null ? "DRAFT" : staffLetterNo(existing));
+        if (employeeId != null) {
+            Employee e = store.getOwned(Employee.class, employeeId, orgId());
+            name = blank(name, blank(e.getFullName(), ""));
+            email = blank(email, blank(e.getEmail(), ""));
+            phone = blank(phone, blank(e.getPhone(), ""));
+            role = blank(role, blank(e.getDesignation(), "Staff"));
+            department = blank(department, blank(e.getDepartment(), ""));
+            employeeCode = blank(employeeCode, blank(e.getEmployeeCode(), ""));
+            if (joining.isBlank() && e.getJoiningDate() != null) {
+                joining = e.getJoiningDate().toString();
+            }
+        }
+        if (existing != null) {
+            name = blank(name, blank(existing.getFullName(), ""));
+            email = blank(email, blank(existing.getEmail(), ""));
+            phone = blank(phone, blank(existing.getPhone(), ""));
+            if (ctc.isBlank() && existing.getOfferCtc() != null) {
+                ctc = existing.getOfferCtc().toPlainString();
+            }
+            if (joining.isBlank() && existing.getOfferJoiningDate() != null) {
+                joining = existing.getOfferJoiningDate().toString();
+            }
+        }
+        Map<String, String> vars = new LinkedHashMap<>();
+        vars.put("name", blank(name, ""));
+        vars.put("employee_code", blank(employeeCode, "—"));
+        vars.put("role", blank(role, "Staff"));
+        vars.put("department", blank(department, ""));
+        vars.put("joining_date", blank(joining, ""));
+        vars.put("start_date", blank(joining, ""));
+        vars.put("ctc", blank(ctc, "0"));
+        vars.put("salary", blank(ctc, "0"));
+        vars.put("letter_no", letterNo);
+        vars.put("institute_name", org.getName());
+        vars.put("email", blank(email, ""));
+        vars.put("phone", blank(phone, ""));
+        vars.put("signatory_name", blank(String.valueOf(orgMeta.getOrDefault("signatoryName", "")), ""));
+        vars.put("signatory_title", blank(String.valueOf(orgMeta.getOrDefault("signatoryTitle", "HR / Administration")), "HR / Administration"));
+        vars.put("letter_body", blank(str(body, "letterContent"), blank(str(body, "letterBody"), "")));
+        vars.put("job_description", blank(str(body, "jobDescription"), ""));
+        return vars;
+    }
+
+    private static String fillPlaceholders(String template, Map<String, String> vars) {
+        String out = template == null ? "" : template;
+        for (Map.Entry<String, String> e : vars.entrySet()) {
+            out = out.replace("{" + e.getKey() + "}", blank(e.getValue(), ""));
+        }
+        return out;
+    }
+
+    private Map<String, Object> readJsonMap(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            return JSON.readValue(raw, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception ex) {
+            return new LinkedHashMap<>();
+        }
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return JSON.writeValueAsString(value);
+        } catch (Exception ex) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid JSON payload");
+        }
     }
 
     private StaffVacancy resolveOfferVacancy(UUID vacancyId, String roleTitle, String department) {
@@ -2576,6 +3023,8 @@ public class EssService {
         row.put("offerLetterStatus", letterStatus);
         row.put("offerSentAt", c.getOfferSentAt());
         row.put("offerSentChannel", c.getOfferSentChannel());
+        row.put("letterContent", c.getLetterBody());
+        row.put("jobDescription", c.getJobDescription());
         boolean canLetter = Set.of("OFFER", "HIRED").contains(blank(c.getStatus(), "").toUpperCase());
         row.put("canViewLetter", canLetter);
         row.put("canSendLetter", canLetter && !blank(c.getEmail(), "").isBlank());

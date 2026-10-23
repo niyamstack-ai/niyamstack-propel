@@ -744,6 +744,21 @@ public class ActionsController {
         return ess.staffOfferLetter(id);
     }
 
+    @GetMapping("/ess/config")
+    public Map<String, Object> essConfig() {
+        return ess.essConfig();
+    }
+
+    @PostMapping("/ess/config")
+    public Map<String, Object> saveEssConfig(@RequestBody Map<String, Object> body) {
+        return ess.saveEssConfig(body);
+    }
+
+    @PostMapping("/ess/offer-letters/preview")
+    public Map<String, Object> previewOfferLetter(@RequestBody Map<String, Object> body) {
+        return ess.previewOfferLetter(body);
+    }
+
     @PostMapping("/ess/offer-letters")
     public Map<String, Object> createOfferLetter(@RequestBody Map<String, Object> body) {
         return ess.createOfferLetter(body);

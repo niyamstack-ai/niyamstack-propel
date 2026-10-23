@@ -219,6 +219,7 @@ public final class Model {
     public static class DocumentTemplate extends TenantEntity {
         private String name;
         private String kind;
+        @Column(columnDefinition = "TEXT")
         private String body;
     }
 
@@ -1283,6 +1284,10 @@ public final class Model {
         private String offerLetterStatus = "DRAFT";
         private Instant offerSentAt;
         private String offerSentChannel;
+        @Column(columnDefinition = "TEXT")
+        private String letterBody;
+        @Column(columnDefinition = "TEXT")
+        private String jobDescription;
     }
 
     @Entity(name = "InstituteHoliday") @Table(name = "institute_holidays") @Getter @Setter
