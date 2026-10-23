@@ -325,10 +325,16 @@ public class SchemaPatch {
                     offer_ctc NUMERIC(12,2),
                     offer_joining_date DATE,
                     hired_employee_id UUID,
+                    offer_letter_status VARCHAR(40) DEFAULT 'DRAFT',
+                    offer_sent_at TIMESTAMP WITH TIME ZONE,
+                    offer_sent_channel VARCHAR(40),
                     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     updated_at TIMESTAMP WITH TIME ZONE NOT NULL
                 )
                 """,
+                "ALTER TABLE staff_candidates ADD COLUMN IF NOT EXISTS offer_letter_status VARCHAR(40) DEFAULT 'DRAFT'",
+                "ALTER TABLE staff_candidates ADD COLUMN IF NOT EXISTS offer_sent_at TIMESTAMP WITH TIME ZONE",
+                "ALTER TABLE staff_candidates ADD COLUMN IF NOT EXISTS offer_sent_channel VARCHAR(40)",
                 "ALTER TABLE leave_balances ADD COLUMN IF NOT EXISTS leave_year INTEGER",
                 "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS pay_year INTEGER",
                 "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS pay_month INTEGER",

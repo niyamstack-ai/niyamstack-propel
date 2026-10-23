@@ -238,9 +238,22 @@ export function PrimaryButton({
   );
 }
 
-export function LinkButton({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+export function LinkButton({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <button className="text-sm font-medium text-brand hover:underline" onClick={onClick} type="button">
+    <button
+      className="text-sm font-medium text-brand hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+      onClick={onClick}
+      type="button"
+      disabled={disabled}
+    >
       {children}
     </button>
   );

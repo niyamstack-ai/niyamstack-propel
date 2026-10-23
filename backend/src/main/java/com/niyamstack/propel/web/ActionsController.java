@@ -744,6 +744,26 @@ public class ActionsController {
         return ess.staffOfferLetter(id);
     }
 
+    @PostMapping("/ess/offer-letters")
+    public Map<String, Object> createOfferLetter(@RequestBody Map<String, Object> body) {
+        return ess.createOfferLetter(body);
+    }
+
+    @PostMapping("/ess/offer-letters/{id}")
+    public Map<String, Object> updateOfferLetter(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return ess.updateOfferLetter(id, body);
+    }
+
+    @PostMapping("/ess/offer-letters/{id}/send")
+    public Map<String, Object> sendOfferLetter(@PathVariable UUID id) {
+        return ess.sendOfferLetter(id);
+    }
+
+    @PostMapping("/ess/offer-letters/{id}/publish")
+    public Map<String, Object> publishOfferLetter(@PathVariable UUID id) {
+        return ess.publishOfferLetter(id);
+    }
+
     @PostMapping("/sis/import/students")
     public Map<String, Object> importStudents(@RequestBody Map<String, Object> body) {
         return sis.importStudents(body);

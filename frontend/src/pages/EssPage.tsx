@@ -116,7 +116,12 @@ type Candidate = {
   offerCtc?: number;
   offerJoiningDate?: string;
   letterNo?: string;
+  offerLetterStatus?: string;
+  offerSentAt?: string;
+  offerSentChannel?: string;
   canViewLetter?: boolean;
+  canSendLetter?: boolean;
+  canEditLetter?: boolean;
   hiredEmployeeId?: string;
 };
 type Center = { id: string; name: string };
@@ -369,6 +374,19 @@ function statusBadge(status?: string) {
         ? "bg-red-50 text-red-800"
         : "bg-amber-50 text-amber-900";
   return <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${cls}`}>{prettyLabel(s)}</span>;
+}
+
+function letterStatusBadge(status?: string) {
+  const s = (status || "DRAFT").toUpperCase();
+  const cls =
+    s === "PUBLISHED"
+      ? "bg-emerald-50 text-emerald-800"
+      : s === "SENT_FOR_SIGNATURE"
+        ? "bg-amber-100 text-amber-950"
+        : "bg-slate-100 text-slate-700";
+  const label =
+    s === "SENT_FOR_SIGNATURE" ? "Sent For Signature" : s === "PUBLISHED" ? "Published" : "Draft";
+  return <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${cls}`}>{label}</span>;
 }
 
 function fieldBadge(ok: boolean, okLabel: string, badLabel: string) {
@@ -2386,11 +2404,13 @@ function PayrollTab({ hr, focus = "full" }: { hr: boolean; focus?: "full" | "pay
 function HiringTab() {
   const jobs = useApi<Vacancy[]>("/api/staff-vacancies");
   const applicants = useApi<Candidate[]>("/api/staff-candidates");
+  const people = useApi<Employee[]>("/api/employees");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "APPLIED" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED">("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "APPLIED" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED" | "LETTERS">("LETTERS");
   const [showSetup, setShowSetup] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
   const [title, setTitle] = useState("");
   const [department, setDepartment] = useState("");
   const [openings, setOpenings] = useState("1");
@@ -2399,21 +2419,69 @@ function HiringTab() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [roleTitle, setRoleTitle] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
   const [offerForId, setOfferForId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
   const [offerCtc, setOfferCtc] = useState("");
   const [offerJoining, setOfferJoining] = useState(today());
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [moreId, setMoreId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (applicants.data ?? []).filter((c) => {
-      if (statusFilter !== "ALL" && (c.status || "").toUpperCase() !== statusFilter) return false;
+      if (statusFilter === "LETTERS") {
+        if (c.status !== "OFFER" && c.status !== "HIRED") return false;
+      } else if (statusFilter !== "ALL" && (c.status || "").toUpperCase() !== statusFilter) {
+        return false;
+      }
       if (!q) return true;
-      const hay = `${c.letterNo || ""} ${c.fullName || ""} ${c.jobTitle || ""} ${c.department || ""} ${c.email || ""}`.toLowerCase();
+      const hay = `${c.letterNo || ""} ${c.fullName || ""} ${c.jobTitle || ""} ${c.department || ""} ${c.email || ""} ${c.offerLetterStatus || ""}`.toLowerCase();
       return hay.includes(q);
     });
   }, [applicants.data, search, statusFilter]);
 
   const offerCount = (applicants.data ?? []).filter((c) => c.status === "OFFER" || c.status === "HIRED").length;
+
+  function resetCreateForm() {
+    setEmployeeId("");
+    setFullName("");
+    setEmail("");
+    setPhone("");
+    setRoleTitle("");
+    setDepartment("");
+    setVacancyId("");
+    setOfferCtc("");
+    setOfferJoining(today());
+    setEditId(null);
+  }
+
+  function fillFromEmployee(id: string) {
+    setEmployeeId(id);
+    const e = (people.data ?? []).find((x) => x.id === id);
+    if (!e) return;
+    setFullName(e.fullName || "");
+    setEmail(e.email || "");
+    setPhone(e.phone || "");
+    setRoleTitle(e.designation || "");
+    setDepartment(e.department || "");
+    if (e.joiningDate) setOfferJoining(String(e.joiningDate).slice(0, 10));
+  }
+
+  function openEdit(c: Candidate) {
+    setShowCreate(true);
+    setEditId(c.id);
+    setEmployeeId("");
+    setFullName(c.fullName || "");
+    setEmail(c.email || "");
+    setPhone(c.phone || "");
+    setRoleTitle(c.jobTitle || "");
+    setDepartment(c.department || "");
+    setVacancyId(c.vacancyId || "");
+    setOfferCtc(c.offerCtc != null ? String(c.offerCtc) : "");
+    setOfferJoining(c.offerJoiningDate ? String(c.offerJoiningDate).slice(0, 10) : today());
+  }
 
   async function addJob() {
     setError(null);
@@ -2451,8 +2519,8 @@ function HiringTab() {
       if (status === "OFFER") {
         setOfferForId(null);
         setOfferCtc("");
-        setNotice("Offer letter issued. Use View / Print on the row.");
-        setStatusFilter("OFFER");
+        setNotice("Offer letter created as Draft. Send it from the Actions column.");
+        setStatusFilter("LETTERS");
       }
     } catch (e) {
       setError((e as Error).message);
@@ -2462,6 +2530,79 @@ function HiringTab() {
   async function issueOffer() {
     if (!offerForId) return;
     await advance(offerForId, "OFFER", { offerCtc, offerJoiningDate: offerJoining });
+  }
+
+  async function createOrUpdateLetter(sendNow: boolean) {
+    setError(null);
+    setNotice(null);
+    try {
+      const body = {
+        employeeId: employeeId || undefined,
+        vacancyId: vacancyId || undefined,
+        fullName,
+        email,
+        phone: phoneForApi(phone),
+        roleTitle,
+        department,
+        offerCtc,
+        offerJoiningDate: offerJoining,
+        sendNow,
+      };
+      if (editId) {
+        await api(`/api/actions/ess/offer-letters/${editId}`, { method: "POST", body: JSON.stringify(body) });
+        if (sendNow) {
+          await api(`/api/actions/ess/offer-letters/${editId}/send`, { method: "POST", body: "{}" });
+        }
+        setNotice(sendNow ? "Letter updated and sent." : "Letter updated.");
+      } else {
+        const out = await api<Candidate & { delivery?: string; deliveryMessage?: string }>("/api/actions/ess/offer-letters", {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        setNotice(
+          sendNow
+            ? `Letter ${out.letterNo || ""} sent (${out.delivery || "QUEUED"}).`
+            : `Letter ${out.letterNo || ""} saved as Draft.`,
+        );
+      }
+      resetCreateForm();
+      setShowCreate(false);
+      applicants.reload();
+      jobs.reload();
+      setStatusFilter("LETTERS");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function sendLetter(id: string) {
+    setError(null);
+    setNotice(null);
+    setBusyId(id);
+    try {
+      const out = await api<{ letterNo?: string; delivery?: string; deliveryMessage?: string; fullName?: string }>(
+        `/api/actions/ess/offer-letters/${id}/send`,
+        { method: "POST", body: "{}" },
+      );
+      applicants.reload();
+      setNotice(`Sent to ${out.fullName || "candidate"} (${out.delivery || "QUEUED"}). ${out.deliveryMessage || ""}`.trim());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function publishLetter(id: string) {
+    setError(null);
+    try {
+      await api(`/api/actions/ess/offer-letters/${id}/publish`, { method: "POST", body: "{}" });
+      applicants.reload();
+      setNotice("Letter marked Published.");
+      setMoreId(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
 
   async function hire(id: string) {
@@ -2475,13 +2616,13 @@ function HiringTab() {
       applicants.reload();
       jobs.reload();
       setNotice(`${out.employee?.fullName || "Candidate"} is now on the employee master.`);
-      setStatusFilter("HIRED");
+      setMoreId(null);
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
-  async function viewLetter(id: string) {
+  async function viewLetter(id: string, autoPrint = false) {
     setError(null);
     try {
       const letter = await api<{
@@ -2494,12 +2635,17 @@ function HiringTab() {
         offerJoiningDate?: string;
         body?: string;
         status?: string;
+        offerLetterStatus?: string;
       }>(`/api/actions/ess/candidates/${id}/letter`);
       const win = window.open("", "_blank", "noopener,noreferrer,width=720,height=900");
       if (!win) {
         setError("Pop-up blocked. Allow pop-ups to view the offer letter.");
         return;
       }
+      const letterLabel =
+        (letter.offerLetterStatus || "").toUpperCase() === "SENT_FOR_SIGNATURE"
+          ? "Sent For Signature"
+          : prettyLabel(letter.offerLetterStatus || letter.status);
       win.document.write(`<!doctype html><html><head><title>${escHtml(letter.letterNo || "Offer letter")}</title>
         <style>
           body{font-family:Georgia,serif;max-width:640px;margin:40px auto;padding:0 24px;color:#111;line-height:1.5}
@@ -2508,15 +2654,18 @@ function HiringTab() {
           .actions{margin-top:28px} button{padding:8px 14px;font-size:14px}
         </style></head><body>
           <h1>${escHtml(letter.instituteName || "Offer letter")}</h1>
-          <p class="meta">${escHtml(letter.letterNo || "")} · ${escHtml(prettyLabel(letter.status))} · ${escHtml(letter.fullName || "")}</p>
+          <p class="meta">${escHtml(letter.letterNo || "")} · ${escHtml(letterLabel)} · ${escHtml(letter.fullName || "")}</p>
           <pre>${escHtml(letter.body || "")}</pre>
           <div class="actions"><button onclick="window.print()">Print / Save PDF</button></div>
+          ${autoPrint ? "<script>window.print()<\\/script>" : ""}
         </body></html>`);
       win.document.close();
     } catch (e) {
       setError((e as Error).message);
     }
   }
+
+  const canSubmitLetter = !!fullName && !!roleTitle && !!offerCtc && !!offerJoining;
 
   return (
     <>
@@ -2529,30 +2678,97 @@ function HiringTab() {
         <StatCard label="Offer letters" value={String(offerCount)} />
       </div>
 
-      <Card title="Offer letter workflow">
+      <Card
+        title="Offer letter workflow"
+        action={
+          <PrimaryButton
+            onClick={() => {
+              resetCreateForm();
+              setShowCreate((v) => !v);
+            }}
+          >
+            {showCreate ? "Close" : "+ Create Letter"}
+          </PrimaryButton>
+        }
+      >
+        {showCreate && (
+          <div className="mb-4 rounded-xl border border-line bg-mist/40 p-4">
+            <p className="mb-3 text-sm font-semibold text-navy">{editId ? "Edit offer letter" : "Create letter"}</p>
+            <FormGrid>
+              {!editId && (
+                <Select
+                  label="From employee (optional)"
+                  value={employeeId}
+                  onChange={fillFromEmployee}
+                  options={(people.data ?? []).map((e) => ({
+                    value: e.id,
+                    label: `${e.fullName}${e.employeeCode ? ` (${e.employeeCode})` : ""}`,
+                  }))}
+                />
+              )}
+              <Select
+                label="Job opening (optional)"
+                value={vacancyId}
+                onChange={(id) => {
+                  setVacancyId(id);
+                  const j = (jobs.data ?? []).find((x) => x.id === id);
+                  if (j) {
+                    setRoleTitle(j.title || "");
+                    setDepartment(j.department || "");
+                  }
+                }}
+                options={(jobs.data ?? []).filter((j) => j.status !== "CLOSED").map((j) => ({ value: j.id, label: j.title }))}
+              />
+              <Field label="Volunteer / candidate name" value={fullName} onChange={setFullName} />
+              <Field label="Email" value={email} onChange={setEmail} placeholder="name@email.com" />
+              <PhoneField label="Phone" value={phone} onChange={setPhone} />
+              <Field label="Role" value={roleTitle} onChange={setRoleTitle} placeholder="Media Executive" />
+              <Field label="Department" value={department} onChange={setDepartment} />
+              <Field label="Start date" type="date" value={offerJoining} onChange={setOfferJoining} />
+              <Field label="Honorarium / CTC (₹)" value={offerCtc} onChange={setOfferCtc} placeholder="8000" />
+            </FormGrid>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <PrimaryButton disabled={!canSubmitLetter} onClick={() => void createOrUpdateLetter(false)}>
+                {editId ? "Save draft" : "Create letter"}
+              </PrimaryButton>
+              <PrimaryButton disabled={!canSubmitLetter || !email} onClick={() => void createOrUpdateLetter(true)}>
+                {editId ? "Save & send" : "Create & send"}
+              </PrimaryButton>
+              <LinkButton
+                onClick={() => {
+                  setShowCreate(false);
+                  resetCreateForm();
+                }}
+              >
+                Cancel
+              </LinkButton>
+            </div>
+          </div>
+        )}
+
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <div className="min-w-[14rem] flex-1">
             <Field label="Search" value={search} onChange={setSearch} placeholder="Letter no, name, role…" />
           </div>
           <div className="flex flex-wrap gap-2 pb-1">
-            {(["ALL", "APPLIED", "INTERVIEW", "OFFER", "HIRED", "REJECTED"] as const).map((f) => (
+            {(["LETTERS", "ALL", "APPLIED", "INTERVIEW", "OFFER", "HIRED", "REJECTED"] as const).map((f) => (
               <button
                 key={f}
                 type="button"
                 onClick={() => setStatusFilter(f)}
                 className={`rounded-full px-3 py-1.5 text-sm ${statusFilter === f ? "bg-navy text-white" : "bg-mist"}`}
               >
-                {f === "ALL" ? "All" : prettyLabel(f)}
+                {f === "ALL" ? "All pipeline" : f === "LETTERS" ? "Letters" : prettyLabel(f)}
               </button>
             ))}
           </div>
         </div>
         <p className="mb-3 text-xs text-slate-500">
-          Showing {filtered.length} of {(applicants.data ?? []).length}. Flow: Applied → Interview → Issue offer → View/Print letter → Hire.
+          Create a letter, send it by email from this list, then hire when accepted. Showing {filtered.length} of {(applicants.data ?? []).length}.
         </p>
         <Table
-          empty="No applicants yet. Post a job and add an applicant below."
-          columns={["Letter no.", "Candidate", "Role", "Start date", "Honorarium", "Status", ""]}
+          empty="No offer letters yet. Click + Create Letter to generate one."
+          columns={["Letter no.", "Volunteer", "Role", "Start date", "Honorarium", "Status", "Actions"]}
           rows={filtered.map((c) => [
             c.letterNo || "—",
             <span key={`${c.id}-name`}>
@@ -2565,10 +2781,28 @@ function HiringTab() {
             </span>,
             formatDay(c.offerJoiningDate) || "—",
             c.offerCtc != null ? formatInr(c.offerCtc) : "—",
-            statusBadge(c.status),
-            <span key={`${c.id}-act`} className="flex flex-wrap gap-2">
+            c.canViewLetter ? (
+              <span key={`${c.id}-st`} className="flex flex-col gap-1">
+                {letterStatusBadge(c.offerLetterStatus)}
+                {c.status === "HIRED" && <span className="text-[10px] text-slate-500">Hired</span>}
+              </span>
+            ) : (
+              statusBadge(c.status)
+            ),
+            <span key={`${c.id}-act`} className="flex flex-wrap items-center gap-2">
               {c.canViewLetter && <LinkButton onClick={() => void viewLetter(c.id)}>View</LinkButton>}
-              {c.canViewLetter && <LinkButton onClick={() => void viewLetter(c.id)}>Print</LinkButton>}
+              {c.canViewLetter && <LinkButton onClick={() => void viewLetter(c.id, true)}>Download PDF</LinkButton>}
+              {c.canEditLetter && <LinkButton onClick={() => openEdit(c)}>Edit</LinkButton>}
+              {c.canSendLetter && (
+                <LinkButton disabled={busyId === c.id} onClick={() => void sendLetter(c.id)}>
+                  {busyId === c.id
+                    ? "Sending…"
+                    : (c.offerLetterStatus || "").toUpperCase() === "SENT_FOR_SIGNATURE" ||
+                        (c.offerLetterStatus || "").toUpperCase() === "PUBLISHED"
+                      ? "Resend Draft"
+                      : "Send"}
+                </LinkButton>
+              )}
               {c.status === "APPLIED" && <LinkButton onClick={() => void advance(c.id, "INTERVIEW")}>Interview</LinkButton>}
               {c.status === "INTERVIEW" && (
                 <LinkButton
@@ -2581,8 +2815,35 @@ function HiringTab() {
                   Issue offer
                 </LinkButton>
               )}
-              {c.status === "OFFER" && <LinkButton onClick={() => void hire(c.id)}>Hire</LinkButton>}
-              {c.status !== "HIRED" && c.status !== "REJECTED" && (
+              {c.canViewLetter && (
+                <span className="relative">
+                  <LinkButton onClick={() => setMoreId((id) => (id === c.id ? null : c.id))}>More actions ▾</LinkButton>
+                  {moreId === c.id && (
+                    <span className="absolute right-0 z-10 mt-1 min-w-[9rem] rounded-lg border border-line bg-white p-2 shadow-md">
+                      {c.status === "OFFER" && (
+                        <button type="button" className="block w-full px-2 py-1.5 text-left text-sm hover:bg-mist" onClick={() => void hire(c.id)}>
+                          Hire
+                        </button>
+                      )}
+                      {(c.offerLetterStatus || "").toUpperCase() !== "PUBLISHED" && (
+                        <button type="button" className="block w-full px-2 py-1.5 text-left text-sm hover:bg-mist" onClick={() => void publishLetter(c.id)}>
+                          Mark published
+                        </button>
+                      )}
+                      {c.status !== "HIRED" && c.status !== "REJECTED" && (
+                        <button
+                          type="button"
+                          className="block w-full px-2 py-1.5 text-left text-sm text-red-700 hover:bg-mist"
+                          onClick={() => void advance(c.id, "REJECTED")}
+                        >
+                          Reject
+                        </button>
+                      )}
+                    </span>
+                  )}
+                </span>
+              )}
+              {!c.canViewLetter && c.status !== "HIRED" && c.status !== "REJECTED" && (
                 <LinkButton onClick={() => void advance(c.id, "REJECTED")}>Reject</LinkButton>
               )}
             </span>,

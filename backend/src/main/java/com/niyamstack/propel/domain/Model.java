@@ -1279,6 +1279,10 @@ public final class Model {
         private BigDecimal offerCtc;
         private LocalDate offerJoiningDate;
         private UUID hiredEmployeeId;
+        /** DRAFT | SENT_FOR_SIGNATURE | PUBLISHED */
+        private String offerLetterStatus = "DRAFT";
+        private Instant offerSentAt;
+        private String offerSentChannel;
     }
 
     @Entity(name = "InstituteHoliday") @Table(name = "institute_holidays") @Getter @Setter

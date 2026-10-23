@@ -13,6 +13,7 @@ import com.niyamstack.propel.security.PasswordPolicy;
 import com.niyamstack.propel.security.Phones;
 import com.niyamstack.propel.security.PropelUser;
 import com.niyamstack.propel.security.Roles;
+import com.niyamstack.propel.integration.MessagingGateway;
 import com.niyamstack.propel.integration.OrgSecrets;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -55,11 +56,13 @@ public class EssService {
     private final Store store;
     private final PasswordEncoder encoder;
     private final CompensationService compensation;
+    private final MessagingGateway messaging;
 
-    public EssService(Store store, PasswordEncoder encoder, CompensationService compensation) {
+    public EssService(Store store, PasswordEncoder encoder, CompensationService compensation, MessagingGateway messaging) {
         this.store = store;
         this.encoder = encoder;
         this.compensation = compensation;
+        this.messaging = messaging;
     }
 
     public List<Map<String, Object>> employees() {
@@ -1278,6 +1281,10 @@ public class EssService {
             }
             c.setOfferCtc(money(body, "offerCtc"));
             c.setOfferJoiningDate(joiningRequired);
+            if (blank(c.getOfferLetterStatus(), "").isBlank()
+                    || "DRAFT".equalsIgnoreCase(blank(c.getOfferLetterStatus(), ""))) {
+                c.setOfferLetterStatus("DRAFT");
+            }
         }
         c.setStatus(status);
         if (!str(body, "interviewAt").isBlank()) {
@@ -1323,6 +1330,9 @@ public class EssService {
         empBody.put("loginRole", blank(str(body, "loginRole"), "FACULTY"));
         Map<String, Object> employee = createEmployee(empBody);
         c.setStatus("HIRED");
+        if (!"SENT_FOR_SIGNATURE".equalsIgnoreCase(blank(c.getOfferLetterStatus(), ""))) {
+            c.setOfferLetterStatus("PUBLISHED");
+        }
         c.setHiredEmployeeId(UUID.fromString(employee.get("id").toString()));
         store.save(c);
         if (job.getOpenings() != null && job.getOpenings() > 0) {
@@ -1336,6 +1346,153 @@ public class EssService {
         out.put("candidate", candidateView(c, List.of(job)));
         out.put("employee", employee);
         return out;
+    }
+
+    /** Create an offer letter directly (DRAFT). Optionally from an existing employee or job opening. */
+    @Transactional
+    public Map<String, Object> createOfferLetter(Map<String, Object> body) {
+        requireEss();
+        requireHrAdmin();
+        UUID employeeId = uuid(body, "employeeId");
+        String name;
+        String email;
+        String phone;
+        String roleTitle;
+        String department;
+        if (employeeId != null) {
+            Employee e = store.getOwned(Employee.class, employeeId, orgId());
+            name = blank(str(body, "fullName"), blank(e.getFullName(), ""));
+            email = blank(str(body, "email"), blank(e.getEmail(), ""));
+            phone = blank(str(body, "phone"), blank(e.getPhone(), ""));
+            roleTitle = blank(str(body, "roleTitle"), blank(e.getDesignation(), "Staff"));
+            department = blank(str(body, "department"), blank(e.getDepartment(), ""));
+        } else {
+            name = str(body, "fullName");
+            email = str(body, "email");
+            phone = str(body, "phone");
+            roleTitle = blank(str(body, "roleTitle"), str(body, "title"));
+            department = str(body, "department");
+        }
+        if (name.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Name is required");
+        }
+        if (roleTitle.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Role / designation is required");
+        }
+        if (!body.containsKey("offerCtc") || str(body, "offerCtc").isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Honorarium / CTC is required");
+        }
+        LocalDate joining = date(body, "offerJoiningDate");
+        if (joining == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Start / joining date is required");
+        }
+        StaffVacancy job = resolveOfferVacancy(uuid(body, "vacancyId"), roleTitle, department);
+        StaffCandidate c = new StaffCandidate();
+        c.setOrganizationId(orgId());
+        c.setVacancyId(job.getId());
+        c.setFullName(name);
+        c.setEmail(email);
+        c.setPhone(Phones.normalize(phone));
+        c.setStatus("OFFER");
+        c.setOfferCtc(money(body, "offerCtc"));
+        c.setOfferJoiningDate(joining);
+        c.setOfferLetterStatus("DRAFT");
+        c = store.save(c);
+        Map<String, Object> out = candidateView(c, store.list(StaffVacancy.class, orgId()));
+        if (bool(body, "sendNow")) {
+            out = sendOfferLetter(c.getId());
+        }
+        return out;
+    }
+
+    @Transactional
+    public Map<String, Object> updateOfferLetter(UUID candidateId, Map<String, Object> body) {
+        requireEss();
+        requireHrAdmin();
+        StaffCandidate c = store.getOwned(StaffCandidate.class, candidateId, orgId());
+        if (!Set.of("OFFER", "HIRED").contains(blank(c.getStatus(), "").toUpperCase())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Only offer / hired letters can be edited");
+        }
+        if (!str(body, "fullName").isBlank()) {
+            c.setFullName(str(body, "fullName"));
+        }
+        if (body.containsKey("email")) {
+            c.setEmail(str(body, "email"));
+        }
+        if (body.containsKey("phone")) {
+            c.setPhone(Phones.normalize(str(body, "phone")));
+        }
+        if (body.containsKey("offerCtc") && !str(body, "offerCtc").isBlank()) {
+            c.setOfferCtc(money(body, "offerCtc"));
+        }
+        LocalDate joining = date(body, "offerJoiningDate");
+        if (joining != null) {
+            c.setOfferJoiningDate(joining);
+        }
+        String roleTitle = blank(str(body, "roleTitle"), str(body, "title"));
+        String department = str(body, "department");
+        if (!roleTitle.isBlank() || body.containsKey("department") || uuid(body, "vacancyId") != null) {
+            StaffVacancy job = resolveOfferVacancy(uuid(body, "vacancyId"),
+                    blank(roleTitle, store.getOwned(StaffVacancy.class, c.getVacancyId(), orgId()).getTitle()),
+                    blank(department, store.getOwned(StaffVacancy.class, c.getVacancyId(), orgId()).getDepartment()));
+            c.setVacancyId(job.getId());
+        }
+        String letterStatus = upper(str(body, "offerLetterStatus"), "");
+        if (Set.of("DRAFT", "SENT_FOR_SIGNATURE", "PUBLISHED").contains(letterStatus)) {
+            c.setOfferLetterStatus(letterStatus);
+        } else if (!"PUBLISHED".equalsIgnoreCase(blank(c.getOfferLetterStatus(), ""))) {
+            c.setOfferLetterStatus("DRAFT");
+        }
+        c = store.save(c);
+        return candidateView(c, store.list(StaffVacancy.class, orgId()));
+    }
+
+    /** Email the offer letter and mark SENT_FOR_SIGNATURE (also used for resend). */
+    @Transactional
+    public Map<String, Object> sendOfferLetter(UUID candidateId) {
+        requireEss();
+        requireHrAdmin();
+        Map<String, Object> letter = staffOfferLetter(candidateId);
+        StaffCandidate c = store.getOwned(StaffCandidate.class, candidateId, orgId());
+        String email = blank(c.getEmail(), "");
+        if (email.isBlank() || email.endsWith("@local")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Candidate email is required to send the offer letter");
+        }
+        String letterNo = String.valueOf(letter.get("letterNo"));
+        String title = "Offer letter " + letterNo + " — " + blank(String.valueOf(letter.get("instituteName")), "Institute");
+        String body = String.valueOf(letter.get("body"));
+        MessagingGateway.SendResult send = messaging.send(orgId(), "EMAIL", email, title, body);
+        c.setOfferLetterStatus("SENT_FOR_SIGNATURE");
+        c.setOfferSentAt(Instant.now());
+        c.setOfferSentChannel("EMAIL");
+        c = store.save(c);
+        Notification n = new Notification();
+        n.setOrganizationId(orgId());
+        n.setChannel("EMAIL");
+        n.setAudience("candidate");
+        n.setTitle(title);
+        n.setBody(send.message() + " — " + letterNo);
+        n.setStatus(send.status());
+        n.setDetail("offerLetter:" + candidateId);
+        store.save(n);
+        Map<String, Object> out = candidateView(c, store.list(StaffVacancy.class, orgId()));
+        out.put("delivery", send.status());
+        out.put("deliveryMessage", send.message());
+        out.put("queued", send.queued());
+        return out;
+    }
+
+    @Transactional
+    public Map<String, Object> publishOfferLetter(UUID candidateId) {
+        requireEss();
+        requireHrAdmin();
+        StaffCandidate c = store.getOwned(StaffCandidate.class, candidateId, orgId());
+        if (!Set.of("OFFER", "HIRED").contains(blank(c.getStatus(), "").toUpperCase())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Publish is available after an offer letter exists");
+        }
+        c.setOfferLetterStatus("PUBLISHED");
+        c = store.save(c);
+        return candidateView(c, store.list(StaffVacancy.class, orgId()));
     }
 
     /** Printable staff offer letter for candidates in OFFER or HIRED status. */
@@ -1366,6 +1523,9 @@ public class EssService {
         out.put("letterNo", letterNo);
         out.put("candidateId", c.getId());
         out.put("status", c.getStatus());
+        out.put("offerLetterStatus", blank(c.getOfferLetterStatus(), "DRAFT"));
+        out.put("offerSentAt", c.getOfferSentAt());
+        out.put("offerSentChannel", c.getOfferSentChannel());
         out.put("fullName", c.getFullName());
         out.put("email", c.getEmail());
         out.put("phone", c.getPhone());
@@ -1376,6 +1536,39 @@ public class EssService {
         out.put("instituteName", org.getName());
         out.put("body", body);
         return out;
+    }
+
+    private StaffVacancy resolveOfferVacancy(UUID vacancyId, String roleTitle, String department) {
+        if (vacancyId != null) {
+            StaffVacancy existing = store.getOwned(StaffVacancy.class, vacancyId, orgId());
+            boolean dirty = false;
+            if (!blank(roleTitle, "").isBlank() && !roleTitle.equals(existing.getTitle())) {
+                existing.setTitle(roleTitle);
+                dirty = true;
+            }
+            if (department != null && !department.equals(blank(existing.getDepartment(), ""))) {
+                existing.setDepartment(department);
+                dirty = true;
+            }
+            return dirty ? store.save(existing) : existing;
+        }
+        String title = blank(roleTitle, "Staff");
+        String dept = blank(department, "");
+        return store.list(StaffVacancy.class, orgId()).stream()
+                .filter(j -> title.equalsIgnoreCase(blank(j.getTitle(), ""))
+                        && dept.equalsIgnoreCase(blank(j.getDepartment(), ""))
+                        && !"CLOSED".equalsIgnoreCase(blank(j.getStatus(), "")))
+                .findFirst()
+                .orElseGet(() -> {
+                    StaffVacancy v = new StaffVacancy();
+                    v.setOrganizationId(orgId());
+                    v.setTitle(title);
+                    v.setDepartment(dept);
+                    v.setOpenings(1);
+                    v.setStatus("OPEN");
+                    v.setDescription("Created from offer letter workflow");
+                    return store.save(v);
+                });
     }
 
     private static String staffLetterNo(StaffCandidate c) {
@@ -2376,7 +2569,17 @@ public class EssService {
         row.put("hiredEmployeeId", c.getHiredEmployeeId());
         row.put("letterNo", staffLetterNo(c));
         row.put("createdAt", c.getCreatedAt());
-        row.put("canViewLetter", Set.of("OFFER", "HIRED").contains(blank(c.getStatus(), "").toUpperCase()));
+        String letterStatus = blank(c.getOfferLetterStatus(), "");
+        if (letterStatus.isBlank() && Set.of("OFFER", "HIRED").contains(blank(c.getStatus(), "").toUpperCase())) {
+            letterStatus = "DRAFT";
+        }
+        row.put("offerLetterStatus", letterStatus);
+        row.put("offerSentAt", c.getOfferSentAt());
+        row.put("offerSentChannel", c.getOfferSentChannel());
+        boolean canLetter = Set.of("OFFER", "HIRED").contains(blank(c.getStatus(), "").toUpperCase());
+        row.put("canViewLetter", canLetter);
+        row.put("canSendLetter", canLetter && !blank(c.getEmail(), "").isBlank());
+        row.put("canEditLetter", canLetter && !"PUBLISHED".equalsIgnoreCase(letterStatus));
         return row;
     }
 
