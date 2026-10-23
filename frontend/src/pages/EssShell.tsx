@@ -25,7 +25,7 @@ const ALL_NAV: EssNavItem[] = [
   { to: "/ess", label: "Dashboard", end: true, when: "always" },
   { to: "/ess/employees", label: "Employees", when: "hr" },
   { to: "/ess/documents", label: "KYC & Bank", when: "always" },
-  { to: "/ess/hiring", label: "Offer Letters", when: "hr" },
+  { to: "/ess/hiring", label: "Hiring", when: "hr" },
   { to: "/ess/payroll", label: "Payroll", when: "payroll" },
   { to: "/ess/payslips", label: "Payslips", when: "always" },
   { to: "/ess/attendance", label: "Attendance", when: "always" },

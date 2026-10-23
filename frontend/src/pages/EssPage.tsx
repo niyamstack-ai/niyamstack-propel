@@ -128,7 +128,25 @@ type Reg = {
   reason?: string;
 };
 type Resign = { id: string; employeeName?: string; lastWorkingDate?: string; status?: string; canDecide?: boolean; reason?: string };
-type Doc = { id: string; docType?: string; fileName?: string; storageUrl?: string };
+type Doc = {
+  id: string;
+  employeeId?: string;
+  employeeName?: string;
+  employeeCode?: string;
+  docType?: string;
+  fileName?: string;
+  storageUrl?: string;
+  status?: string;
+  reviewNote?: string;
+  createdAt?: string;
+  canReview?: boolean;
+};
+type KycSummary = {
+  pendingDocuments?: number;
+  approvedDocuments?: number;
+  rejectedDocuments?: number;
+  employeesMissingBankOrPan?: number;
+};
 type ManagerInbox = {
   pendingLeave?: number;
   pendingRegularization?: number;
@@ -231,10 +249,11 @@ function EssDashboard({ access }: { access: EssOutletAccess }) {
   const slips = useApi<Payslip[]>("/api/payslips");
   const leaves = useApi<Leave[]>("/api/leave-requests");
   const inbox = useApi<ManagerInbox>(access.manager ? "/api/actions/ess/manager/inbox" : "");
+  const kyc = useApi<KycSummary>(access.hr ? "/api/actions/ess/kyc/summary" : "");
 
   const total = people.data?.length ?? 0;
   const active = (people.data ?? []).filter((e) => (e.status || "ACTIVE") === "ACTIVE").length;
-  const pendingKyc = (people.data ?? []).filter((e) => !e.pan || !e.bankAccount).length;
+  const pendingKyc = kyc.data?.pendingDocuments ?? (people.data ?? []).filter((e) => !e.pan || !e.bankAccount).length;
   const publishedSlips = (slips.data ?? []).filter((s) => s.status === "PUBLISHED").length;
   const pendingLeave = (leaves.data ?? []).filter((l) => l.status === "PENDING").length;
 
@@ -254,7 +273,7 @@ function EssDashboard({ access }: { access: EssOutletAccess }) {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total employees" value={String(total)} />
         <StatCard label="Active employees" value={String(active)} />
-        <StatCard label="Pending KYC / bank" value={String(pendingKyc)} />
+        <StatCard label="Pending KYC docs" value={String(pendingKyc)} />
         <StatCard label="Payslips published" value={String(publishedSlips)} />
       </div>
       {(access.manager || pendingLeave > 0) && (
@@ -322,19 +341,126 @@ function EmployeesSection() {
 }
 
 function DocumentsSection({ hr }: { hr: boolean }) {
-  const people = useApi<Employee[]>(hr ? "/api/employees" : "");
   return (
     <>
       <PageHeader
         title="KYC & Bank"
-        subtitle="Bank account, PAN, UAN, ESI, and identity documents for payroll."
+        subtitle={
+          hr
+            ? "Staff upload documents. Review and approve here before payroll."
+            : "Upload identity and bank proofs. HR will verify them."
+        }
       />
-      {hr && (
-        <Card title="Employee verification">
-          <Table
-            empty="No employees yet. Add them under Employees."
-            columns={["Code", "Name", "PAN", "Bank", "UAN", "ESI"]}
-            rows={(people.data ?? []).map((e) => [
+      {hr ? <HrKycInbox /> : <StaffKycUpload />}
+    </>
+  );
+}
+
+function statusBadge(status?: string) {
+  const s = (status || "PENDING").toUpperCase();
+  const cls =
+    s === "APPROVED"
+      ? "bg-emerald-50 text-emerald-800"
+      : s === "REJECTED"
+        ? "bg-red-50 text-red-800"
+        : "bg-amber-50 text-amber-900";
+  return <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${cls}`}>{prettyLabel(s)}</span>;
+}
+
+function HrKycInbox() {
+  const summary = useApi<KycSummary>("/api/actions/ess/kyc/summary");
+  const people = useApi<Employee[]>("/api/employees");
+  const [filter, setFilter] = useState<"PENDING" | "APPROVED" | "REJECTED" | "ALL">("PENDING");
+  const docs = useApi<Doc[]>(`/api/actions/ess/kyc/documents${filter === "ALL" ? "" : `?status=${filter}`}`);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+
+  async function review(id: string, approve: boolean) {
+    setError(null);
+    try {
+      await api(`/api/actions/ess/kyc/documents/${id}/review`, {
+        method: "POST",
+        body: JSON.stringify({ approve, note: notes[id] || "" }),
+      });
+      setNotice(approve ? "Document approved." : "Document rejected.");
+      docs.reload();
+      summary.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <>
+      <ErrorText error={error || docs.error || summary.error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Pending review" value={String(summary.data?.pendingDocuments ?? 0)} />
+        <StatCard label="Approved" value={String(summary.data?.approvedDocuments ?? 0)} />
+        <StatCard label="Rejected" value={String(summary.data?.rejectedDocuments ?? 0)} />
+        <StatCard label="Missing bank/PAN" value={String(summary.data?.employeesMissingBankOrPan ?? 0)} />
+      </div>
+      <Card title="Document review queue">
+        <div className="mb-4 flex flex-wrap gap-2">
+          {(["PENDING", "APPROVED", "REJECTED", "ALL"] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setFilter(f)}
+              className={`rounded-full px-3 py-1.5 text-sm ${filter === f ? "bg-navy text-white" : "bg-mist"}`}
+            >
+              {prettyLabel(f)}
+            </button>
+          ))}
+        </div>
+        <Table
+          empty={filter === "PENDING" ? "No documents waiting for review. Staff upload from My Profile / KYC." : "No documents in this filter."}
+          columns={["Employee", "Type", "File", "Status", "Note", ""]}
+          rows={(docs.data ?? []).map((d) => [
+            <span key={`${d.id}-emp`}>
+              {d.employeeName || "—"}
+              <span className="block text-xs text-slate-500">{d.employeeCode || ""}</span>
+            </span>,
+            prettyLabel(d.docType),
+            d.storageUrl ? (
+              <a key={`${d.id}-link`} href={d.storageUrl} className="text-brand hover:underline" target="_blank" rel="noreferrer">
+                {d.fileName || "Open"}
+              </a>
+            ) : (
+              d.fileName || "—"
+            ),
+            statusBadge(d.status),
+            d.canReview ? (
+              <input
+                key={`${d.id}-note`}
+                className="w-full max-w-[10rem] rounded-lg border border-line px-2 py-1 text-sm"
+                placeholder="Review note"
+                value={notes[d.id] || ""}
+                onChange={(e) => setNotes((prev) => ({ ...prev, [d.id]: e.target.value }))}
+              />
+            ) : (
+              d.reviewNote || "—"
+            ),
+            d.canReview ? (
+              <span key={`${d.id}-act`} className="flex flex-wrap gap-2">
+                <LinkButton onClick={() => void review(d.id, true)}>Approve</LinkButton>
+                <LinkButton onClick={() => void review(d.id, false)}>Reject</LinkButton>
+              </span>
+            ) : (
+              ""
+            ),
+          ])}
+        />
+      </Card>
+      <Card title="Employee bank / PAN snapshot">
+        <Table
+          empty="No employees yet."
+          columns={["Code", "Name", "PAN", "Bank", "UAN", "ESI"]}
+          rows={(people.data ?? [])
+            .slice()
+            .sort((a, b) => (a.employeeCode || "").localeCompare(b.employeeCode || ""))
+            .map((e) => [
               e.employeeCode || "—",
               e.fullName,
               e.pan || "—",
@@ -342,19 +468,21 @@ function DocumentsSection({ hr }: { hr: boolean }) {
               e.uan || "—",
               e.esiNumber || "—",
             ])}
-          />
-          <p className="mt-3 text-xs text-slate-500">Staff update their own bank and KYC under My Profile. HR can review the list above.</p>
-        </Card>
-      )}
-      <ProfileTab hr={hr} />
+        />
+        <p className="mt-3 text-xs text-slate-500">Staff fill bank/PAN on My Profile. Document proofs are reviewed in the queue above.</p>
+      </Card>
     </>
   );
+}
+
+function StaffKycUpload() {
+  return <ProfileTab hr={false} showBank showDocs showResign={false} showOrgChart={false} />;
 }
 
 function HiringSection() {
   return (
     <>
-      <PageHeader title="Offer Letters" subtitle="Vacancies, candidates, offer CTC, and hire into employee master." />
+      <PageHeader title="Hiring" subtitle="Post institute jobs, track applicants, set offer CTC, and hire into employee master." />
       <HiringTab />
     </>
   );
@@ -372,8 +500,19 @@ function PayrollSection({ hr }: { hr: boolean }) {
 function PayslipsSection({ hr }: { hr: boolean }) {
   return (
     <>
-      <PageHeader title="Payslips" subtitle="Generate from payroll cycles, publish, and download salary receipts." />
-      <PayrollTab hr={hr} />
+      <PageHeader
+        title="Payslips"
+        subtitle={hr ? "Published and draft salary slips. Run new cycles under Payroll." : "Your published salary receipts."}
+      />
+      <PayrollTab hr={hr} focus="payslips" />
+      {hr && (
+        <p className="text-sm text-slate-500">
+          Need to create a cycle?{" "}
+          <Link className="font-semibold text-brand hover:underline" to="/ess/payroll">
+            Open Payroll
+          </Link>
+        </p>
+      )}
     </>
   );
 }
@@ -401,14 +540,14 @@ function ExitSection({ hr, manager }: { hr: boolean; manager: boolean }) {
     return (
       <>
         <PageHeader title="Exit Requests" subtitle="Resignations, notice period, and exit decisions." />
-        <TeamTab hr={hr} />
+        <TeamTab hr={hr} focus="exit" />
       </>
     );
   }
   return (
     <>
       <PageHeader title="Exit Requests" subtitle="Submit your resignation to HR." />
-      <ProfileTab hr={false} />
+      <ProfileTab hr={false} showBank={false} showDocs={false} showResign showOrgChart={false} />
     </>
   );
 }
@@ -425,8 +564,8 @@ function CompensationSection() {
 function TeamSection({ hr }: { hr: boolean }) {
   return (
     <>
-      <PageHeader title="Team" subtitle="Approvals inbox, team attendance, and leave calendar." />
-      <TeamTab hr={hr} />
+      <PageHeader title="Team" subtitle="Leave and attendance approvals for your team." />
+      <TeamTab hr={hr} focus="team" />
     </>
   );
 }
@@ -443,16 +582,28 @@ function DevicesSection() {
 function ProfileSection({ hr }: { hr: boolean }) {
   return (
     <>
-      <PageHeader title="My Profile" subtitle="Contact, bank details, documents, and resignation." />
-      <ProfileTab hr={hr} />
+      <PageHeader title="My Profile" subtitle="Contact details, bank/PAN, and document uploads for HR verification." />
+      <ProfileTab hr={hr} showBank showDocs showResign={false} showOrgChart={false} />
     </>
   );
 }
 
-function ProfileTab({ hr }: { hr: boolean }) {
+function ProfileTab({
+  hr,
+  showBank = true,
+  showDocs = true,
+  showResign = false,
+  showOrgChart = false,
+}: {
+  hr: boolean;
+  showBank?: boolean;
+  showDocs?: boolean;
+  showResign?: boolean;
+  showOrgChart?: boolean;
+}) {
   const profile = useApi<Employee>("/api/actions/ess/profile");
-  const orgChart = useApi<Employee[]>(hr ? "/api/actions/ess/org-chart" : "");
-  const docs = useApi<Doc[]>(profile.data?.id ? `/api/employees/${profile.data.id}/documents` : "");
+  const orgChart = useApi<Employee[]>(showOrgChart && hr ? "/api/actions/ess/org-chart" : "");
+  const docs = useApi<Doc[]>(showDocs && profile.data?.id ? `/api/employees/${profile.data.id}/documents` : "");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
@@ -461,7 +612,7 @@ function ProfileTab({ hr }: { hr: boolean }) {
   const [pan, setPan] = useState("");
   const [uan, setUan] = useState("");
   const [esiNumber, setEsiNumber] = useState("");
-  const [docType, setDocType] = useState("ID_PROOF");
+  const [docType, setDocType] = useState("PAN_CARD");
   const [fileName, setFileName] = useState("");
   const [storageUrl, setStorageUrl] = useState("");
   const [resignDate, setResignDate] = useState("");
@@ -502,7 +653,7 @@ function ProfileTab({ hr }: { hr: boolean }) {
       docs.reload();
       setFileName("");
       setStorageUrl("");
-      setNotice("Document added.");
+      setNotice("Document submitted for HR verification.");
     } catch (e) {
       setError((e as Error).message);
     }
@@ -540,10 +691,14 @@ function ProfileTab({ hr }: { hr: boolean }) {
             <FormGrid>
               <Field label="Email" value={email} onChange={setEmail} />
               <PhoneField label="Phone" value={phone} onChange={setPhone} />
-              <Field label="Bank account" value={bankAccount} onChange={setBankAccount} />
-              <Field label="PAN" value={pan} onChange={setPan} />
-              <Field label="UAN" value={uan} onChange={setUan} />
-              <Field label="ESI number" value={esiNumber} onChange={setEsiNumber} />
+              {showBank && (
+                <>
+                  <Field label="Bank account" value={bankAccount} onChange={setBankAccount} />
+                  <Field label="PAN" value={pan} onChange={setPan} />
+                  <Field label="UAN" value={uan} onChange={setUan} />
+                  <Field label="ESI number" value={esiNumber} onChange={setEsiNumber} />
+                </>
+              )}
             </FormGrid>
             <div className="mt-3">
               <PrimaryButton onClick={() => void save()}>Save my details</PrimaryButton>
@@ -553,16 +708,42 @@ function ProfileTab({ hr }: { hr: boolean }) {
           <p className="text-sm text-slate-500">No employee record linked to your login yet. Ask the owner to link you under People → Staff.</p>
         )}
       </Card>
-      {p && (
-        <>
+      {p && showDocs && (
           <Card title="My documents">
+            <p className="mb-3 text-sm text-slate-500">Upload PAN, bank proof, photo, or offer letter. Status stays Pending until HR approves.</p>
             <Table
               empty="No documents uploaded yet."
-              columns={["Type", "Name", "Link"]}
-              rows={(docs.data ?? []).map((d) => [prettyLabel(d.docType), d.fileName || "—", d.storageUrl ? <a key={d.id} href={d.storageUrl} className="text-brand hover:underline" target="_blank" rel="noreferrer">Open</a> : "—"])}
+              columns={["Type", "Name", "Status", "HR note", "Link"]}
+              rows={(docs.data ?? []).map((d) => [
+                prettyLabel(d.docType),
+                d.fileName || "—",
+                statusBadge(d.status),
+                d.reviewNote || "—",
+                d.storageUrl ? (
+                  <a key={d.id} href={d.storageUrl} className="text-brand hover:underline" target="_blank" rel="noreferrer">
+                    Open
+                  </a>
+                ) : (
+                  "—"
+                ),
+              ])}
             />
             <FormGrid>
-              <Field label="Document type" value={docType} onChange={setDocType} placeholder="ID_PROOF / OFFER" />
+              <Select
+                label="Document type"
+                value={docType}
+                onChange={setDocType}
+                allowEmpty={false}
+                options={[
+                  { value: "PAN_CARD", label: "PAN card" },
+                  { value: "BANK_PROOF", label: "Bank proof" },
+                  { value: "PHOTO", label: "Photo" },
+                  { value: "AADHAAR", label: "Aadhaar" },
+                  { value: "OFFER_LETTER", label: "Signed offer letter" },
+                  { value: "EDUCATION", label: "Education certificate" },
+                  { value: "OTHER", label: "Other" },
+                ]}
+              />
               <Field label="File name" value={fileName} onChange={setFileName} />
               <FileUpload
                 label="Upload file"
@@ -575,9 +756,13 @@ function ProfileTab({ hr }: { hr: boolean }) {
               />
             </FormGrid>
             <div className="mt-3">
-              <PrimaryButton disabled={!storageUrl} onClick={() => void addDoc()}>Add document</PrimaryButton>
+              <PrimaryButton disabled={!storageUrl} onClick={() => void addDoc()}>
+                Submit for HR verification
+              </PrimaryButton>
             </div>
           </Card>
+      )}
+      {p && showResign && (
           <Card title="Resignation">
               <p className="mb-3 text-sm text-slate-500">Submit your notice period request to HR.</p>
               <FormGrid>
@@ -590,9 +775,8 @@ function ProfileTab({ hr }: { hr: boolean }) {
                 <PrimaryButton disabled={!resignDate} onClick={() => void submitResignation()}>Submit resignation</PrimaryButton>
               </div>
             </Card>
-        </>
       )}
-      {hr && (
+      {showOrgChart && hr && (
         <Card title="Org chart">
           <Table
             empty="No employees yet."
@@ -611,7 +795,7 @@ function ProfileTab({ hr }: { hr: boolean }) {
   );
 }
 
-function TeamTab({ hr }: { hr: boolean }) {
+function TeamTab({ hr, focus = "team" }: { hr: boolean; focus?: "team" | "exit" }) {
   const inbox = useApi<ManagerInbox>("/api/actions/ess/manager/inbox");
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -720,21 +904,30 @@ function TeamTab({ hr }: { hr: boolean }) {
     setSelectedLeave((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
+  const showTeam = focus === "team";
+  const showExit = focus === "exit";
+
   return (
     <>
       <ErrorText error={error || inbox.error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
-      <div className="grid gap-4 sm:grid-cols-3">
+      {showTeam && (
+      <div className="grid gap-4 sm:grid-cols-2">
         <Card title="Pending leave">
           <p className="text-3xl font-bold text-navy">{box?.pendingLeave ?? 0}</p>
         </Card>
         <Card title="Regularization">
           <p className="text-3xl font-bold text-navy">{box?.pendingRegularization ?? 0}</p>
         </Card>
-        <Card title="Resignations">
+      </div>
+      )}
+      {showExit && (
+        <Card title="Pending resignations">
           <p className="text-3xl font-bold text-navy">{box?.pendingResignation ?? 0}</p>
         </Card>
-      </div>
+      )}
+      {showTeam && (
+      <>
       <Card title="Pending leave">
         <div className="mb-3 flex flex-wrap gap-2">
           <PrimaryButton disabled={!selectedLeave.length} onClick={() => void bulkLeave(true)}>Approve selected</PrimaryButton>
@@ -785,7 +978,9 @@ function TeamTab({ hr }: { hr: boolean }) {
           ])}
         />
       </Card>
-      {(hr || (box?.resignation?.length ?? 0) > 0) && (
+      </>
+      )}
+      {showExit && (
         <Card title="Resignation requests">
           <Table
             empty="No pending resignations."
@@ -807,6 +1002,8 @@ function TeamTab({ hr }: { hr: boolean }) {
           />
         </Card>
       )}
+      {showTeam && (
+      <>
       <Card title={`Team attendance — ${monthLabel}`}>
         <div className="mb-3 flex flex-wrap gap-2">
           <LinkButton onClick={() => shiftMonth(-1)}>Previous</LinkButton>
@@ -846,6 +1043,8 @@ function TeamTab({ hr }: { hr: boolean }) {
             <PrimaryButton onClick={() => void savePolicy()}>Save policy</PrimaryButton>
           </div>
         </Card>
+      )}
+      </>
       )}
     </>
   );
@@ -1554,15 +1753,15 @@ function LeaveTab({ hr, manager }: { hr: boolean; manager: boolean }) {
   );
 }
 
-function PayrollTab({ hr }: { hr: boolean }) {
+function PayrollTab({ hr, focus = "full" }: { hr: boolean; focus?: "full" | "payslips" }) {
   const people = useApi<Employee[]>("/api/employees");
-  const structures = useApi<Structure[]>("/api/salary-structures");
+  const structures = useApi<Structure[]>(focus === "full" ? "/api/salary-structures" : "");
   const slips = useApi<Payslip[]>("/api/payslips");
-  const settings = useApi<PayrollSettings>(hr ? "/api/actions/ess/payroll/settings" : "");
+  const settings = useApi<PayrollSettings>(hr && focus === "full" ? "/api/actions/ess/payroll/settings" : "");
   const now = new Date();
   const [year, setYear] = useState(String(now.getFullYear()));
   const [month, setMonth] = useState(String(now.getMonth() + 1));
-  const statutory = useApi<StatutorySummary>(hr ? `/api/actions/ess/payroll/statutory?year=${year}&month=${month}` : "");
+  const statutory = useApi<StatutorySummary>(hr && focus === "full" ? `/api/actions/ess/payroll/statutory?year=${year}&month=${month}` : "");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [preview, setPreview] = useState<Payslip[] | null>(null);
@@ -1752,12 +1951,13 @@ function PayrollTab({ hr }: { hr: boolean }) {
   }
 
   const stat = statutory.data;
+  const full = focus === "full";
 
   return (
     <>
       <ErrorText error={error || slips.error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
-      {hr && (
+      {hr && full && (
         <Card title="Statutory settings">
           <p className="mb-3 text-sm text-slate-500">Configure PF, ESI, professional tax, TDS, and loss-of-pay rules for payroll runs.</p>
           <FormGrid>
@@ -1782,7 +1982,7 @@ function PayrollTab({ hr }: { hr: boolean }) {
           </div>
         </Card>
       )}
-      {hr && (
+      {hr && full && (
         <Card title="Salary structure">
           <p className="mb-3 text-sm text-slate-500">Basic + HRA + special allowance per employee.</p>
           <Table
@@ -1808,7 +2008,7 @@ function PayrollTab({ hr }: { hr: boolean }) {
           </div>
         </Card>
       )}
-      {hr && stat && (
+      {hr && full && stat && (
         <Card title={`Statutory summary — ${month}/${year}`}>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
             <p><span className="text-slate-500">Employees</span><br /><strong>{stat.employeeCount ?? 0}</strong> ({stat.publishedCount ?? 0} published, {stat.draftCount ?? 0} draft)</p>
@@ -1819,8 +2019,8 @@ function PayrollTab({ hr }: { hr: boolean }) {
           </div>
         </Card>
       )}
-      <Card title="Payslips">
-        {hr && (
+      <Card title={full ? "Payslips" : "Generated slips"}>
+        {hr && full && (
           <>
             <FormGrid>
               <Select
@@ -1849,7 +2049,12 @@ function PayrollTab({ hr }: { hr: boolean }) {
             </div>
           </>
         )}
-        {preview && (
+        {hr && !full && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            <PrimaryButton onClick={() => void publishAll()}>Publish all drafts</PrimaryButton>
+          </div>
+        )}
+        {preview && full && (
           <Table
             empty="Nothing to preview."
             columns={["Employee", "Gross", "LOP", "PF", "ESI", "PT", "Net", "Note"]}
@@ -1868,7 +2073,9 @@ function PayrollTab({ hr }: { hr: boolean }) {
         <Table
           empty="No payslips yet."
           columns={["Employee", "Period", "Gross", "LOP", "Deductions", "Net", "Status", ""]}
-          rows={(slips.data ?? []).map((p) => [
+          rows={(slips.data ?? [])
+            .filter((p) => hr || p.status === "PUBLISHED")
+            .map((p) => [
             p.employeeName || "—",
             `${p.month}/${p.year}`,
             formatInr(p.gross),

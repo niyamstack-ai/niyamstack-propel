@@ -486,10 +486,18 @@ public class SchemaPatch {
                     doc_type VARCHAR(80),
                     file_name VARCHAR(255),
                     storage_url VARCHAR(1000),
+                    status VARCHAR(40) DEFAULT 'PENDING',
+                    review_note VARCHAR(1000),
+                    reviewed_by UUID,
+                    reviewed_at TIMESTAMP WITH TIME ZONE,
                     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     updated_at TIMESTAMP WITH TIME ZONE NOT NULL
                 )
                 """,
+                "ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS status VARCHAR(40) DEFAULT 'PENDING'",
+                "ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS review_note VARCHAR(1000)",
+                "ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS reviewed_by UUID",
+                "ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP WITH TIME ZONE",
                 """
                 CREATE TABLE IF NOT EXISTS leave_policies (
                     id UUID PRIMARY KEY,

@@ -459,9 +459,55 @@ public class EssService {
         requireEss();
         Employee e = store.getOwned(Employee.class, employeeId, orgId());
         requireProfileAccess(e);
+        List<Employee> staff = store.list(Employee.class, orgId());
         return store.listBy(EmployeeDocument.class, orgId(), "employeeId", e.getId()).stream()
-                .map(this::docView)
+                .map(d -> docView(d, staff))
                 .toList();
+    }
+
+    /** HR inbox: all staff documents, optionally filtered by status (PENDING / APPROVED / REJECTED). */
+    public List<Map<String, Object>> kycDocuments(String statusFilter) {
+        requireEss();
+        requireHrAdmin();
+        List<Employee> staff = store.list(Employee.class, orgId());
+        String want = statusFilter == null || statusFilter.isBlank() ? "" : statusFilter.trim().toUpperCase();
+        return store.list(EmployeeDocument.class, orgId()).stream()
+                .filter(d -> want.isBlank() || want.equalsIgnoreCase(blank(d.getStatus(), "PENDING")))
+                .sorted((a, b) -> {
+                    Instant ca = a.getCreatedAt();
+                    Instant cb = b.getCreatedAt();
+                    if (ca == null && cb == null) return 0;
+                    if (ca == null) return 1;
+                    if (cb == null) return -1;
+                    return cb.compareTo(ca);
+                })
+                .map(d -> docView(d, staff))
+                .toList();
+    }
+
+    public Map<String, Object> kycSummary() {
+        requireEss();
+        requireHrAdmin();
+        List<EmployeeDocument> docs = store.list(EmployeeDocument.class, orgId());
+        long pending = docs.stream().filter(d -> "PENDING".equalsIgnoreCase(blank(d.getStatus(), "PENDING"))).count();
+        long approved = docs.stream().filter(d -> "APPROVED".equalsIgnoreCase(d.getStatus())).count();
+        long rejected = docs.stream().filter(d -> "REJECTED".equalsIgnoreCase(d.getStatus())).count();
+        List<Employee> staff = store.list(Employee.class, orgId());
+        long missingBank = staff.stream()
+                .filter(e -> "ACTIVE".equalsIgnoreCase(blank(e.getStatus(), "ACTIVE")))
+                .filter(e -> {
+                    Map<String, Object> hr = parseCustom(e.getCustomJson());
+                    String pan = String.valueOf(hr.getOrDefault("pan", "")).trim();
+                    String bank = String.valueOf(hr.getOrDefault("bankAccount", "")).trim();
+                    return pan.isEmpty() || bank.isEmpty();
+                })
+                .count();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("pendingDocuments", pending);
+        out.put("approvedDocuments", approved);
+        out.put("rejectedDocuments", rejected);
+        out.put("employeesMissingBankOrPan", missingBank);
+        return out;
     }
 
     @Transactional
@@ -484,7 +530,33 @@ public class EssService {
         doc.setDocType(blank(str(body, "docType"), "OTHER"));
         doc.setFileName(blank(str(body, "fileName"), "Document"));
         doc.setStorageUrl(url);
-        return docView(store.save(doc));
+        // Staff uploads wait for HR; HR uploads can mark approved immediately.
+        if (hrAdmin() && "APPROVED".equalsIgnoreCase(str(body, "status"))) {
+            doc.setStatus("APPROVED");
+            doc.setReviewedBy(Auth.current().userId());
+            doc.setReviewedAt(Instant.now());
+            doc.setReviewNote(blank(str(body, "reviewNote"), "Uploaded by HR"));
+        } else {
+            doc.setStatus("PENDING");
+        }
+        return docView(store.save(doc), store.list(Employee.class, orgId()));
+    }
+
+    @Transactional
+    public Map<String, Object> reviewEmployeeDocument(UUID id, Map<String, Object> body) {
+        requireEss();
+        requireHrAdmin();
+        EmployeeDocument doc = store.getOwned(EmployeeDocument.class, id, orgId());
+        boolean approve = bool(body, "approve") || "APPROVED".equalsIgnoreCase(str(body, "status"));
+        boolean reject = !approve && (bool(body, "reject") || "REJECTED".equalsIgnoreCase(str(body, "status")));
+        if (!approve && !reject) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Set approve=true or reject=true");
+        }
+        doc.setStatus(approve ? "APPROVED" : "REJECTED");
+        doc.setReviewNote(str(body, "note").isBlank() ? str(body, "reviewNote") : str(body, "note"));
+        doc.setReviewedBy(Auth.current().userId());
+        doc.setReviewedAt(Instant.now());
+        return docView(store.save(doc), store.list(Employee.class, orgId()));
     }
 
     @Transactional
@@ -496,6 +568,9 @@ public class EssService {
             Employee me = selfEmployee(true);
             if (!me.getId().equals(e.getId())) {
                 throw new ApiException(HttpStatus.FORBIDDEN, "You can only delete your own documents");
+            }
+            if ("APPROVED".equalsIgnoreCase(doc.getStatus())) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Approved documents can only be removed by HR");
             }
         }
         store.deleteOwned(EmployeeDocument.class, id, orgId());
@@ -1607,13 +1682,25 @@ public class EssService {
         return row;
     }
 
-    private Map<String, Object> docView(EmployeeDocument d) {
+    private Map<String, Object> docView(EmployeeDocument d, List<Employee> staff) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", d.getId());
         row.put("employeeId", d.getEmployeeId());
+        Employee emp = staff == null ? null : staff.stream()
+                .filter(e -> e.getId().equals(d.getEmployeeId()))
+                .findFirst()
+                .orElse(null);
+        row.put("employeeName", emp == null ? "" : emp.getFullName());
+        row.put("employeeCode", emp == null ? "" : blank(emp.getEmployeeCode(), ""));
         row.put("docType", d.getDocType());
         row.put("fileName", d.getFileName());
         row.put("storageUrl", d.getStorageUrl());
+        row.put("status", blank(d.getStatus(), "PENDING"));
+        row.put("reviewNote", blank(d.getReviewNote(), ""));
+        row.put("reviewedBy", d.getReviewedBy());
+        row.put("reviewedAt", d.getReviewedAt());
+        row.put("createdAt", d.getCreatedAt());
+        row.put("canReview", hrAdmin() && "PENDING".equalsIgnoreCase(blank(d.getStatus(), "PENDING")));
         return row;
     }
 

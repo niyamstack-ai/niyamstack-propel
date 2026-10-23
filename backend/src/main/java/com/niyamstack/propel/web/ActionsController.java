@@ -606,6 +606,21 @@ public class ActionsController {
         return ess.cancelRegularization(id);
     }
 
+    @GetMapping("/ess/kyc/documents")
+    public List<Map<String, Object>> kycDocuments(@RequestParam(required = false) String status) {
+        return ess.kycDocuments(status);
+    }
+
+    @GetMapping("/ess/kyc/summary")
+    public Map<String, Object> kycSummary() {
+        return ess.kycSummary();
+    }
+
+    @PostMapping("/ess/kyc/documents/{id}/review")
+    public Map<String, Object> reviewKycDocument(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return ess.reviewEmployeeDocument(id, body == null ? Map.of() : body);
+    }
+
     @PostMapping("/ess/resignation")
     public Map<String, Object> applyResignation(@RequestBody Map<String, Object> body) {
         return ess.applyResignation(body);

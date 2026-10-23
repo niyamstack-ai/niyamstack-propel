@@ -1309,6 +1309,11 @@ public final class Model {
         private String docType;
         private String fileName;
         private String storageUrl;
+        private String status = "PENDING";
+        @Column(length = 1000)
+        private String reviewNote;
+        private UUID reviewedBy;
+        private Instant reviewedAt;
     }
 
     @Entity(name = "LeavePolicy") @Table(name = "leave_policies") @Getter @Setter
