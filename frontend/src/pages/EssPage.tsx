@@ -394,6 +394,8 @@ function HrKycInbox() {
   const [pan, setPan] = useState("");
   const [uan, setUan] = useState("");
   const [esiNumber, setEsiNumber] = useState("");
+  const [verifySearch, setVerifySearch] = useState("");
+  const [verifyFilter, setVerifyFilter] = useState<"ALL" | "MISSING" | "VERIFIED">("ALL");
 
   const sortedPeople = useMemo(
     () => (people.data ?? []).slice().sort((a, b) => (a.employeeCode || "").localeCompare(b.employeeCode || "")),
@@ -411,11 +413,21 @@ function HrKycInbox() {
     return map;
   }, [allDocs.data]);
 
-  function hasApprovedDoc(employeeId: string, types: string[]) {
+  function approvedDoc(employeeId: string, types: string[]) {
     const want = new Set(types.map((t) => t.toUpperCase()));
-    return (docsByEmployee.get(employeeId) ?? []).some(
-      (d) => (d.status || "").toUpperCase() === "APPROVED" && want.has((d.docType || "").toUpperCase()),
+    return (
+      (docsByEmployee.get(employeeId) ?? []).find(
+        (d) => (d.status || "").toUpperCase() === "APPROVED" && want.has((d.docType || "").toUpperCase()) && !!d.storageUrl,
+      ) ||
+      (docsByEmployee.get(employeeId) ?? []).find(
+        (d) => (d.status || "").toUpperCase() === "APPROVED" && want.has((d.docType || "").toUpperCase()),
+      ) ||
+      null
     );
+  }
+
+  function hasApprovedDoc(employeeId: string, types: string[]) {
+    return !!approvedDoc(employeeId, types);
   }
 
   function pendingDocCount(employeeId: string) {
@@ -429,6 +441,35 @@ function HrKycInbox() {
   function bankVerified(e: Employee) {
     return !!e.bankAccount?.trim() || hasApprovedDoc(e.id, ["BANK_PROOF", "BANK"]);
   }
+
+  function verifyCell(ok: boolean, labelWhenOk: string, doc: Doc | null, key: string) {
+    if (!ok) return fieldBadge(false, "Verified", "Missing");
+    return (
+      <span key={key} className="inline-flex flex-wrap items-center gap-2">
+        {fieldBadge(true, labelWhenOk, "Missing")}
+        {doc?.storageUrl ? (
+          <a href={doc.storageUrl} className="text-sm font-semibold text-brand hover:underline" target="_blank" rel="noreferrer">
+            View
+          </a>
+        ) : null}
+      </span>
+    );
+  }
+
+  const filteredPeople = useMemo(() => {
+    const q = verifySearch.trim().toLowerCase();
+    return sortedPeople.filter((e) => {
+      if (q) {
+        const hay = `${e.employeeCode || ""} ${e.fullName || ""} ${e.email || ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      const panOk = panVerified(e);
+      const bankOk = bankVerified(e);
+      if (verifyFilter === "MISSING" && panOk && bankOk) return false;
+      if (verifyFilter === "VERIFIED" && (!panOk || !bankOk)) return false;
+      return true;
+    });
+  }, [sortedPeople, verifySearch, verifyFilter, docsByEmployee, people.data]);
 
   const missingBankPan = sortedPeople.filter((e) => !panVerified(e) || !bankVerified(e)).length;
 
@@ -629,13 +670,40 @@ function HrKycInbox() {
       </Card>
 
       <Card title="Employee verification">
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <div className="min-w-[14rem] flex-1">
+            <Field
+              label="Search employee"
+              value={verifySearch}
+              onChange={setVerifySearch}
+              placeholder="Name, code, or email — e.g. Meera"
+            />
+          </div>
+          <div className="flex flex-wrap gap-2 pb-1">
+            {(["ALL", "MISSING", "VERIFIED"] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setVerifyFilter(f)}
+                className={`rounded-full px-3 py-1.5 text-sm ${verifyFilter === f ? "bg-navy text-white" : "bg-mist"}`}
+              >
+                {f === "ALL" ? "All" : f === "MISSING" ? "Missing KYC" : "Fully verified"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="mb-3 text-xs text-slate-500">
+          Showing {filteredPeople.length} of {sortedPeople.length} employees. When Verified, use <strong>View</strong> next to the badge to open that document.
+        </p>
         <Table
-          empty="No employees yet. Add them under Employees."
+          empty={sortedPeople.length ? "No employees match this search / filter." : "No employees yet. Add them under Employees."}
           columns={["Code", "Name", "PAN", "Bank", "Pending docs", ""]}
-          rows={sortedPeople.map((e) => {
+          rows={filteredPeople.map((e) => {
             const pending = pendingDocCount(e.id);
             const panOk = panVerified(e);
             const bankOk = bankVerified(e);
+            const panDoc = approvedDoc(e.id, ["PAN_CARD", "PAN"]);
+            const bankDoc = approvedDoc(e.id, ["BANK_PROOF", "BANK"]);
             if (editId === e.id) {
               return [
                 e.employeeCode || "—",
@@ -652,8 +720,8 @@ function HrKycInbox() {
             return [
               e.employeeCode || "—",
               e.fullName,
-              fieldBadge(panOk, e.pan?.trim() || "Verified", "Missing"),
-              fieldBadge(bankOk, e.bankAccount?.trim() ? "Verified" : "Verified", "Missing"),
+              verifyCell(panOk, e.pan?.trim() || "Verified", panDoc, `${e.id}-pan`),
+              verifyCell(bankOk, e.bankAccount?.trim() ? "Verified" : "Verified", bankDoc, `${e.id}-bank`),
               pending > 0 ? (
                 <span key={`${e.id}-pend`} className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-900">
                   {pending} pending
@@ -682,7 +750,7 @@ function HrKycInbox() {
           </FormGrid>
         )}
         <p className="mt-3 text-sm text-slate-500">
-          Green = profile field filled <em>or</em> an approved document (PAN card / bank proof). Amber = still missing. Pending docs = awaiting HR review.
+          Search by name/code, then open the file with <strong>View</strong> beside Verified — no need to dig the Approved queue for 1 lakh people.
         </p>
       </Card>
     </>
