@@ -1052,19 +1052,48 @@ public class EssService {
         return out;
     }
 
-    /** Create / generate a monthly payroll cycle (run payroll for active staff with salary structures). */
+    /** Create / generate a monthly payroll cycle for active employees (seeds CTC from offer if needed). */
     @Transactional
     public Map<String, Object> createPayrollCycle(Map<String, Object> body) {
         requireEss();
         requirePayrollAdmin();
         int year = integer(body, "year", LocalDate.now().getYear());
         int month = integer(body, "month", LocalDate.now().getMonthValue());
+        List<Employee> staff = activeEmployees();
+        int already = 0;
+        int missingCtc = 0;
+        for (Employee e : staff) {
+            if (payslipExists(e.getId(), year, month)) {
+                already++;
+                continue;
+            }
+            if (ensureSalaryStructure(e) == null) {
+                missingCtc++;
+            }
+        }
         List<Map<String, Object>> created = runPayroll(Map.of("year", year, "month", month));
         Map<String, Object> out = payrollCycle(year, month);
         out.put("createdCount", created.size());
-        out.put("notice", created.isEmpty()
-                ? "Cycle already has slips, or no active employees with salary structures."
-                : "Cycle created with " + created.size() + " eligible employee(s).");
+        out.put("alreadyCount", already);
+        out.put("missingCtcCount", missingCtc);
+        out.put("activeEmployees", staff.size());
+        String notice;
+        if (!created.isEmpty()) {
+            notice = "Cycle created with " + created.size() + " eligible employee(s).";
+            if (missingCtc > 0) {
+                notice += " Skipped " + missingCtc + " without CTC (add salary structure or hire from an offer).";
+            }
+        } else if (already > 0) {
+            notice = "This cycle already has " + already + " slip(s). Open Manage items to review.";
+        } else if (staff.isEmpty()) {
+            notice = "No active employees yet. Add employees first, then create a cycle.";
+        } else if (missingCtc > 0) {
+            notice = "No slips created — " + missingCtc
+                    + " active employee(s) have no CTC. Open Salary structures & statutory setup, or hire from an Offer Letter with CTC.";
+        } else {
+            notice = "No slips created for this period.";
+        }
+        out.put("notice", notice);
         return out;
     }
 
@@ -1344,7 +1373,7 @@ public class EssService {
             if (payslipExists(e.getId(), year, month)) {
                 continue;
             }
-            SalaryStructure s = salaryStructure(e);
+            SalaryStructure s = ensureSalaryStructure(e);
             if (s == null) {
                 continue;
             }
@@ -1505,8 +1534,20 @@ public class EssService {
         if (!"SENT_FOR_SIGNATURE".equalsIgnoreCase(blank(c.getOfferLetterStatus(), ""))) {
             c.setOfferLetterStatus("PUBLISHED");
         }
-        c.setHiredEmployeeId(UUID.fromString(employee.get("id").toString()));
+        UUID hiredId = UUID.fromString(employee.get("id").toString());
+        c.setHiredEmployeeId(hiredId);
         store.save(c);
+        Employee hired = store.getOwned(Employee.class, hiredId, orgId());
+        if (salaryStructure(hired) == null && c.getOfferCtc() != null && c.getOfferCtc().signum() > 0) {
+            SalaryStructure s = new SalaryStructure();
+            s.setOrganizationId(orgId());
+            s.setEmployeeId(hiredId);
+            s.setBasic(c.getOfferCtc());
+            s.setHra(BigDecimal.ZERO);
+            s.setSpecial(BigDecimal.ZERO);
+            s.setEffectiveFrom(c.getOfferJoiningDate() == null ? LocalDate.now() : c.getOfferJoiningDate());
+            store.save(s);
+        }
         if (job.getOpenings() != null && job.getOpenings() > 0) {
             job.setOpenings(Math.max(0, job.getOpenings() - 1));
             if (job.getOpenings() == 0) {
@@ -2656,6 +2697,36 @@ public class EssService {
 
     private SalaryStructure salaryStructure(Employee e) {
         return store.listBy(SalaryStructure.class, orgId(), "employeeId", e.getId()).stream()
+                .findFirst()
+                .orElse(null);
+    }
+
+    /** Prefer saved structure; otherwise seed Basic CTC from the hire offer letter. */
+    private SalaryStructure ensureSalaryStructure(Employee e) {
+        SalaryStructure existing = salaryStructure(e);
+        if (existing != null) {
+            return existing;
+        }
+        BigDecimal ctc = offerCtcForEmployee(e.getId());
+        if (ctc == null || ctc.signum() <= 0) {
+            return null;
+        }
+        SalaryStructure s = new SalaryStructure();
+        s.setOrganizationId(orgId());
+        s.setEmployeeId(e.getId());
+        s.setBasic(ctc);
+        s.setHra(BigDecimal.ZERO);
+        s.setSpecial(BigDecimal.ZERO);
+        s.setEffectiveFrom(e.getJoiningDate() == null ? LocalDate.now() : e.getJoiningDate());
+        return store.save(s);
+    }
+
+    private BigDecimal offerCtcForEmployee(UUID employeeId) {
+        return store.list(StaffCandidate.class, orgId()).stream()
+                .filter(c -> employeeId.equals(c.getHiredEmployeeId()))
+                .map(StaffCandidate::getOfferCtc)
+                .filter(Objects::nonNull)
+                .filter(v -> v.signum() > 0)
                 .findFirst()
                 .orElse(null);
     }

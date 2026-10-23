@@ -863,7 +863,10 @@ function PayrollSection({ hr }: { hr: boolean }) {
         action={<LinkButton onClick={() => setShowSetup((v) => !v)}>{showSetup ? "Hide" : "Show"}</LinkButton>}
       >
         {!showSetup ? (
-          <p className="text-sm text-slate-500">PF, ESI, PT, TDS and per-employee CTC structure used when a cycle is generated.</p>
+          <p className="text-sm text-slate-500">
+            Each employee needs a CTC (Basic / HRA / Special) before a cycle can generate slips — or hire them from an Offer Letter with CTC and it seeds automatically.{" "}
+            <LinkButton onClick={() => setShowSetup(true)}>Add structures</LinkButton>
+          </p>
         ) : (
           <PayrollTab hr={hr} focus="full" />
         )}
@@ -1120,14 +1123,24 @@ function PayrollCyclesTab() {
     setError(null);
     setNotice(null);
     try {
-      const out = await api<PayrollCycle>("/api/actions/ess/payroll/cycles", {
-        method: "POST",
-        body: JSON.stringify({ year: Number(year), month: Number(month) }),
-      });
+      const out = await api<PayrollCycle & { createdCount?: number; missingCtcCount?: number; alreadyCount?: number }>(
+        "/api/actions/ess/payroll/cycles",
+        {
+          method: "POST",
+          body: JSON.stringify({ year: Number(year), month: Number(month) }),
+        },
+      );
       cycles.reload();
-      setManageYear(Number(year));
-      setManageMonth(Number(month));
-      detail.reload();
+      const created = out.createdCount ?? 0;
+      const already = out.alreadyCount ?? 0;
+      if (created > 0 || already > 0) {
+        setManageYear(Number(year));
+        setManageMonth(Number(month));
+        detail.reload();
+      } else {
+        setManageYear(null);
+        setManageMonth(null);
+      }
       setNotice(out.notice || "Cycle ready.");
     } catch (e) {
       setError((e as Error).message);
@@ -1166,7 +1179,11 @@ function PayrollCyclesTab() {
   return (
     <>
       <ErrorText error={error || cycles.error || detail.error} />
-      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      {notice && (
+        <p className={`text-sm ${notice.toLowerCase().includes("no slips") || notice.toLowerCase().includes("no ctc") || notice.toLowerCase().includes("no active") ? "text-amber-800" : "text-emerald-700"}`}>
+          {notice}
+        </p>
+      )}
       <Card
         title="Monthly cycle"
         action={
@@ -1196,7 +1213,7 @@ function PayrollCyclesTab() {
         }
       >
         <p className="mb-3 text-sm text-slate-500">
-          Create one cycle per month for employees with a salary structure, review net payable (CTC-based), then publish payslips.
+          Create one cycle per month. Eligible employees need a salary structure, or an offer letter CTC after hire (auto-seeded). Then review net payable and publish.
         </p>
         <Table
           empty="No cycles yet. Pick year/month and click + New Cycle."
