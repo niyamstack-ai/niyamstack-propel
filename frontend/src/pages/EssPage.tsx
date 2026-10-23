@@ -367,14 +367,50 @@ function statusBadge(status?: string) {
   return <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${cls}`}>{prettyLabel(s)}</span>;
 }
 
+function fieldBadge(ok: boolean, okLabel: string, badLabel: string) {
+  return (
+    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${ok ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
+      {ok ? okLabel : badLabel}
+    </span>
+  );
+}
+
 function HrKycInbox() {
   const summary = useApi<KycSummary>("/api/actions/ess/kyc/summary");
   const people = useApi<Employee[]>("/api/employees");
+  const allDocs = useApi<Doc[]>("/api/actions/ess/kyc/documents");
   const [filter, setFilter] = useState<"PENDING" | "APPROVED" | "REJECTED" | "ALL">("PENDING");
   const docs = useApi<Doc[]>(`/api/actions/ess/kyc/documents${filter === "ALL" ? "" : `?status=${filter}`}`);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [uploadEmployeeId, setUploadEmployeeId] = useState("");
+  const [docType, setDocType] = useState("PAN_CARD");
+  const [fileName, setFileName] = useState("");
+  const [storageUrl, setStorageUrl] = useState("");
+  const [markApproved, setMarkApproved] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [bankAccount, setBankAccount] = useState("");
+  const [pan, setPan] = useState("");
+  const [uan, setUan] = useState("");
+  const [esiNumber, setEsiNumber] = useState("");
+
+  const sortedPeople = useMemo(
+    () => (people.data ?? []).slice().sort((a, b) => (a.employeeCode || "").localeCompare(b.employeeCode || "")),
+    [people.data],
+  );
+
+  const pendingByEmployee = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const d of allDocs.data ?? []) {
+      if ((d.status || "PENDING").toUpperCase() !== "PENDING") continue;
+      if (!d.employeeId) continue;
+      map.set(d.employeeId, (map.get(d.employeeId) || 0) + 1);
+    }
+    return map;
+  }, [allDocs.data]);
+
+  const missingBankPan = sortedPeople.filter((e) => !e.pan?.trim() || !e.bankAccount?.trim()).length;
 
   async function review(id: string, approve: boolean) {
     setError(null);
@@ -385,22 +421,136 @@ function HrKycInbox() {
       });
       setNotice(approve ? "Document approved." : "Document rejected.");
       docs.reload();
+      allDocs.reload();
       summary.reload();
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
+  async function uploadForEmployee() {
+    setError(null);
+    try {
+      await createRecord("/api/employee-documents", {
+        employeeId: uploadEmployeeId,
+        docType,
+        fileName: fileName || "Document",
+        storageUrl,
+        status: markApproved ? "APPROVED" : "PENDING",
+        reviewNote: markApproved ? "Uploaded and verified by HR" : "",
+      });
+      setNotice(markApproved ? "Document uploaded and approved." : "Document uploaded — waiting in review queue.");
+      setFileName("");
+      setStorageUrl("");
+      docs.reload();
+      allDocs.reload();
+      summary.reload();
+      setFilter(markApproved ? "APPROVED" : "PENDING");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function startEdit(e: Employee) {
+    setEditId(e.id);
+    setBankAccount(e.bankAccount || "");
+    setPan(e.pan || "");
+    setUan(e.uan || "");
+    setEsiNumber(e.esiNumber || "");
+    setUploadEmployeeId(e.id);
+  }
+
+  async function saveBank(e: Employee) {
+    setError(null);
+    try {
+      await api(`/api/employees/${e.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          fullName: e.fullName,
+          email: e.email,
+          phone: e.phone,
+          department: e.department,
+          designation: e.designation,
+          joiningDate: e.joiningDate,
+          centerId: e.centerId,
+          managerId: e.managerId,
+          employmentType: e.employmentType,
+          status: e.status,
+          bankAccount,
+          pan,
+          uan,
+          esiNumber,
+        }),
+      });
+      setNotice(`Bank / PAN saved for ${e.fullName}.`);
+      setEditId(null);
+      people.reload();
+      summary.reload();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
   return (
     <>
-      <ErrorText error={error || docs.error || summary.error} />
+      <ErrorText error={error || docs.error || summary.error || people.error} />
       {notice && <p className="text-sm text-emerald-700">{notice}</p>}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Pending review" value={String(summary.data?.pendingDocuments ?? 0)} />
         <StatCard label="Approved" value={String(summary.data?.approvedDocuments ?? 0)} />
         <StatCard label="Rejected" value={String(summary.data?.rejectedDocuments ?? 0)} />
-        <StatCard label="Missing bank/PAN" value={String(summary.data?.employeesMissingBankOrPan ?? 0)} />
+        <StatCard label="Missing bank/PAN" value={String(summary.data?.employeesMissingBankOrPan ?? missingBankPan)} />
       </div>
+
+      <Card title="Upload document for employee">
+        <p className="mb-3 text-sm text-slate-500">HR can upload on behalf of staff (PAN, bank proof, photo, offer). Staff can also upload from My Profile.</p>
+        <FormGrid>
+          <Select
+            label="Employee"
+            value={uploadEmployeeId}
+            onChange={setUploadEmployeeId}
+            options={sortedPeople.map((e) => ({
+              value: e.id,
+              label: `${e.employeeCode || "—"} · ${e.fullName}`,
+            }))}
+          />
+          <Select
+            label="Document type"
+            value={docType}
+            onChange={setDocType}
+            allowEmpty={false}
+            options={[
+              { value: "PAN_CARD", label: "PAN card" },
+              { value: "BANK_PROOF", label: "Bank proof" },
+              { value: "PHOTO", label: "Photo" },
+              { value: "AADHAAR", label: "Aadhaar" },
+              { value: "OFFER_LETTER", label: "Signed offer letter" },
+              { value: "EDUCATION", label: "Education certificate" },
+              { value: "OTHER", label: "Other" },
+            ]}
+          />
+          <Field label="File name" value={fileName} onChange={setFileName} />
+          <FileUpload
+            label="Choose file"
+            value={storageUrl}
+            accept="image/*,.pdf"
+            onChange={(v) => {
+              setStorageUrl(v);
+              if (v && !fileName) setFileName(v.split("/").pop() || "");
+            }}
+          />
+        </FormGrid>
+        <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={markApproved} onChange={(ev) => setMarkApproved(ev.target.checked)} />
+          Mark as approved now (HR verified against original)
+        </label>
+        <div className="mt-3">
+          <PrimaryButton disabled={!uploadEmployeeId || !storageUrl} onClick={() => void uploadForEmployee()}>
+            Upload
+          </PrimaryButton>
+        </div>
+      </Card>
+
       <Card title="Document review queue">
         <div className="mb-4 flex flex-wrap gap-2">
           {(["PENDING", "APPROVED", "REJECTED", "ALL"] as const).map((f) => (
@@ -415,7 +565,11 @@ function HrKycInbox() {
           ))}
         </div>
         <Table
-          empty={filter === "PENDING" ? "No documents waiting for review. Staff upload from My Profile / KYC." : "No documents in this filter."}
+          empty={
+            filter === "PENDING"
+              ? "No pending documents. Upload above, or ask staff to submit from My Profile."
+              : "No documents in this filter."
+          }
           columns={["Employee", "Type", "File", "Status", "Note", ""]}
           rows={(docs.data ?? []).map((d) => [
             <span key={`${d.id}-emp`}>
@@ -425,7 +579,7 @@ function HrKycInbox() {
             prettyLabel(d.docType),
             d.storageUrl ? (
               <a key={`${d.id}-link`} href={d.storageUrl} className="text-brand hover:underline" target="_blank" rel="noreferrer">
-                {d.fileName || "Open"}
+                {d.fileName || "View"}
               </a>
             ) : (
               d.fileName || "—"
@@ -453,23 +607,55 @@ function HrKycInbox() {
           ])}
         />
       </Card>
-      <Card title="Employee bank / PAN snapshot">
+
+      <Card title="Employee verification">
         <Table
-          empty="No employees yet."
-          columns={["Code", "Name", "PAN", "Bank", "UAN", "ESI"]}
-          rows={(people.data ?? [])
-            .slice()
-            .sort((a, b) => (a.employeeCode || "").localeCompare(b.employeeCode || ""))
-            .map((e) => [
+          empty="No employees yet. Add them under Employees."
+          columns={["Code", "Name", "PAN", "Bank", "Pending docs", ""]}
+          rows={sortedPeople.map((e) => {
+            const pending = pendingByEmployee.get(e.id) || 0;
+            if (editId === e.id) {
+              return [
+                e.employeeCode || "—",
+                e.fullName,
+                <Field key={`${e.id}-pan`} label="" value={pan} onChange={setPan} placeholder="PAN" />,
+                <Field key={`${e.id}-bank`} label="" value={bankAccount} onChange={setBankAccount} placeholder="Bank account" />,
+                pending ? statusBadge("PENDING") : fieldBadge(true, "None", "None"),
+                <span key={`${e.id}-save`} className="flex flex-wrap gap-2">
+                  <LinkButton onClick={() => void saveBank(e)}>Save</LinkButton>
+                  <LinkButton onClick={() => setEditId(null)}>Cancel</LinkButton>
+                </span>,
+              ];
+            }
+            return [
               e.employeeCode || "—",
               e.fullName,
-              e.pan || "—",
-              e.bankAccount || "—",
-              e.uan || "—",
-              e.esiNumber || "—",
-            ])}
+              fieldBadge(!!e.pan?.trim(), e.pan || "Verified", "Missing"),
+              fieldBadge(!!e.bankAccount?.trim(), "Verified", "Missing"),
+              pending > 0 ? statusBadge("PENDING") : fieldBadge(true, "Clear", "Clear"),
+              <span key={`${e.id}-act`} className="flex flex-wrap gap-2">
+                <LinkButton onClick={() => startEdit(e)}>Edit bank</LinkButton>
+                <LinkButton
+                  onClick={() => {
+                    setUploadEmployeeId(e.id);
+                    setDocType("BANK_PROOF");
+                  }}
+                >
+                  Upload
+                </LinkButton>
+              </span>,
+            ];
+          })}
         />
-        <p className="mt-3 text-xs text-slate-500">Staff fill bank/PAN on My Profile. Document proofs are reviewed in the queue above.</p>
+        {editId && (
+          <FormGrid>
+            <Field label="UAN" value={uan} onChange={setUan} />
+            <Field label="ESI number" value={esiNumber} onChange={setEsiNumber} />
+          </FormGrid>
+        )}
+        <p className="mt-3 text-sm text-slate-500">
+          Green = filled. Amber = missing. Use <strong>Edit bank</strong> or <strong>Upload</strong> so HR does not depend on staff alone.
+        </p>
       </Card>
     </>
   );
