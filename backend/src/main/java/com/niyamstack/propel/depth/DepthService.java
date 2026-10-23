@@ -550,6 +550,8 @@ public class DepthService {
         en.put("dashboard", "Dashboard");
         en.put("grow", "Grow");
         en.put("website", "Website");
+        en.put("site_builder", "Site builder");
+        en.put("mobile", "Mobile");
         en.put("your_app", "Mobile site");
         en.put("mobile_apps", "Mobile site");
         en.put("landing_pages", "Landing Pages");
@@ -567,6 +569,7 @@ public class DepthService {
         en.put("admissions", "Admissions");
         en.put("money", "Money");
         en.put("fees", "Fees");
+        en.put("reports", "Reports");
         en.put("analytics", "Analytics");
         en.put("intelligence", "Intelligence");
         en.put("enterprise", "Enterprise");
@@ -575,6 +578,7 @@ public class DepthService {
         en.put("placements", "Placements");
         en.put("placement", "Placement");
         en.put("readiness", "Readiness");
+        en.put("messages", "Messages");
         en.put("communicate", "Communicate");
         en.put("notices", "Notices");
         en.put("chats", "Chats");
@@ -615,6 +619,8 @@ public class DepthService {
         hi.put("dashboard", "डैशबोर्ड");
         hi.put("grow", "विकास");
         hi.put("website", "वेबसाइट");
+        hi.put("site_builder", "साइट बिल्डर");
+        hi.put("mobile", "मोबाइल");
         hi.put("your_app", "मोबाइल साइट");
         hi.put("mobile_apps", "मोबाइल साइट");
         hi.put("landing_pages", "लैंडिंग पेज");
@@ -632,6 +638,7 @@ public class DepthService {
         hi.put("admissions", "प्रवेश");
         hi.put("money", "पैसे");
         hi.put("fees", "फीस");
+        hi.put("reports", "रिपोर्ट्स");
         hi.put("analytics", "एनालिटिक्स");
         hi.put("intelligence", "इंटेलिजेंस");
         hi.put("enterprise", "एंटरप्राइज़");
@@ -640,6 +647,7 @@ public class DepthService {
         hi.put("placements", "प्लेसमेंट");
         hi.put("placement", "प्लेसमेंट");
         hi.put("readiness", "रेडीनेस");
+        hi.put("messages", "संदेश");
         hi.put("communicate", "संपर्क");
         hi.put("notices", "सूचनाएँ");
         hi.put("chats", "चैट");
