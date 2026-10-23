@@ -850,50 +850,60 @@ function HiringSection() {
 }
 
 function PayrollSection({ hr }: { hr: boolean }) {
-  const [showSetup, setShowSetup] = useState(false);
   return (
     <>
       <PageHeader
-        title="Payroll Cycles"
-        subtitle="Create one cycle per month, add eligible active employees, review net payable, then generate payslips."
+        title="Payroll setup"
+        subtitle="Salary structures (CTC), PF / ESI / PT / TDS, and statutory rules used when payslip cycles run."
       />
-      <PayrollCyclesTab />
-      <Card
-        title="Salary structures & statutory setup"
-        action={<LinkButton onClick={() => setShowSetup((v) => !v)}>{showSetup ? "Hide" : "Show"}</LinkButton>}
-      >
-        {!showSetup ? (
-          <p className="text-sm text-slate-500">
-            Each employee needs a CTC (Basic / HRA / Special) before a cycle can generate slips — or hire them from an Offer Letter with CTC and it seeds automatically.{" "}
-            <LinkButton onClick={() => setShowSetup(true)}>Add structures</LinkButton>
-          </p>
-        ) : (
-          <PayrollTab hr={hr} focus="full" />
-        )}
-      </Card>
+      <p className="text-sm text-slate-500">
+        To create a monthly cycle and publish slips, open{" "}
+        <Link className="font-semibold text-brand hover:underline" to="/ess/payslips">
+          Payslips
+        </Link>
+        .
+      </p>
+      <PayrollTab hr={hr} focus="full" />
     </>
   );
 }
 
 function PayslipsSection({ hr }: { hr: boolean }) {
+  const [showCycles, setShowCycles] = useState(false);
+  const [params] = useSearchParams();
+  useEffect(() => {
+    if (params.get("year") && params.get("month")) {
+      setShowCycles(true);
+    }
+  }, [params]);
+
   return (
     <>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageHeader
-          title="Payslip Control"
+          title="Payslips"
           subtitle={
             hr
-              ? "Track cycle readiness, generate and publish from payroll cycles, and download individual salary slips."
+              ? "Track cycles, generate and publish salary slips, and download PDFs. CTC structures live under Payroll setup."
               : "Your published salary slips — view or download as PDF."
           }
         />
         {hr && (
-          <Link className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white" to="/ess/payroll">
-            Payroll Cycles
-          </Link>
+          <PrimaryButton onClick={() => setShowCycles((v) => !v)}>
+            {showCycles ? "Hide cycles" : "Manage cycles"}
+          </PrimaryButton>
         )}
       </div>
+      {hr && showCycles && <PayrollCyclesTab />}
       <PayslipsTab hr={hr} />
+      {hr && !showCycles && (
+        <p className="text-sm text-slate-500">
+          Need CTC / PF settings?{" "}
+          <Link className="font-semibold text-brand hover:underline" to="/ess/payroll">
+            Payroll setup
+          </Link>
+        </p>
+      )}
     </>
   );
 }
@@ -1007,7 +1017,7 @@ function PayslipsTab({ hr }: { hr: boolean }) {
               String(c.downloadedCount ?? 0),
               formatInr(c.totalPayable),
               letterStatusBadge(c.status === "PUBLISHED" ? "PUBLISHED" : c.status === "DRAFT" ? "DRAFT" : "DRAFT"),
-              <Link key={c.id} className="text-sm font-medium text-brand hover:underline" to={`/ess/payroll?year=${c.year}&month=${c.month}`}>
+              <Link key={c.id} className="text-sm font-medium text-brand hover:underline" to={`/ess/payslips?year=${c.year}&month=${c.month}`}>
                 Manage
               </Link>,
             ])}
