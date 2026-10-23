@@ -114,74 +114,50 @@ function roleNav(role?: string): NavEntry[] {
         { to: "/help", label: "Help" },
       ];
     default:
+      // Owner / institute admin: short daily-ops bar. Deeper pages stay reachable via URL, page tabs, and dashboard links.
       return [
         { to: "/", label: "Dashboard" },
         {
-          label: "Grow",
+          label: "Website",
           items: [
-            { to: "/website", label: "Website" },
-            { to: "/your-app", label: "Mobile site" },
-            { to: "/m", label: "Phone layout" },
+            { to: "/website", label: "Site builder" },
             { to: "/landing-pages", label: "Landing Pages" },
             { to: "/campaigns", label: "Campaigns" },
+            { to: "/your-app", label: "Mobile" },
           ],
         },
         {
           label: "Courses",
           items: [
             { to: "/courses", label: "Courses" },
-            { to: "/content-hub", label: "Tests" },
             { to: "/lms", label: "LMS" },
-            { to: "/academics", label: "Academics" },
+            { to: "/content-hub", label: "Tests" },
           ],
         },
-        {
-          label: "People",
-          items: [
-            { to: "/people/students", label: "Students" },
-            { to: "/people/staff", label: "Staff" },
-            { to: "/people/employees", label: "Employees" },
-            { to: "/people/alumni", label: "Alumni" },
-            { to: "/people/trash", label: "Trash" },
-            { to: "/ess", label: "ESS" },
-          ],
-        },
+        { to: "/people/students", label: "People" },
         { to: "/crm", label: "Admissions" },
+        { to: "/fees", label: "Fees" },
+        { to: "/analytics", label: "Reports" },
         {
-          label: "Money",
-          items: [
-            { to: "/fees", label: "Fees" },
-            { to: "/analytics", label: "Analytics" },
-            { to: "/intelligence", label: "Intelligence" },
-            { to: "/enterprise", label: "Enterprise" },
-            { to: "/compliance", label: "Compliance" },
-            { to: "/scale", label: "Scale depth" },
-          ],
-        },
-        {
-          label: "Placements",
+          label: "Placement",
           items: [
             { to: "/placement", label: "Placement" },
             { to: "/readiness", label: "Readiness" },
           ],
         },
         {
-          label: "Communicate",
+          label: "Messages",
           items: [
             { to: "/comms", label: "Notices" },
             { to: "/chats", label: "Chats" },
-            { to: "/one-to-one", label: "1:1 Sessions" },
-            { to: "/support", label: "Support" },
-            { to: "/help", label: "Help" },
           ],
         },
         {
           label: "Settings",
           items: [
             { to: "/institute", label: "Institute" },
-            { to: "/audit", label: "Activity log" },
             { to: "/integrations", label: "Integrations" },
-            { to: "/features", label: "License map" },
+            { to: "/audit", label: "Activity log" },
           ],
         },
       ];
