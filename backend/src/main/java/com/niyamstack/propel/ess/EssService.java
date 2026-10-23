@@ -993,12 +993,182 @@ public class EssService {
         requirePayrollAdmin();
         Payslip p = store.getOwned(Payslip.class, id, orgId());
         p.setStatus("PUBLISHED");
-        p.setPaidAt(Instant.now());
+        Instant now = Instant.now();
+        p.setPaidAt(now);
+        p.setPublishedAt(now);
         p = store.save(p);
         Employee e = store.getOwned(Employee.class, p.getEmployeeId(), orgId());
         notifyEmployee(e, "Payslip published",
-                "Your payslip for " + p.getPayMonth() + "/" + p.getPayYear() + " is ready. Open ESS → Payroll to view.");
+                "Your payslip for " + p.getPayMonth() + "/" + p.getPayYear() + " is ready. Open ESS → Payslips to view.");
         return payslipView(p, List.of(e), true);
+    }
+
+    @Transactional
+    public Map<String, Object> markPayslipDownloaded(UUID id) {
+        requireEss();
+        Payslip p = store.getOwned(Payslip.class, id, orgId());
+        Employee e = store.getOwned(Employee.class, p.getEmployeeId(), orgId());
+        requireOwnOrAdmin(e);
+        if (!payrollAdmin() && !"PUBLISHED".equalsIgnoreCase(blank(p.getStatus(), ""))) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "This payslip is not published yet");
+        }
+        p.setDownloadedAt(Instant.now());
+        p = store.save(p);
+        return payslipView(p, List.of(e), true);
+    }
+
+    /** Cycle summary rows for Payslip Control (one per year/month that has slips, or open cycles). */
+    public List<Map<String, Object>> payrollCycles() {
+        requireEss();
+        requirePayrollAdmin();
+        Map<String, List<Payslip>> byPeriod = new LinkedHashMap<>();
+        for (Payslip p : store.list(Payslip.class, orgId())) {
+            if (p.getPayYear() == null || p.getPayMonth() == null) {
+                continue;
+            }
+            String key = p.getPayYear() + "-" + p.getPayMonth();
+            byPeriod.computeIfAbsent(key, k -> new ArrayList<>()).add(p);
+        }
+        List<Employee> staff = store.list(Employee.class, orgId());
+        List<Map<String, Object>> out = new ArrayList<>();
+        byPeriod.entrySet().stream()
+                .sorted((a, b) -> {
+                    Payslip pa = a.getValue().get(0);
+                    Payslip pb = b.getValue().get(0);
+                    int yc = Integer.compare(pb.getPayYear(), pa.getPayYear());
+                    return yc != 0 ? yc : Integer.compare(pb.getPayMonth(), pa.getPayMonth());
+                })
+                .forEach(e -> out.add(cycleView(e.getValue().get(0).getPayYear(), e.getValue().get(0).getPayMonth(), e.getValue(), staff)));
+        return out;
+    }
+
+    public Map<String, Object> payrollCycle(int year, int month) {
+        requireEss();
+        requirePayrollAdmin();
+        List<Payslip> slips = payslipsForPeriod(year, month);
+        List<Employee> staff = store.list(Employee.class, orgId());
+        Map<String, Object> out = cycleView(year, month, slips, staff);
+        out.put("items", slips.stream().map(p -> payslipView(p, staff, false)).toList());
+        return out;
+    }
+
+    /** Create / generate a monthly payroll cycle (run payroll for active staff with salary structures). */
+    @Transactional
+    public Map<String, Object> createPayrollCycle(Map<String, Object> body) {
+        requireEss();
+        requirePayrollAdmin();
+        int year = integer(body, "year", LocalDate.now().getYear());
+        int month = integer(body, "month", LocalDate.now().getMonthValue());
+        List<Map<String, Object>> created = runPayroll(Map.of("year", year, "month", month));
+        Map<String, Object> out = payrollCycle(year, month);
+        out.put("createdCount", created.size());
+        out.put("notice", created.isEmpty()
+                ? "Cycle already has slips, or no active employees with salary structures."
+                : "Cycle created with " + created.size() + " eligible employee(s).");
+        return out;
+    }
+
+    @Transactional
+    public Map<String, Object> updatePayslipItem(UUID id, Map<String, Object> body) {
+        requireEss();
+        requirePayrollAdmin();
+        Payslip p = store.getOwned(Payslip.class, id, orgId());
+        if ("PUBLISHED".equalsIgnoreCase(blank(p.getStatus(), ""))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Published slips cannot be edited. Unpublish is not supported — create a revision next month.");
+        }
+        if (body.containsKey("additionalPay") && !str(body, "additionalPay").isBlank()) {
+            p.setAdditionalPay(money(body, "additionalPay"));
+        }
+        if (body.containsKey("manualDeduction") && !str(body, "manualDeduction").isBlank()) {
+            p.setManualDeduction(money(body, "manualDeduction"));
+        }
+        if (body.containsKey("workingDays") && !str(body, "workingDays").isBlank()) {
+            p.setWorkingDays(integer(body, "workingDays", p.getWorkingDays() == null ? 0 : p.getWorkingDays()));
+        }
+        if (body.containsKey("paymentStatus") && !str(body, "paymentStatus").isBlank()) {
+            String ps = upper(str(body, "paymentStatus"), "PENDING");
+            if (!Set.of("PENDING", "PAID").contains(ps)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Payment status must be PENDING or PAID");
+            }
+            p.setPaymentStatus(ps);
+        }
+        if (body.containsKey("paymentDate")) {
+            p.setPaymentDate(date(body, "paymentDate"));
+        }
+        if (body.containsKey("paymentReference")) {
+            p.setPaymentReference(str(body, "paymentReference"));
+        }
+        recomputePayslipTotals(p);
+        p = store.save(p);
+        Employee e = store.getOwned(Employee.class, p.getEmployeeId(), orgId());
+        return payslipView(p, List.of(e), false);
+    }
+
+    private Map<String, Object> cycleView(int year, int month, List<Payslip> slips, List<Employee> staff) {
+        LocalDate start = LocalDate.of(year, month, 1);
+        LocalDate end = start.withDayOfMonth(start.lengthOfMonth());
+        long published = slips.stream().filter(p -> "PUBLISHED".equalsIgnoreCase(blank(p.getStatus(), ""))).count();
+        long draft = slips.stream().filter(p -> !"PUBLISHED".equalsIgnoreCase(blank(p.getStatus(), ""))).count();
+        long downloaded = slips.stream().filter(p -> p.getDownloadedAt() != null).count();
+        BigDecimal total = slips.stream().map(p -> nz(p.getNet())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        String status = slips.isEmpty() ? "EMPTY" : (draft == 0 ? "PUBLISHED" : "DRAFT");
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", year + "-" + month);
+        out.put("year", year);
+        out.put("month", month);
+        out.put("name", monthName(month) + " " + year + " Payroll");
+        out.put("periodStart", start.toString());
+        out.put("periodEnd", end.toString());
+        out.put("periodLabel", formatDayLabel(start) + " to " + formatDayLabel(end));
+        out.put("employeeCount", slips.size());
+        out.put("generatedCount", slips.size());
+        out.put("publishedCount", published);
+        out.put("downloadedCount", downloaded);
+        out.put("draftCount", draft);
+        out.put("totalPayable", total);
+        out.put("status", status);
+        out.put("eligibleWithoutSlip", countEligibleWithoutSlip(year, month, staff));
+        return out;
+    }
+
+    private long countEligibleWithoutSlip(int year, int month, List<Employee> staff) {
+        long n = 0;
+        for (Employee e : staff) {
+            if (!"ACTIVE".equalsIgnoreCase(blank(e.getStatus(), "ACTIVE"))) {
+                continue;
+            }
+            if (salaryStructure(e) == null) {
+                continue;
+            }
+            if (!payslipExists(e.getId(), year, month)) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    private static String monthName(int month) {
+        if (month < 1 || month > 12) {
+            return "Month";
+        }
+        return java.time.Month.of(month).getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH);
+    }
+
+    private static String formatDayLabel(LocalDate d) {
+        return d.getDayOfMonth() + " " + d.getMonth().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH) + " " + d.getYear();
+    }
+
+    private void recomputePayslipTotals(Payslip p) {
+        BigDecimal base = nz(p.getBasic()).add(nz(p.getHra())).add(nz(p.getSpecial()))
+                .add(nz(p.getVariablePay())).add(nz(p.getCommissionPay()));
+        BigDecimal additional = nz(p.getAdditionalPay());
+        BigDecimal statutory = nz(p.getLopDeduction()).add(nz(p.getPfEmployee())).add(nz(p.getEsiEmployee()))
+                .add(nz(p.getPtEmployee())).add(nz(p.getTdsEmployee()));
+        BigDecimal manual = nz(p.getManualDeduction());
+        BigDecimal gross = base.add(additional);
+        p.setGross(gross);
+        p.setDeductions(statutory.add(manual));
+        p.setNet(gross.subtract(p.getDeductions()).max(BigDecimal.ZERO));
     }
 
     public Map<String, Object> payrollSettingsView() {
@@ -1144,12 +1314,14 @@ public class EssService {
             if (!"DRAFT".equalsIgnoreCase(blank(p.getStatus(), ""))) {
                 continue;
             }
+            Instant now = Instant.now();
             p.setStatus("PUBLISHED");
-            p.setPaidAt(Instant.now());
+            p.setPaidAt(now);
+            p.setPublishedAt(now);
             store.save(p);
             Employee e = store.getOwned(Employee.class, p.getEmployeeId(), orgId());
             notifyEmployee(e, "Payslip published",
-                    "Your payslip for " + month + "/" + year + " is ready. Open ESS → Payroll to view.");
+                    "Your payslip for " + month + "/" + year + " is ready. Open ESS → Payslips to view.");
             published++;
         }
         Map<String, Object> out = new LinkedHashMap<>();
@@ -2580,6 +2752,9 @@ public class EssService {
         p.setWorkingDays(workingDays);
         p.setPresentDays(presentDays);
         p.setStatus("DRAFT");
+        p.setAdditionalPay(BigDecimal.ZERO);
+        p.setManualDeduction(BigDecimal.ZERO);
+        p.setPaymentStatus("PENDING");
         return p;
     }
 
@@ -2986,6 +3161,15 @@ public class EssService {
         row.put("deductions", p.getDeductions());
         row.put("net", p.getNet());
         row.put("status", p.getStatus());
+        row.put("additionalPay", nz(p.getAdditionalPay()));
+        row.put("manualDeduction", nz(p.getManualDeduction()));
+        row.put("basePay", nz(p.getBasic()).add(nz(p.getHra())).add(nz(p.getSpecial())));
+        row.put("paymentStatus", blank(p.getPaymentStatus(), "PENDING"));
+        row.put("paymentDate", p.getPaymentDate());
+        row.put("paymentReference", p.getPaymentReference());
+        row.put("publishedAt", p.getPublishedAt() != null ? p.getPublishedAt() : p.getPaidAt());
+        row.put("downloadedAt", p.getDownloadedAt());
+        row.put("bankVerified", e != null && !blank(String.valueOf(parseCustom(e.getCustomJson()).getOrDefault("bankAccount", "")), "").isBlank());
         if (print) {
             Organization org = store.get(Organization.class, orgId());
             row.put("instituteName", org.getName());

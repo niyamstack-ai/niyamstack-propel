@@ -73,6 +73,35 @@ type Payslip = {
   instituteName?: string;
   skipped?: boolean;
   exists?: boolean;
+  basePay?: number;
+  additionalPay?: number;
+  manualDeduction?: number;
+  paymentStatus?: string;
+  paymentDate?: string;
+  paymentReference?: string;
+  publishedAt?: string;
+  downloadedAt?: string;
+  bankVerified?: boolean;
+};
+type PayrollCycle = {
+  id: string;
+  year: number;
+  month: number;
+  name: string;
+  periodStart?: string;
+  periodEnd?: string;
+  periodLabel?: string;
+  employeeCount?: number;
+  generatedCount?: number;
+  publishedCount?: number;
+  downloadedCount?: number;
+  draftCount?: number;
+  totalPayable?: number;
+  status?: string;
+  eligibleWithoutSlip?: number;
+  items?: Payslip[];
+  notice?: string;
+  createdCount?: number;
 };
 type PayrollSettings = {
   pfEnabled?: boolean;
@@ -821,10 +850,24 @@ function HiringSection() {
 }
 
 function PayrollSection({ hr }: { hr: boolean }) {
+  const [showSetup, setShowSetup] = useState(false);
   return (
     <>
-      <PageHeader title="Payroll" subtitle="Salary structures, statutory settings, run monthly cycle, then publish payslips." />
-      <PayrollTab hr={hr} />
+      <PageHeader
+        title="Payroll Cycles"
+        subtitle="Create one cycle per month, add eligible active employees, review net payable, then generate payslips."
+      />
+      <PayrollCyclesTab />
+      <Card
+        title="Salary structures & statutory setup"
+        action={<LinkButton onClick={() => setShowSetup((v) => !v)}>{showSetup ? "Hide" : "Show"}</LinkButton>}
+      >
+        {!showSetup ? (
+          <p className="text-sm text-slate-500">PF, ESI, PT, TDS and per-employee CTC structure used when a cycle is generated.</p>
+        ) : (
+          <PayrollTab hr={hr} focus="full" />
+        )}
+      </Card>
     </>
   );
 }
@@ -832,18 +875,485 @@ function PayrollSection({ hr }: { hr: boolean }) {
 function PayslipsSection({ hr }: { hr: boolean }) {
   return (
     <>
-      <PageHeader
-        title="Payslips"
-        subtitle={hr ? "Published and draft salary slips. Run new cycles under Payroll." : "Your published salary receipts."}
-      />
-      <PayrollTab hr={hr} focus="payslips" />
-      {hr && (
-        <p className="text-sm text-slate-500">
-          Need to create a cycle?{" "}
-          <Link className="font-semibold text-brand hover:underline" to="/ess/payroll">
-            Open Payroll
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PageHeader
+          title="Payslip Control"
+          subtitle={
+            hr
+              ? "Track cycle readiness, generate and publish from payroll cycles, and download individual salary slips."
+              : "Your published salary slips — view or download as PDF."
+          }
+        />
+        {hr && (
+          <Link className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white" to="/ess/payroll">
+            Payroll Cycles
           </Link>
+        )}
+      </div>
+      <PayslipsTab hr={hr} />
+    </>
+  );
+}
+
+function monthLabel(month?: number, year?: number) {
+  if (!month || !year) return "—";
+  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${names[month - 1] || month} ${year}`;
+}
+
+function PayslipsTab({ hr }: { hr: boolean }) {
+  const cycles = useApi<PayrollCycle[]>(hr ? "/api/actions/ess/payroll/cycles" : "");
+  const slips = useApi<Payslip[]>("/api/payslips");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "DRAFT" | "PUBLISHED">("ALL");
+
+  const visibleSlips = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (slips.data ?? [])
+      .filter((p) => hr || (p.status || "").toUpperCase() === "PUBLISHED")
+      .filter((p) => (statusFilter === "ALL" ? true : (p.status || "").toUpperCase() === statusFilter))
+      .filter((p) => {
+        if (!q) return true;
+        const hay = `${p.employeeName || ""} ${p.employeeCode || ""} ${p.department || ""} ${p.designation || ""} ${monthLabel(p.month, p.year)}`.toLowerCase();
+        return hay.includes(q);
+      });
+  }, [slips.data, hr, search, statusFilter]);
+
+  async function publishSlip(id: string) {
+    setError(null);
+    try {
+      await api(`/api/actions/ess/payslips/${id}/publish`, { method: "POST" });
+      slips.reload();
+      cycles.reload();
+      setNotice("Payslip published.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function viewSlip(id: string, autoPrint = false) {
+    setError(null);
+    const win = window.open("about:blank", "_blank", "width=720,height=900");
+    if (!win) {
+      setError("Pop-up blocked. Allow pop-ups to view the payslip.");
+      return;
+    }
+    win.document.write(`<!doctype html><html><head><title>Loading…</title></head><body style="font-family:system-ui;padding:32px">Loading payslip…</body></html>`);
+    win.document.close();
+    try {
+      const rec = await api<Payslip>(`/api/actions/ess/payslips/${id}`);
+      await api(`/api/actions/ess/payslips/${id}/downloaded`, { method: "POST", body: "{}" }).catch(() => null);
+      slips.reload();
+      cycles.reload();
+      const html = payslipHtml(rec);
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+      if (autoPrint) {
+        setTimeout(() => {
+          try {
+            win.focus();
+            win.print();
+          } catch {
+            /* ignore */
+          }
+        }, 300);
+      }
+    } catch (e) {
+      try {
+        win.document.open();
+        win.document.write(`<!doctype html><html><body style="font-family:system-ui;padding:32px;color:#b91c1c">${escHtml((e as Error).message)}</body></html>`);
+        win.document.close();
+      } catch {
+        try {
+          win.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      setError((e as Error).message);
+    }
+  }
+
+  const published = (slips.data ?? []).filter((p) => (p.status || "").toUpperCase() === "PUBLISHED").length;
+  const drafts = (slips.data ?? []).filter((p) => (p.status || "").toUpperCase() === "DRAFT").length;
+
+  return (
+    <>
+      <ErrorText error={error || slips.error || cycles.error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard label="Cycles" value={String((cycles.data ?? []).length || (hr ? 0 : "—"))} />
+        <StatCard label="Published slips" value={String(published)} />
+        <StatCard label={hr ? "Draft slips" : "Your slips"} value={String(hr ? drafts : visibleSlips.length)} />
+      </div>
+
+      {hr && (
+        <Card title="Cycle summary">
+          <Table
+            empty="No payroll cycles yet. Open Payroll Cycles to create one."
+            columns={["Cycle", "Period", "Employees", "Generated", "Published", "Downloaded", "Total payable", "Status", ""]}
+            rows={(cycles.data ?? []).map((c) => [
+              c.name,
+              c.periodLabel || `${c.periodStart} to ${c.periodEnd}`,
+              String(c.employeeCount ?? 0),
+              String(c.generatedCount ?? 0),
+              String(c.publishedCount ?? 0),
+              String(c.downloadedCount ?? 0),
+              formatInr(c.totalPayable),
+              letterStatusBadge(c.status === "PUBLISHED" ? "PUBLISHED" : c.status === "DRAFT" ? "DRAFT" : "DRAFT"),
+              <Link key={c.id} className="text-sm font-medium text-brand hover:underline" to={`/ess/payroll?year=${c.year}&month=${c.month}`}>
+                Manage
+              </Link>,
+            ])}
+          />
+        </Card>
+      )}
+
+      <Card title="Generated slips">
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <div className="min-w-[14rem] flex-1">
+            <Field label="Search" value={search} onChange={setSearch} placeholder="Employee, code, role…" />
+          </div>
+          {hr && (
+            <div className="flex flex-wrap gap-2 pb-1">
+              {(["ALL", "DRAFT", "PUBLISHED"] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setStatusFilter(f)}
+                  className={`rounded-full px-3 py-1.5 text-sm ${statusFilter === f ? "bg-navy text-white" : "bg-mist"}`}
+                >
+                  {f === "ALL" ? "All slips" : prettyLabel(f)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <Table
+          empty={hr ? "No slips yet. Create a cycle under Payroll Cycles." : "No published payslips yet."}
+          columns={["Employee", "Cycle", "Role", "Net payable", "Status", "Published", "Downloaded", "Actions"]}
+          rows={visibleSlips.map((p) => [
+            <span key={`${p.id}-emp`}>
+              <span className="font-medium">{p.employeeName || "—"}</span>
+              <span className="block text-xs text-slate-500">{p.employeeCode || ""}</span>
+            </span>,
+            <span key={`${p.id}-cyc`}>
+              {monthLabel(p.month, p.year)}
+              <span className="block text-xs text-slate-500">Salary cycle</span>
+            </span>,
+            <span key={`${p.id}-role`}>
+              {p.designation || "—"}
+              <span className="block text-xs text-slate-500">{p.department || ""}</span>
+            </span>,
+            formatInr(p.net),
+            letterStatusBadge(p.status === "PUBLISHED" ? "PUBLISHED" : "DRAFT"),
+            formatDay(p.publishedAt) || "—",
+            formatDay(p.downloadedAt) || "—",
+            <span key={`${p.id}-act`} className="flex flex-wrap gap-2">
+              <LinkButton onClick={() => void viewSlip(p.id)}>View</LinkButton>
+              <LinkButton onClick={() => void viewSlip(p.id, true)}>Download</LinkButton>
+              {hr && (p.status || "").toUpperCase() === "DRAFT" && (
+                <LinkButton onClick={() => void publishSlip(p.id)}>Publish</LinkButton>
+              )}
+            </span>,
+          ])}
+        />
+      </Card>
+    </>
+  );
+}
+
+function payslipHtml(rec: Payslip) {
+  return `<!doctype html><html><head><title>Payslip ${escHtml(monthLabel(rec.month, rec.year))}</title>
+    <style>body{font-family:Georgia,serif;max-width:640px;margin:40px auto;padding:0 24px;color:#111;line-height:1.45}h1{margin:0 0 8px;font-size:22px}p{margin:4px 0}.meta{color:#555;font-size:13px;margin-bottom:20px}table{border-collapse:collapse;margin-top:16px;width:100%}td{border:1px solid #ccc;padding:8px}td:last-child{text-align:right}.actions{margin-top:24px}</style></head>
+    <body>
+      <h1>${escHtml(rec.instituteName || "Payslip")}</h1>
+      <p class="meta">${escHtml(monthLabel(rec.month, rec.year))} · ${escHtml(prettyLabel(rec.status))}</p>
+      <p><strong>${escHtml(rec.employeeName)}</strong> (${escHtml(rec.employeeCode)})</p>
+      <p>${escHtml(rec.designation)} · ${escHtml(rec.department)}</p>
+      <p>Present ${escHtml(rec.presentDays)} / ${escHtml(rec.workingDays)} working days</p>
+      <table>
+        <tr><td>Basic</td><td>${escHtml(formatInr(rec.basic))}</td></tr>
+        <tr><td>HRA</td><td>${escHtml(formatInr(rec.hra))}</td></tr>
+        <tr><td>Special</td><td>${escHtml(formatInr(rec.special))}</td></tr>
+        <tr><td>Additional</td><td>${escHtml(formatInr(rec.additionalPay))}</td></tr>
+        <tr><td>Gross</td><td>${escHtml(formatInr(rec.gross))}</td></tr>
+        <tr><td>LOP (${escHtml(rec.lopDays)} days)</td><td>${escHtml(formatInr(rec.lopDeduction))}</td></tr>
+        <tr><td>PF / ESI / PT / TDS</td><td>${escHtml(formatInr((rec.pfEmployee || 0) + (rec.esiEmployee || 0) + (rec.ptEmployee || 0) + (rec.tdsEmployee || 0)))}</td></tr>
+        <tr><td>Other deduction</td><td>${escHtml(formatInr(rec.manualDeduction))}</td></tr>
+        <tr><td><strong>Net pay</strong></td><td><strong>${escHtml(formatInr(rec.net))}</strong></td></tr>
+      </table>
+      <div class="actions"><button onclick="window.print()">Print / Save PDF</button></div>
+    </body></html>`;
+}
+
+function PayrollCyclesTab() {
+  const [params] = useSearchParams();
+  const cycles = useApi<PayrollCycle[]>("/api/actions/ess/payroll/cycles");
+  const now = new Date();
+  const [year, setYear] = useState(params.get("year") || String(now.getFullYear()));
+  const [month, setMonth] = useState(params.get("month") || String(now.getMonth() + 1));
+  const [manageYear, setManageYear] = useState<number | null>(params.get("year") ? Number(params.get("year")) : null);
+  const [manageMonth, setManageMonth] = useState<number | null>(params.get("month") ? Number(params.get("month")) : null);
+  const detail = useApi<PayrollCycle>(
+    manageYear && manageMonth ? `/api/actions/ess/payroll/cycles/${manageYear}/${manageMonth}` : "",
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const y = params.get("year");
+    const m = params.get("month");
+    if (y && m) {
+      setManageYear(Number(y));
+      setManageMonth(Number(m));
+      setYear(y);
+      setMonth(m);
+    }
+  }, [params]);
+
+  async function createCycle() {
+    setError(null);
+    setNotice(null);
+    try {
+      const out = await api<PayrollCycle>("/api/actions/ess/payroll/cycles", {
+        method: "POST",
+        body: JSON.stringify({ year: Number(year), month: Number(month) }),
+      });
+      cycles.reload();
+      setManageYear(Number(year));
+      setManageMonth(Number(month));
+      detail.reload();
+      setNotice(out.notice || "Cycle ready.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function publishCycle(y: number, m: number) {
+    setError(null);
+    try {
+      const out = await api<{ published?: number }>("/api/actions/ess/payroll/publish-all", {
+        method: "POST",
+        body: JSON.stringify({ year: y, month: m }),
+      });
+      cycles.reload();
+      detail.reload();
+      setNotice(`Published ${out.published ?? 0} slip(s).`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function saveItem(p: Payslip, patch: Record<string, unknown>) {
+    setBusyId(p.id);
+    setError(null);
+    try {
+      await api(`/api/actions/ess/payroll/slips/${p.id}`, { method: "POST", body: JSON.stringify(patch) });
+      detail.reload();
+      cycles.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <>
+      <ErrorText error={error || cycles.error || detail.error} />
+      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+      <Card
+        title="Monthly cycle"
+        action={
+          <div className="flex flex-wrap items-end gap-2">
+            <Select
+              label="Year"
+              value={year}
+              onChange={setYear}
+              allowEmpty={false}
+              options={[0, 1, 2].map((i) => {
+                const y = String(now.getFullYear() - 1 + i);
+                return { value: y, label: y };
+              })}
+            />
+            <Select
+              label="Month"
+              value={month}
+              onChange={setMonth}
+              allowEmpty={false}
+              options={Array.from({ length: 12 }, (_, i) => ({
+                value: String(i + 1),
+                label: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][i],
+              }))}
+            />
+            <PrimaryButton onClick={() => void createCycle()}>+ New Cycle</PrimaryButton>
+          </div>
+        }
+      >
+        <p className="mb-3 text-sm text-slate-500">
+          Create one cycle per month for employees with a salary structure, review net payable (CTC-based), then publish payslips.
         </p>
+        <Table
+          empty="No cycles yet. Pick year/month and click + New Cycle."
+          columns={["Cycle", "Period", "Employees", "Total payable", "Status", "Actions"]}
+          rows={(cycles.data ?? []).map((c) => [
+            c.name,
+            c.periodLabel || `${c.periodStart} to ${c.periodEnd}`,
+            String(c.employeeCount ?? 0),
+            formatInr(c.totalPayable),
+            letterStatusBadge(c.status === "PUBLISHED" ? "PUBLISHED" : "DRAFT"),
+            <span key={c.id} className="flex flex-wrap gap-2">
+              {(c.draftCount ?? 0) > 0 && (
+                <LinkButton onClick={() => void publishCycle(c.year, c.month)}>Approve / Publish</LinkButton>
+              )}
+              <LinkButton
+                onClick={() => {
+                  setManageYear(c.year);
+                  setManageMonth(c.month);
+                }}
+              >
+                Manage items
+              </LinkButton>
+            </span>,
+          ])}
+        />
+      </Card>
+
+      {manageYear && manageMonth && detail.data && (
+        <Card
+          title={`${detail.data.name || monthLabel(manageMonth, manageYear)} items`}
+          action={
+            <LinkButton
+              onClick={() => {
+                setManageYear(null);
+                setManageMonth(null);
+              }}
+            >
+              Close
+            </LinkButton>
+          }
+        >
+          <p className="mb-3 text-sm text-slate-500">
+            {detail.data.periodLabel} · {prettyLabel(detail.data.status)} · Edit additional / deduction / working days on drafts, then publish.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-line text-slate-500">
+                  {["Employee", "Base CTC", "Additional", "Deduction", "Working days", "Net payable", "Payment status", "Payment date", "Reference"].map((h) => (
+                    <th key={h} className="py-2 pr-3 font-medium">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(detail.data.items ?? []).map((p) => {
+                  const locked = (p.status || "").toUpperCase() === "PUBLISHED";
+                  return (
+                    <tr key={p.id} className="border-b border-line/70">
+                      <td className="py-2 pr-3 align-top">
+                        <span className="font-medium">{p.employeeName}</span>
+                        <span className="block text-xs text-slate-500">
+                          {p.employeeCode} · {p.designation || "—"} / {p.department || "—"}
+                        </span>
+                        {!p.bankVerified && <span className="block text-xs text-red-600">No verified bank captured</span>}
+                      </td>
+                      <td className="py-2 pr-3 align-top">{formatInr(p.basePay)}</td>
+                      <td className="py-2 pr-3 align-top">
+                        {locked ? (
+                          formatInr(p.additionalPay)
+                        ) : (
+                          <input
+                            className="w-24 rounded border border-line px-2 py-1"
+                            defaultValue={String(p.additionalPay ?? 0)}
+                            disabled={busyId === p.id}
+                            onBlur={(e) => void saveItem(p, { additionalPay: e.target.value })}
+                          />
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 align-top">
+                        {locked ? (
+                          formatInr(p.manualDeduction)
+                        ) : (
+                          <input
+                            className="w-24 rounded border border-line px-2 py-1"
+                            defaultValue={String(p.manualDeduction ?? 0)}
+                            disabled={busyId === p.id}
+                            onBlur={(e) => void saveItem(p, { manualDeduction: e.target.value })}
+                          />
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 align-top">
+                        {locked ? (
+                          p.workingDays ?? "—"
+                        ) : (
+                          <input
+                            className="w-20 rounded border border-line px-2 py-1"
+                            defaultValue={String(p.workingDays ?? 0)}
+                            disabled={busyId === p.id}
+                            onBlur={(e) => void saveItem(p, { workingDays: e.target.value })}
+                          />
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 align-top font-semibold">{formatInr(p.net)}</td>
+                      <td className="py-2 pr-3 align-top">
+                        {locked ? (
+                          prettyLabel(p.paymentStatus)
+                        ) : (
+                          <select
+                            className="rounded border border-line px-2 py-1"
+                            defaultValue={p.paymentStatus || "PENDING"}
+                            disabled={busyId === p.id}
+                            onChange={(e) => void saveItem(p, { paymentStatus: e.target.value })}
+                          >
+                            <option value="PENDING">Pending</option>
+                            <option value="PAID">Paid</option>
+                          </select>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 align-top">
+                        {locked ? (
+                          formatDay(p.paymentDate) || "—"
+                        ) : (
+                          <input
+                            type="date"
+                            className="rounded border border-line px-2 py-1"
+                            defaultValue={p.paymentDate ? String(p.paymentDate).slice(0, 10) : ""}
+                            disabled={busyId === p.id}
+                            onBlur={(e) => void saveItem(p, { paymentDate: e.target.value || null })}
+                          />
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 align-top">
+                        {locked ? (
+                          p.paymentReference || "—"
+                        ) : (
+                          <input
+                            className="w-28 rounded border border-line px-2 py-1"
+                            defaultValue={p.paymentReference || ""}
+                            disabled={busyId === p.id}
+                            onBlur={(e) => void saveItem(p, { paymentReference: e.target.value })}
+                          />
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {(detail.data.draftCount ?? 0) > 0 && (
+            <div className="mt-4">
+              <PrimaryButton onClick={() => void publishCycle(manageYear, manageMonth)}>Publish all drafts</PrimaryButton>
+            </div>
+          )}
+        </Card>
       )}
     </>
   );

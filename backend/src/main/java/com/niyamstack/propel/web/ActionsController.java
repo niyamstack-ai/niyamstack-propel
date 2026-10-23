@@ -565,6 +565,31 @@ public class ActionsController {
         return ess.publishPayslip(id);
     }
 
+    @PostMapping("/ess/payslips/{id}/downloaded")
+    public Map<String, Object> markPayslipDownloaded(@PathVariable UUID id) {
+        return ess.markPayslipDownloaded(id);
+    }
+
+    @GetMapping("/ess/payroll/cycles")
+    public List<Map<String, Object>> payrollCycles() {
+        return ess.payrollCycles();
+    }
+
+    @GetMapping("/ess/payroll/cycles/{year}/{month}")
+    public Map<String, Object> payrollCycle(@PathVariable int year, @PathVariable int month) {
+        return ess.payrollCycle(year, month);
+    }
+
+    @PostMapping("/ess/payroll/cycles")
+    public Map<String, Object> createPayrollCycle(@RequestBody Map<String, Object> body) {
+        return ess.createPayrollCycle(body);
+    }
+
+    @PostMapping("/ess/payroll/slips/{id}")
+    public Map<String, Object> updatePayslipItem(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        return ess.updatePayslipItem(id, body);
+    }
+
     @GetMapping("/ess/manager/inbox")
     public Map<String, Object> managerInbox() {
         return ess.managerInbox();

@@ -1196,6 +1196,16 @@ public final class Model {
         private Integer presentDays;
         private String status = "DRAFT";
         private Instant paidAt;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal additionalPay = BigDecimal.ZERO;
+        @Column(precision = 12, scale = 2)
+        private BigDecimal manualDeduction = BigDecimal.ZERO;
+        /** PENDING | PAID */
+        private String paymentStatus = "PENDING";
+        private LocalDate paymentDate;
+        private String paymentReference;
+        private Instant publishedAt;
+        private Instant downloadedAt;
     }
 
     @Entity(name = "PayrollSettings") @Table(name = "payroll_settings") @Getter @Setter

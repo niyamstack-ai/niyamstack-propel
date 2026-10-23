@@ -564,6 +564,13 @@ public class SchemaPatch {
                 "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS present_days INTEGER",
                 "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS variable_pay NUMERIC(12,2) DEFAULT 0",
                 "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS commission_pay NUMERIC(12,2) DEFAULT 0",
+                "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS additional_pay NUMERIC(12,2) DEFAULT 0",
+                "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS manual_deduction NUMERIC(12,2) DEFAULT 0",
+                "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS payment_status VARCHAR(40) DEFAULT 'PENDING'",
+                "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS payment_date DATE",
+                "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(120)",
+                "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS published_at TIMESTAMP WITH TIME ZONE",
+                "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS downloaded_at TIMESTAMP WITH TIME ZONE",
                 """
                 CREATE TABLE IF NOT EXISTS commission_settings (
                     id UUID PRIMARY KEY,
