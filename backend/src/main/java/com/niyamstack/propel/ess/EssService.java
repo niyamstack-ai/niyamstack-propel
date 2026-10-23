@@ -1660,6 +1660,7 @@ public class EssService {
     }
 
     /** Printable staff offer letter for candidates in OFFER or HIRED status. */
+    @Transactional
     public Map<String, Object> staffOfferLetter(UUID candidateId) {
         requireEss();
         requireHrAdmin();
@@ -1682,12 +1683,20 @@ public class EssService {
         seed.put("letterNo", letterNo);
         Map<String, String> vars = offerVars(seed, c);
         String letterContent = blank(c.getLetterBody(), "");
+        String jobDescription = blank(c.getJobDescription(), "");
+        boolean backfill = false;
         if (letterContent.isBlank()) {
             letterContent = fillPlaceholders(templateBody(TPL_OFFER, "Offer letter"), vars);
+            backfill = true;
         }
-        String jobDescription = blank(c.getJobDescription(), "");
         if (jobDescription.isBlank()) {
             jobDescription = fillPlaceholders(jdTemplateForRole(blank(job.getTitle(), "Staff")), vars);
+            backfill = true;
+        }
+        if (backfill) {
+            c.setLetterBody(letterContent);
+            c.setJobDescription(jobDescription);
+            store.save(c);
         }
         String body = letterContent;
         if (!jobDescription.isBlank()) {

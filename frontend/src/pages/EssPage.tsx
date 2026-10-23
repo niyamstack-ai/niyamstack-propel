@@ -2644,22 +2644,9 @@ function OfferCreateSection() {
   const [autoFilled, setAutoFilled] = useState(false);
 
   const editRow = useMemo(() => (existing.data ?? []).find((c) => c.id === editId), [existing.data, editId]);
+  const [editHydrated, setEditHydrated] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!editRow) return;
-    setFullName(editRow.fullName || "");
-    setEmail(editRow.email || "");
-    setPhone(editRow.phone || "");
-    setRoleTitle(editRow.jobTitle || "");
-    setDepartment(editRow.department || "");
-    setOfferCtc(editRow.offerCtc != null ? String(editRow.offerCtc) : "0");
-    setOfferJoining(editRow.offerJoiningDate ? String(editRow.offerJoiningDate).slice(0, 10) : today());
-    setLetterContent(editRow.letterContent || "");
-    setJobDescription(editRow.jobDescription || "");
-    setAutoFilled(true);
-  }, [editRow]);
-
-  async function generateFromDetails(seed?: Partial<{ employeeId: string; fullName: string; roleTitle: string; department: string; offerCtc: string; offerJoiningDate: string; email: string; phone: string }>) {
+  async function generateFromDetails(seed?: Partial<{ employeeId: string; fullName: string; roleTitle: string; department: string; offerCtc: string; offerJoiningDate: string; email: string; phone: string; letterNo?: string }>) {
     setError(null);
     try {
       const body = {
@@ -2671,6 +2658,7 @@ function OfferCreateSection() {
         department: seed?.department ?? department,
         offerCtc: seed?.offerCtc ?? offerCtc,
         offerJoiningDate: seed?.offerJoiningDate ?? offerJoining,
+        letterNo: seed?.letterNo,
       };
       const out = await api<{ letterContent?: string; jobDescription?: string; roleTitle?: string; department?: string; fullName?: string; email?: string; phone?: string }>(
         "/api/actions/ess/offer-letters/preview",
@@ -2685,10 +2673,61 @@ function OfferCreateSection() {
       if (out.phone) setPhone(out.phone);
       setAutoFilled(true);
       setNotice("Letter content generated from ESS templates.");
+      return out;
     } catch (e) {
       setError((e as Error).message);
+      return null;
     }
   }
+
+  useEffect(() => {
+    if (!editId || !editRow || editHydrated === editId) return;
+    setFullName(editRow.fullName || "");
+    setEmail(editRow.email || "");
+    setPhone(editRow.phone || "");
+    setRoleTitle(editRow.jobTitle || "");
+    setDepartment(editRow.department || "");
+    setOfferCtc(editRow.offerCtc != null ? String(editRow.offerCtc) : "0");
+    setOfferJoining(editRow.offerJoiningDate ? String(editRow.offerJoiningDate).slice(0, 10) : today());
+    setEditHydrated(editId);
+
+    const savedLetter = (editRow.letterContent || "").trim();
+    const savedJd = (editRow.jobDescription || "").trim();
+    if (savedLetter) {
+      setLetterContent(savedLetter);
+      setJobDescription(savedJd);
+      setAutoFilled(true);
+      return;
+    }
+
+    // Older drafts have no stored body — pull rendered template (or regenerate from ESS Settings).
+    void (async () => {
+      try {
+        const letter = await api<{ letterContent?: string; jobDescription?: string; body?: string }>(
+          `/api/actions/ess/candidates/${editId}/letter`,
+        );
+        if ((letter.letterContent || "").trim()) {
+          setLetterContent(letter.letterContent || "");
+          setJobDescription(letter.jobDescription || "");
+          setAutoFilled(true);
+          setNotice("Loaded offer letter from template.");
+          return;
+        }
+      } catch {
+        /* fall through to preview */
+      }
+      await generateFromDetails({
+        fullName: editRow.fullName || "",
+        email: editRow.email || "",
+        phone: editRow.phone || "",
+        roleTitle: editRow.jobTitle || "",
+        department: editRow.department || "",
+        offerCtc: editRow.offerCtc != null ? String(editRow.offerCtc) : "0",
+        offerJoiningDate: editRow.offerJoiningDate ? String(editRow.offerJoiningDate).slice(0, 10) : today(),
+        letterNo: editRow.letterNo,
+      });
+    })();
+  }, [editId, editRow, editHydrated]);
 
   function pickEmployee(id: string) {
     setEmployeeId(id);
@@ -2713,21 +2752,14 @@ function OfferCreateSection() {
     void generateFromDetails(next);
   }
 
-  async function preview() {
+  function preview() {
     setError(null);
-    try {
-      const win = window.open("", "_blank", "noopener,noreferrer,width=720,height=900");
-      if (!win) {
-        setError("Pop-up blocked. Allow pop-ups to preview.");
-        return;
-      }
-      const content = `${letterContent}\n\n--- Annexure A: Job description ---\n\n${jobDescription}`;
-      win.document.write(`<!doctype html><html><head><title>Offer letter preview</title>
+    const content = `${letterContent}\n\n--- Annexure A: Job description ---\n\n${jobDescription}`;
+    const html = `<!doctype html><html><head><title>Offer letter preview</title>
         <style>body{font-family:Georgia,serif;max-width:640px;margin:40px auto;padding:0 24px;line-height:1.5}pre{white-space:pre-wrap;font-family:Georgia,serif}</style>
-        </head><body><pre>${escHtml(content)}</pre><div style="margin-top:24px"><button onclick="window.print()">Print / Save PDF</button></div></body></html>`);
-      win.document.close();
-    } catch (e) {
-      setError((e as Error).message);
+        </head><body><pre>${escHtml(content)}</pre><div style="margin-top:24px"><button onclick="window.print()">Print / Save PDF</button></div></body></html>`;
+    if (!openPrintHtml(html)) {
+      setError("Pop-up blocked. Allow pop-ups to preview.");
     }
   }
 
@@ -2983,6 +3015,15 @@ function HiringTab() {
 
   async function viewLetter(id: string, autoPrint = false) {
     setError(null);
+    // Open synchronously on click so the browser allows the tab; fill after the API returns.
+    const win = window.open("about:blank", "_blank", "width=720,height=900");
+    if (!win) {
+      setError("Pop-up blocked. Allow pop-ups to view the offer letter.");
+      return;
+    }
+    win.document.write(`<!doctype html><html><head><title>Loading…</title></head>
+      <body style="font-family:system-ui,sans-serif;padding:32px;color:#334155">Loading offer letter…</body></html>`);
+    win.document.close();
     try {
       const letter = await api<{
         letterNo?: string;
@@ -2996,16 +3037,11 @@ function HiringTab() {
         status?: string;
         offerLetterStatus?: string;
       }>(`/api/actions/ess/candidates/${id}/letter`);
-      const win = window.open("", "_blank", "noopener,noreferrer,width=720,height=900");
-      if (!win) {
-        setError("Pop-up blocked. Allow pop-ups to view the offer letter.");
-        return;
-      }
       const letterLabel =
         (letter.offerLetterStatus || "").toUpperCase() === "SENT_FOR_SIGNATURE"
           ? "Sent For Signature"
           : prettyLabel(letter.offerLetterStatus || letter.status);
-      win.document.write(`<!doctype html><html><head><title>${escHtml(letter.letterNo || "Offer letter")}</title>
+      const html = `<!doctype html><html><head><title>${escHtml(letter.letterNo || "Offer letter")}</title>
         <style>
           body{font-family:Georgia,serif;max-width:640px;margin:40px auto;padding:0 24px;color:#111;line-height:1.5}
           h1{font-size:22px;margin:0 0 4px} .meta{color:#555;font-size:13px;margin-bottom:24px}
@@ -3016,10 +3052,32 @@ function HiringTab() {
           <p class="meta">${escHtml(letter.letterNo || "")} · ${escHtml(letterLabel)} · ${escHtml(letter.fullName || "")}</p>
           <pre>${escHtml(letter.body || "")}</pre>
           <div class="actions"><button onclick="window.print()">Print / Save PDF</button></div>
-          ${autoPrint ? "<script>window.print()<\\/script>" : ""}
-        </body></html>`);
+        </body></html>`;
+      win.document.open();
+      win.document.write(html);
       win.document.close();
+      if (autoPrint) {
+        setTimeout(() => {
+          try {
+            win.focus();
+            win.print();
+          } catch {
+            /* ignore */
+          }
+        }, 300);
+      }
     } catch (e) {
+      try {
+        win.document.open();
+        win.document.write(`<!doctype html><html><body style="font-family:system-ui;padding:32px;color:#b91c1c">${escHtml((e as Error).message)}</body></html>`);
+        win.document.close();
+      } catch {
+        try {
+          win.close();
+        } catch {
+          /* ignore */
+        }
+      }
       setError((e as Error).message);
     }
   }
@@ -3063,7 +3121,7 @@ function HiringTab() {
         </p>
         <Table
           empty="No offer letters yet. Click + Create Letter to generate one."
-          columns={["Letter no.", "Volunteer", "Role", "Start date", "Honorarium", "Status", "Actions"]}
+          columns={["Letter no.", "Employee", "Role", "Start date", "CTC / Salary", "Status", "Actions"]}
           rows={filtered.map((c) => [
             c.letterNo || "—",
             <span key={`${c.id}-name`}>
@@ -3505,4 +3563,24 @@ function escHtml(value: string | number | undefined) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/** Open HTML in a new tab without noopener (so write works) and without losing the click gesture when possible. */
+function openPrintHtml(html: string, autoPrint = false) {
+  const win = window.open("about:blank", "_blank", "width=720,height=900");
+  if (!win) return false;
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  if (autoPrint) {
+    setTimeout(() => {
+      try {
+        win.focus();
+        win.print();
+      } catch {
+        /* ignore */
+      }
+    }, 300);
+  }
+  return true;
 }
