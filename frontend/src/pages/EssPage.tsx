@@ -2899,7 +2899,6 @@ function HiringTab() {
   const [offerCtc, setOfferCtc] = useState("");
   const [offerJoining, setOfferJoining] = useState(today());
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [moreId, setMoreId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -2989,7 +2988,6 @@ function HiringTab() {
       await api(`/api/actions/ess/offer-letters/${id}/publish`, { method: "POST", body: "{}" });
       applicants.reload();
       setNotice("Letter marked Published.");
-      setMoreId(null);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -3006,7 +3004,6 @@ function HiringTab() {
       applicants.reload();
       jobs.reload();
       setNotice(`${out.employee?.fullName || "Candidate"} is now on the employee master.`);
-      setMoreId(null);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -3172,35 +3169,11 @@ function HiringTab() {
                   Issue offer
                 </LinkButton>
               )}
-              {c.canViewLetter && (
-                <span className="relative">
-                  <LinkButton onClick={() => setMoreId((id) => (id === c.id ? null : c.id))}>More actions ▾</LinkButton>
-                  {moreId === c.id && (
-                    <span className="absolute right-0 z-10 mt-1 min-w-[9rem] rounded-lg border border-line bg-white p-2 shadow-md">
-                      {c.status === "OFFER" && (
-                        <button type="button" className="block w-full px-2 py-1.5 text-left text-sm hover:bg-mist" onClick={() => void hire(c.id)}>
-                          Hire
-                        </button>
-                      )}
-                      {(c.offerLetterStatus || "").toUpperCase() !== "PUBLISHED" && (
-                        <button type="button" className="block w-full px-2 py-1.5 text-left text-sm hover:bg-mist" onClick={() => void publishLetter(c.id)}>
-                          Mark published
-                        </button>
-                      )}
-                      {c.status !== "HIRED" && c.status !== "REJECTED" && (
-                        <button
-                          type="button"
-                          className="block w-full px-2 py-1.5 text-left text-sm text-red-700 hover:bg-mist"
-                          onClick={() => void advance(c.id, "REJECTED")}
-                        >
-                          Reject
-                        </button>
-                      )}
-                    </span>
-                  )}
-                </span>
+              {c.status === "OFFER" && <LinkButton onClick={() => void hire(c.id)}>Hire</LinkButton>}
+              {c.canViewLetter && (c.offerLetterStatus || "").toUpperCase() !== "PUBLISHED" && (
+                <LinkButton onClick={() => void publishLetter(c.id)}>Mark published</LinkButton>
               )}
-              {!c.canViewLetter && c.status !== "HIRED" && c.status !== "REJECTED" && (
+              {c.status !== "HIRED" && c.status !== "REJECTED" && (
                 <LinkButton onClick={() => void advance(c.id, "REJECTED")}>Reject</LinkButton>
               )}
             </span>,
