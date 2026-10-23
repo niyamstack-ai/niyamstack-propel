@@ -493,13 +493,22 @@ public class EssService {
         long approved = docs.stream().filter(d -> "APPROVED".equalsIgnoreCase(d.getStatus())).count();
         long rejected = docs.stream().filter(d -> "REJECTED".equalsIgnoreCase(d.getStatus())).count();
         List<Employee> staff = store.list(Employee.class, orgId());
+        Map<UUID, List<EmployeeDocument>> byEmp = docs.stream()
+                .collect(Collectors.groupingBy(EmployeeDocument::getEmployeeId));
         long missingBank = staff.stream()
                 .filter(e -> "ACTIVE".equalsIgnoreCase(blank(e.getStatus(), "ACTIVE")))
                 .filter(e -> {
                     Map<String, Object> hr = parseCustom(e.getCustomJson());
                     String pan = String.valueOf(hr.getOrDefault("pan", "")).trim();
                     String bank = String.valueOf(hr.getOrDefault("bankAccount", "")).trim();
-                    return pan.isEmpty() || bank.isEmpty();
+                    List<EmployeeDocument> empDocs = byEmp.getOrDefault(e.getId(), List.of());
+                    boolean panOk = !pan.isEmpty() || empDocs.stream().anyMatch(d ->
+                            "APPROVED".equalsIgnoreCase(d.getStatus())
+                                    && ("PAN_CARD".equalsIgnoreCase(d.getDocType()) || "PAN".equalsIgnoreCase(d.getDocType())));
+                    boolean bankOk = !bank.isEmpty() || empDocs.stream().anyMatch(d ->
+                            "APPROVED".equalsIgnoreCase(d.getStatus())
+                                    && ("BANK_PROOF".equalsIgnoreCase(d.getDocType()) || "BANK".equalsIgnoreCase(d.getDocType())));
+                    return !panOk || !bankOk;
                 })
                 .count();
         Map<String, Object> out = new LinkedHashMap<>();

@@ -400,17 +400,37 @@ function HrKycInbox() {
     [people.data],
   );
 
-  const pendingByEmployee = useMemo(() => {
-    const map = new Map<string, number>();
+  const docsByEmployee = useMemo(() => {
+    const map = new Map<string, Doc[]>();
     for (const d of allDocs.data ?? []) {
-      if ((d.status || "PENDING").toUpperCase() !== "PENDING") continue;
       if (!d.employeeId) continue;
-      map.set(d.employeeId, (map.get(d.employeeId) || 0) + 1);
+      const list = map.get(d.employeeId) ?? [];
+      list.push(d);
+      map.set(d.employeeId, list);
     }
     return map;
   }, [allDocs.data]);
 
-  const missingBankPan = sortedPeople.filter((e) => !e.pan?.trim() || !e.bankAccount?.trim()).length;
+  function hasApprovedDoc(employeeId: string, types: string[]) {
+    const want = new Set(types.map((t) => t.toUpperCase()));
+    return (docsByEmployee.get(employeeId) ?? []).some(
+      (d) => (d.status || "").toUpperCase() === "APPROVED" && want.has((d.docType || "").toUpperCase()),
+    );
+  }
+
+  function pendingDocCount(employeeId: string) {
+    return (docsByEmployee.get(employeeId) ?? []).filter((d) => (d.status || "PENDING").toUpperCase() === "PENDING").length;
+  }
+
+  function panVerified(e: Employee) {
+    return !!e.pan?.trim() || hasApprovedDoc(e.id, ["PAN_CARD", "PAN"]);
+  }
+
+  function bankVerified(e: Employee) {
+    return !!e.bankAccount?.trim() || hasApprovedDoc(e.id, ["BANK_PROOF", "BANK"]);
+  }
+
+  const missingBankPan = sortedPeople.filter((e) => !panVerified(e) || !bankVerified(e)).length;
 
   async function review(id: string, approve: boolean) {
     setError(null);
@@ -499,7 +519,7 @@ function HrKycInbox() {
         <StatCard label="Pending review" value={String(summary.data?.pendingDocuments ?? 0)} />
         <StatCard label="Approved" value={String(summary.data?.approvedDocuments ?? 0)} />
         <StatCard label="Rejected" value={String(summary.data?.rejectedDocuments ?? 0)} />
-        <StatCard label="Missing bank/PAN" value={String(summary.data?.employeesMissingBankOrPan ?? missingBankPan)} />
+        <StatCard label="Missing bank/PAN" value={String(missingBankPan)} />
       </div>
 
       <Card title="Upload document for employee">
@@ -613,14 +633,16 @@ function HrKycInbox() {
           empty="No employees yet. Add them under Employees."
           columns={["Code", "Name", "PAN", "Bank", "Pending docs", ""]}
           rows={sortedPeople.map((e) => {
-            const pending = pendingByEmployee.get(e.id) || 0;
+            const pending = pendingDocCount(e.id);
+            const panOk = panVerified(e);
+            const bankOk = bankVerified(e);
             if (editId === e.id) {
               return [
                 e.employeeCode || "—",
                 e.fullName,
                 <Field key={`${e.id}-pan`} label="" value={pan} onChange={setPan} placeholder="PAN" />,
                 <Field key={`${e.id}-bank`} label="" value={bankAccount} onChange={setBankAccount} placeholder="Bank account" />,
-                pending ? statusBadge("PENDING") : fieldBadge(true, "None", "None"),
+                pending ? statusBadge("PENDING") : fieldBadge(true, "Clear", "Clear"),
                 <span key={`${e.id}-save`} className="flex flex-wrap gap-2">
                   <LinkButton onClick={() => void saveBank(e)}>Save</LinkButton>
                   <LinkButton onClick={() => setEditId(null)}>Cancel</LinkButton>
@@ -630,15 +652,21 @@ function HrKycInbox() {
             return [
               e.employeeCode || "—",
               e.fullName,
-              fieldBadge(!!e.pan?.trim(), e.pan || "Verified", "Missing"),
-              fieldBadge(!!e.bankAccount?.trim(), "Verified", "Missing"),
-              pending > 0 ? statusBadge("PENDING") : fieldBadge(true, "Clear", "Clear"),
+              fieldBadge(panOk, e.pan?.trim() || "Verified", "Missing"),
+              fieldBadge(bankOk, e.bankAccount?.trim() ? "Verified" : "Verified", "Missing"),
+              pending > 0 ? (
+                <span key={`${e.id}-pend`} className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-900">
+                  {pending} pending
+                </span>
+              ) : (
+                fieldBadge(true, "Clear", "Clear")
+              ),
               <span key={`${e.id}-act`} className="flex flex-wrap gap-2">
                 <LinkButton onClick={() => startEdit(e)}>Edit bank</LinkButton>
                 <LinkButton
                   onClick={() => {
                     setUploadEmployeeId(e.id);
-                    setDocType("BANK_PROOF");
+                    setDocType(bankOk ? "PAN_CARD" : "BANK_PROOF");
                   }}
                 >
                   Upload
@@ -654,7 +682,7 @@ function HrKycInbox() {
           </FormGrid>
         )}
         <p className="mt-3 text-sm text-slate-500">
-          Green = filled. Amber = missing. Use <strong>Edit bank</strong> or <strong>Upload</strong> so HR does not depend on staff alone.
+          Green = profile field filled <em>or</em> an approved document (PAN card / bank proof). Amber = still missing. Pending docs = awaiting HR review.
         </p>
       </Card>
     </>
