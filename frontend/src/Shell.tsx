@@ -144,6 +144,10 @@ function isWebsiteBuilder(path: string) {
   return path === "/website" || path.startsWith("/website/");
 }
 
+function isEssWorkspace(path: string) {
+  return path === "/ess" || path.startsWith("/ess/");
+}
+
 export function Shell() {
   const { user } = useAuth();
   const { t } = useLocale();
@@ -154,6 +158,7 @@ export function Shell() {
   const [subscribeMessage, setSubscribeMessage] = useState<string | null>(null);
   const courseChrome = isCourseChrome(location.pathname);
   const websiteBuilder = isWebsiteBuilder(location.pathname);
+  const essWorkspace = isEssWorkspace(location.pathname);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -202,9 +207,9 @@ export function Shell() {
     </div>
   ) : null;
 
-  if (websiteBuilder) {
+  if (websiteBuilder || essWorkspace) {
     return (
-      <div className="h-svh overflow-hidden bg-mist">
+      <div className={websiteBuilder ? "h-svh overflow-hidden bg-mist" : "min-h-svh bg-mist"}>
         {subscribeModal}
         <Outlet />
       </div>

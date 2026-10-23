@@ -47,6 +47,7 @@ import { FeaturesPage } from "./pages/FeaturesPage";
 import { AuditPage } from "./pages/AuditPage";
 import { LmsPage } from "./pages/LmsPage";
 import { EssPage } from "./pages/EssPage";
+import { EssShell } from "./pages/EssShell";
 import { AcademicsPage } from "./pages/AcademicsPage";
 import { StorefrontAppPage, StorefrontCatalogPage, StorefrontChatsPage, StorefrontCmsPage, StorefrontCoursePage, StorefrontFeesPage, StorefrontForgotPage, StorefrontJobsPage, StorefrontLandingPage, StorefrontLayout, StorefrontLearnPage, StorefrontLoginPage, StorefrontNoticesPage, StorefrontOneToOnePage, StorefrontProfilePage, StorefrontRegisterPage, StorefrontStudyPage } from "./pages/Storefront";
 import { LegalPage } from "./pages/LegalPage";
@@ -227,7 +228,10 @@ export default function App() {
           <Route path="crm" element={<CrmPage />} />
           <Route path="students" element={<StudentsPage />} />
           <Route path="lms" element={<LmsPage />} />
-          <Route path="ess" element={<EssPage />} />
+          <Route path="ess" element={<EssShell />}>
+            <Route index element={<EssPage />} />
+            <Route path=":section" element={<EssPage />} />
+          </Route>
           <Route path="academics" element={<AcademicsPage />} />
           <Route path="coupons" element={<Navigate to="/courses?view=coupons" replace />} />
           <Route path="fees" element={<FeesPage />} />

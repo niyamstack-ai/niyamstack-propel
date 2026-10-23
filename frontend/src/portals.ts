@@ -135,6 +135,7 @@ function roleNav(role?: string): NavEntry[] {
           ],
         },
         { to: "/people/students", label: "People" },
+        { to: "/ess", label: "ESS" },
         { to: "/crm", label: "Admissions" },
         { to: "/fees", label: "Fees" },
         { to: "/analytics", label: "Reports" },

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate, useOutletContext, useParams } from "react-router-dom";
 import { api } from "../api";
 import { createRecord, deleteRecord, updateRecord } from "../ops";
 import { useAuth } from "../auth";
 import { prettyLabel } from "../labels";
-import { useLocale } from "../locale";
 import { hasGrowthTier } from "../packs";
 import { Card, ErrorText, Field, FileUpload, FormGrid, LinkButton, PrimaryButton, Select, Table, TextArea, formatDay, formatInr, formatWhen, useApi, PhoneField, phoneForApi } from "../ui";
+import type { EssOutletAccess } from "./EssShell";
 
 type Employee = {
   id: string;
@@ -139,60 +139,313 @@ type ManagerInbox = {
   teamSize?: number;
 };
 
-const HR_TABS = ["profile", "team", "employees", "attendance", "leave", "payroll", "compensation", "hiring", "devices"] as const;
-const PAYROLL_TABS = ["profile", "attendance", "leave", "payroll", "compensation"] as const;
-const MANAGER_TABS = ["profile", "team", "attendance", "leave", "payroll"] as const;
-const STAFF_TABS = ["profile", "attendance", "leave", "payroll"] as const;
-type Tab = (typeof HR_TABS)[number];
+type EssSection =
+  | "dashboard"
+  | "employees"
+  | "documents"
+  | "hiring"
+  | "payroll"
+  | "payslips"
+  | "attendance"
+  | "leave"
+  | "exit"
+  | "compensation"
+  | "team"
+  | "devices"
+  | "profile";
 
-export function EssPage() {
+function useEssAccess(): EssOutletAccess {
+  const ctx = useOutletContext<EssOutletAccess | null>();
   const { user } = useAuth();
-  const { t } = useLocale();
+  if (ctx) return ctx;
   const hr = user?.role === "OWNER" || (user?.capabilities ?? []).includes("ESS_MANAGE");
   const payroll = hr || user?.role === "ACCOUNTANT";
+  const manager = hr || (user?.capabilities ?? []).includes("LEAVE_APPROVE");
   const growth = hasGrowthTier(user?.packageTier, user?.modules);
-  const manager = (user?.capabilities ?? []).includes("LEAVE_APPROVE");
-  const [tab, setTab] = useState<Tab>(hr ? "employees" : payroll ? "payroll" : manager ? "team" : "profile");
-  const tabs = (hr ? HR_TABS : payroll ? PAYROLL_TABS : manager ? MANAGER_TABS : STAFF_TABS).filter(
-    (item) => item !== "compensation" || growth,
-  );
+  return { hr, payroll, manager, growth };
+}
+
+function sectionAllowed(section: EssSection, access: EssOutletAccess) {
+  switch (section) {
+    case "employees":
+    case "hiring":
+    case "devices":
+      return access.hr;
+    case "payroll":
+      return access.payroll;
+    case "compensation":
+      return access.payroll && access.growth;
+    case "team":
+      return access.manager;
+    default:
+      return true;
+  }
+}
+
+function fallbackSection(access: EssOutletAccess): EssSection {
+  if (access.hr) return "dashboard";
+  if (access.payroll) return "payroll";
+  if (access.manager) return "team";
+  return "profile";
+}
+
+export function EssPage() {
+  const { section: raw } = useParams<{ section?: string }>();
+  const access = useEssAccess();
+  const section = ((raw || "dashboard") as EssSection);
+
+  if (!sectionAllowed(section, access)) {
+    return <Navigate to={`/ess/${fallbackSection(access)}`} replace />;
+  }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-navy">{t("ess_title", "ESS")}</h1>
-        <p className="text-sm text-slate-500">
-          {hr
-            ? t("ess_subtitle", "Employee master, staff attendance, leave, payroll, and institute hiring. Staff logins stay under People → Staff.")
-            : payroll
-              ? "Payroll settings, payslips, attendance, and leave. Hiring and employee master stay with the owner."
-              : manager
-                ? "Your profile, team leave approvals, attendance, and payslips."
-                : "Your profile, attendance, leave, and payslips."}
-        </p>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {tabs.map((item) => (
-          <button
-            key={item}
-            type="button"
-            onClick={() => setTab(item)}
-            className={`rounded-full px-3 py-1.5 text-sm ${tab === item ? "bg-navy text-white" : "bg-mist"}`}
-          >
-            {prettyLabel(item)}
-          </button>
-        ))}
-      </div>
-      {tab === "profile" && <ProfileTab hr={hr} />}
-      {tab === "team" && (hr || manager) && <TeamTab hr={hr} />}
-      {tab === "employees" && hr && <EmployeesTab />}
-      {tab === "attendance" && <AttendanceTab hr={hr || payroll} />}
-      {tab === "leave" && <LeaveTab hr={hr} manager={manager} />}
-      {tab === "payroll" && <PayrollTab hr={hr || payroll} />}
-      {tab === "compensation" && (hr || payroll) && growth && <CompensationTab />}
-      {tab === "hiring" && hr && <HiringTab />}
-      {tab === "devices" && hr && <DevicesTab />}
+      {section === "dashboard" && <EssDashboard access={access} />}
+      {section === "employees" && access.hr && <EmployeesSection />}
+      {section === "documents" && <DocumentsSection hr={access.hr} />}
+      {section === "hiring" && access.hr && <HiringSection />}
+      {section === "payroll" && access.payroll && <PayrollSection hr={access.hr || access.payroll} />}
+      {section === "payslips" && <PayslipsSection hr={access.hr || access.payroll} />}
+      {section === "attendance" && <AttendanceSection hr={access.hr || access.payroll} />}
+      {section === "leave" && <LeaveSection hr={access.hr} manager={access.manager} />}
+      {section === "exit" && <ExitSection hr={access.hr} manager={access.manager} />}
+      {section === "compensation" && access.payroll && access.growth && <CompensationSection />}
+      {section === "team" && access.manager && <TeamSection hr={access.hr} />}
+      {section === "devices" && access.hr && <DevicesSection />}
+      {section === "profile" && <ProfileSection hr={access.hr} />}
     </div>
+  );
+}
+
+function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div>
+      <h1 className="text-2xl font-bold text-navy">{title}</h1>
+      <p className="text-sm text-slate-500">{subtitle}</p>
+    </div>
+  );
+}
+
+function EssDashboard({ access }: { access: EssOutletAccess }) {
+  const people = useApi<Employee[]>(access.hr || access.payroll ? "/api/employees" : "");
+  const slips = useApi<Payslip[]>("/api/payslips");
+  const leaves = useApi<Leave[]>("/api/leave-requests");
+  const inbox = useApi<ManagerInbox>(access.manager ? "/api/actions/ess/manager/inbox" : "");
+
+  const total = people.data?.length ?? 0;
+  const active = (people.data ?? []).filter((e) => (e.status || "ACTIVE") === "ACTIVE").length;
+  const pendingKyc = (people.data ?? []).filter((e) => !e.pan || !e.bankAccount).length;
+  const publishedSlips = (slips.data ?? []).filter((s) => s.status === "PUBLISHED").length;
+  const pendingLeave = (leaves.data ?? []).filter((l) => l.status === "PENDING").length;
+
+  const workflow = [
+    { label: "Create employee profile and login", to: "/ess/employees", status: total > 0 ? "Ready" : "Draft", ok: total > 0 },
+    { label: "Verify KYC and bank details", to: "/ess/documents", status: pendingKyc === 0 && total > 0 ? "Verified" : "Pending", ok: pendingKyc === 0 && total > 0 },
+    { label: "Issue offer / hire candidate", to: "/ess/hiring", status: "Open", ok: true, hrOnly: true },
+    { label: "Run monthly payroll and publish payslips", to: "/ess/payroll", status: publishedSlips > 0 ? "Published" : "Pending", ok: publishedSlips > 0 },
+  ];
+
+  return (
+    <>
+      <PageHeader
+        title="ESS Admin Dashboard"
+        subtitle="Employee master, attendance, leave, payroll, and hiring — one workspace."
+      />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Total employees" value={String(total)} />
+        <StatCard label="Active employees" value={String(active)} />
+        <StatCard label="Pending KYC / bank" value={String(pendingKyc)} />
+        <StatCard label="Payslips published" value={String(publishedSlips)} />
+      </div>
+      {(access.manager || pendingLeave > 0) && (
+        <div className="grid gap-4 sm:grid-cols-3">
+          <StatCard label="Pending leave" value={String(inbox.data?.pendingLeave ?? pendingLeave)} />
+          <StatCard label="Pending regularizations" value={String(inbox.data?.pendingRegularization ?? 0)} />
+          <StatCard label="Pending resignations" value={String(inbox.data?.pendingResignation ?? 0)} />
+        </div>
+      )}
+      <Card title="Quick actions">
+        <div className="flex flex-wrap gap-2">
+          {access.hr && (
+            <Link className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white" to="/ess/employees">
+              + Add employee
+            </Link>
+          )}
+          {access.payroll && (
+            <Link className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-navy" to="/ess/payroll">
+              Run payroll
+            </Link>
+          )}
+          <Link className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-navy" to="/ess/payslips">
+            Payslips
+          </Link>
+          <Link className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-navy" to="/ess/leave">
+            Leave requests
+          </Link>
+        </div>
+      </Card>
+      <Card title="Operational flow">
+        <ul className="space-y-3">
+          {workflow
+            .filter((step) => !step.hrOnly || access.hr)
+            .map((step) => (
+              <li key={step.label} className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3 last:border-0 last:pb-0">
+                <Link className="text-sm font-medium text-navy hover:underline" to={step.to}>
+                  {step.label}
+                </Link>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${step.ok ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
+                  {step.status}
+                </span>
+              </li>
+            ))}
+        </ul>
+      </Card>
+    </>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <Card title={label}>
+      <p className="text-3xl font-bold text-navy">{value}</p>
+    </Card>
+  );
+}
+
+function EmployeesSection() {
+  return (
+    <>
+      <PageHeader title="Employees" subtitle="Employee master — profiles, roles, and portal logins." />
+      <EmployeesTab />
+    </>
+  );
+}
+
+function DocumentsSection({ hr }: { hr: boolean }) {
+  const people = useApi<Employee[]>(hr ? "/api/employees" : "");
+  return (
+    <>
+      <PageHeader
+        title="KYC & Bank"
+        subtitle="Bank account, PAN, UAN, ESI, and identity documents for payroll."
+      />
+      {hr && (
+        <Card title="Employee verification">
+          <Table
+            empty="No employees yet. Add them under Employees."
+            columns={["Code", "Name", "PAN", "Bank", "UAN", "ESI"]}
+            rows={(people.data ?? []).map((e) => [
+              e.employeeCode || "—",
+              e.fullName,
+              e.pan || "—",
+              e.bankAccount || "—",
+              e.uan || "—",
+              e.esiNumber || "—",
+            ])}
+          />
+          <p className="mt-3 text-xs text-slate-500">Staff update their own bank and KYC under My Profile. HR can review the list above.</p>
+        </Card>
+      )}
+      <ProfileTab hr={hr} />
+    </>
+  );
+}
+
+function HiringSection() {
+  return (
+    <>
+      <PageHeader title="Offer Letters" subtitle="Vacancies, candidates, offer CTC, and hire into employee master." />
+      <HiringTab />
+    </>
+  );
+}
+
+function PayrollSection({ hr }: { hr: boolean }) {
+  return (
+    <>
+      <PageHeader title="Payroll" subtitle="Salary structures, statutory settings, run monthly cycle, then publish payslips." />
+      <PayrollTab hr={hr} />
+    </>
+  );
+}
+
+function PayslipsSection({ hr }: { hr: boolean }) {
+  return (
+    <>
+      <PageHeader title="Payslips" subtitle="Generate from payroll cycles, publish, and download salary receipts." />
+      <PayrollTab hr={hr} />
+    </>
+  );
+}
+
+function AttendanceSection({ hr }: { hr: boolean }) {
+  return (
+    <>
+      <PageHeader title="Attendance" subtitle="Mark attendance, regularizations, and biometric punches." />
+      <AttendanceTab hr={hr} />
+    </>
+  );
+}
+
+function LeaveSection({ hr, manager }: { hr: boolean; manager: boolean }) {
+  return (
+    <>
+      <PageHeader title="Leave Requests" subtitle="Apply leave, balances, and approvals." />
+      <LeaveTab hr={hr} manager={manager} />
+    </>
+  );
+}
+
+function ExitSection({ hr, manager }: { hr: boolean; manager: boolean }) {
+  if (hr || manager) {
+    return (
+      <>
+        <PageHeader title="Exit Requests" subtitle="Resignations, notice period, and exit decisions." />
+        <TeamTab hr={hr} />
+      </>
+    );
+  }
+  return (
+    <>
+      <PageHeader title="Exit Requests" subtitle="Submit your resignation to HR." />
+      <ProfileTab hr={false} />
+    </>
+  );
+}
+
+function CompensationSection() {
+  return (
+    <>
+      <PageHeader title="Compensation" subtitle="Variable pay plans and commission ledger." />
+      <CompensationTab />
+    </>
+  );
+}
+
+function TeamSection({ hr }: { hr: boolean }) {
+  return (
+    <>
+      <PageHeader title="Team" subtitle="Approvals inbox, team attendance, and leave calendar." />
+      <TeamTab hr={hr} />
+    </>
+  );
+}
+
+function DevicesSection() {
+  return (
+    <>
+      <PageHeader title="Devices" subtitle="Biometric punch import and device secrets." />
+      <DevicesTab />
+    </>
+  );
+}
+
+function ProfileSection({ hr }: { hr: boolean }) {
+  return (
+    <>
+      <PageHeader title="My Profile" subtitle="Contact, bank details, documents, and resignation." />
+      <ProfileTab hr={hr} />
+    </>
   );
 }
 
