@@ -986,8 +986,10 @@ function CoursePage() {
   const [validityOption, setValidityOption] = useState("a");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState<{ emailMasked?: string; devOtp?: string } | null>(null);
+  /** Phone/email already verified on an existing student — skip OTP and go to purchase. */
+  const [emailAlreadyVerified, setEmailAlreadyVerified] = useState(false);
   const [previewItem, setPreviewItem] = useState<OutlineItem | null>(null);
-  const needsEmailVerify = !(token && user?.role === "STUDENT" && user?.emailVerified);
+  const needsEmailVerify = !(token && user?.role === "STUDENT" && user?.emailVerified) && !emailAlreadyVerified;
 
   useEffect(() => {
     if (!slug || !courseId) return;
@@ -1055,13 +1057,20 @@ function CoursePage() {
     }
   }
 
+  function markEmailAlreadyVerified() {
+    setEmailAlreadyVerified(true);
+    setOtpSent(null);
+    setOtp("");
+    setError(null);
+  }
+
   async function sendPurchaseOtp(e?: FormEvent) {
     e?.preventDefault();
     if (!slug || !course?.id) return;
     setBusy(true);
     setError(null);
     try {
-      const res = await api<{ emailMasked?: string; devOtp?: string }>(`/api/public/sites/${slug}/purchase/otp`, {
+      const res = await api<{ status?: string; emailMasked?: string; devOtp?: string }>(`/api/public/sites/${slug}/purchase/otp`, {
         method: "POST",
         body: JSON.stringify({
           fullName: name,
@@ -1072,9 +1081,20 @@ function CoursePage() {
           validityOption,
         }),
       });
+      if (res.status === "already_verified") {
+        markEmailAlreadyVerified();
+        return;
+      }
+      setEmailAlreadyVerified(false);
       setOtpSent(res);
     } catch (err) {
-      setError((err as Error).message);
+      const msg = (err as Error).message || "";
+      // Older API threw this as an error; treat it the same as already_verified.
+      if (/email already verified/i.test(msg)) {
+        markEmailAlreadyVerified();
+        return;
+      }
+      setError(msg);
     } finally {
       setBusy(false);
     }
@@ -1154,7 +1174,13 @@ function CoursePage() {
         },
       });
     } catch (err) {
-      setError((err as Error).message);
+      const msg = (err as Error).message || "";
+      if (/verify your email first|request a (new )?email code|details changed/i.test(msg)) {
+        setEmailAlreadyVerified(false);
+        setOtpSent(null);
+        setOtp("");
+      }
+      setError(msg);
     } finally {
       setBusy(false);
     }
@@ -1374,13 +1400,40 @@ function CoursePage() {
               You&apos;re signed in as institute staff. Open this page in a private window, or log out, to buy as a student.
             </p>
           )}
-          {loggedStudent && !needsEmailVerify ? (
-            <>
+          {(loggedStudent && !needsEmailVerify) || emailAlreadyVerified ? (
+            <form
+              className="space-y-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void buy();
+              }}
+            >
+              {emailAlreadyVerified && (
+                <>
+                  <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" required placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+                  <PhoneField required value={phone} onChange={setPhone} placeholder="Mobile" />
+                  <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                  <p className="text-xs text-emerald-700">Email already verified. You can continue to purchase.</p>
+                </>
+              )}
               {error && <p className="text-sm text-red-600">{error}</p>}
-              <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy || sellBlocked} onClick={() => void buy()}>
-                {busy ? "Unlocking…" : pay === 0 ? "Enroll free" : paidCta}
+              <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy || sellBlocked}>
+                {busy ? "Unlocking…" : sellBlocked ? "Enrolment closed" : pay === 0 ? "Enroll free" : emailAlreadyVerified ? `Continue to purchase · ${formatInr(pay)}` : paidCta}
               </button>
-            </>
+              {emailAlreadyVerified && (
+                <button
+                  type="button"
+                  className="w-full text-xs text-brand"
+                  disabled={busy}
+                  onClick={() => {
+                    setEmailAlreadyVerified(false);
+                    setError(null);
+                  }}
+                >
+                  Change details
+                </button>
+              )}
+            </form>
           ) : !otpSent ? (
             <form className="space-y-2" onSubmit={(e) => void sendPurchaseOtp(e)}>
               <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" required placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />

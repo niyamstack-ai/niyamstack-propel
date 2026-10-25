@@ -249,10 +249,15 @@ public class StorefrontService {
             String validityOption
     ) {
         PurchaseContext ctx = preparePurchase(slug, fullName, email, phoneRaw, courseId);
-        if (ctx.user() != null && ctx.user().isEmailVerified()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Email already verified. Continue to purchase.");
-        }
         String mail = ctx.email();
+        if (ctx.user() != null && ctx.user().isEmailVerified()) {
+            // Already verified — client should skip OTP and call purchase directly.
+            Map<String, Object> skip = new LinkedHashMap<>();
+            skip.put("status", "already_verified");
+            skip.put("emailMasked", maskEmail(mail));
+            skip.put("channel", "email");
+            return skip;
+        }
         String phone = ctx.phone();
         Map<String, String> payload = new LinkedHashMap<>();
         payload.put("orgId", ctx.org().getId().toString());
