@@ -511,6 +511,7 @@ function StorefrontShell() {
   const { user, token } = useAuth();
   const accent = site?.brandPrimary || "#0078f0";
   const [examLock, setExamLock] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [pages, setPages] = useState<CmsPage[]>([]);
 
   useEffect(() => {
@@ -524,6 +525,10 @@ function StorefrontShell() {
       load(`/api/public/cms/${slug}/pages`).catch(() => setPages(site?.pages ?? []))
     );
   }, [slug, site?.pages]);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     const on = () => setExamLock(true);
@@ -618,113 +623,186 @@ function StorefrontShell() {
 
   const student = token && user?.role === "STUDENT";
   const siteLive = site.live === true;
+  const cmsLinks = pages
+    .filter((p) => p.slug !== "home" && p.slug !== "courses" && p.pageType !== "COURSES")
+    .slice(0, 5);
+  const navLinkClass = "rounded-full px-3 py-1.5 hover:bg-mist";
+  const mobileNavLinkClass = "block rounded-lg px-3 py-2.5 text-sm font-medium text-navy hover:bg-mist";
+
+  const logoBlock = (() => {
+    const logo = siteLogoTarget(site, slug);
+    const logoClass = `flex min-w-0 items-center gap-2 ${examLock ? "pointer-events-none opacity-40" : ""}`;
+    const logoInner = (
+      <>
+        {site.logoUrl ? (
+          <img src={site.logoUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-contain" />
+        ) : (
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-navy text-sm font-bold text-white">
+            {initialsOf(site.name)}
+          </span>
+        )}
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold text-navy">{site.name}</p>
+        </div>
+      </>
+    );
+    if (logo.external) {
+      return (
+        <a href={logo.href} className={logoClass} tabIndex={examLock ? -1 : 0} aria-hidden={examLock} rel="noopener noreferrer">
+          {logoInner}
+        </a>
+      );
+    }
+    return (
+      <Link to={logo.to} className={logoClass} tabIndex={examLock ? -1 : 0} aria-hidden={examLock}>
+        {logoInner}
+      </Link>
+    );
+  })();
 
   return (
     <div className="min-h-svh bg-mist" style={{ ["--color-brand" as string]: accent }}>
-      <header className={`sticky top-0 border-b border-line bg-white ${examLock ? "z-0 pointer-events-none" : "z-10"}`}>
+      <header className={`sticky top-0 border-b border-line bg-white ${examLock ? "z-0 pointer-events-none" : "z-20"}`}>
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
-          {(() => {
-            const logo = siteLogoTarget(site, slug);
-            const logoClass = `flex items-center gap-2 ${examLock ? "pointer-events-none opacity-40" : ""}`;
-            const logoInner = (
-              <>
-                {site.logoUrl ? (
-                  <img src={site.logoUrl} alt="" className="h-9 w-9 rounded-lg object-contain" />
-                ) : (
-                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-navy text-sm font-bold text-white">
-                    {initialsOf(site.name)}
-                  </span>
-                )}
-                <div>
-                  <p className="text-sm font-bold text-navy">{site.name}</p>
-                </div>
-              </>
-            );
-            if (logo.external) {
-              return (
-                <a
-                  href={logo.href}
-                  className={logoClass}
-                  tabIndex={examLock ? -1 : 0}
-                  aria-hidden={examLock}
-                  rel="noopener noreferrer"
-                >
-                  {logoInner}
-                </a>
-              );
-            }
-            return (
-              <Link to={logo.to} className={logoClass} tabIndex={examLock ? -1 : 0} aria-hidden={examLock}>
-                {logoInner}
-              </Link>
-            );
-          })()}
-          <nav className={`flex flex-wrap items-center gap-2 text-sm ${examLock ? "pointer-events-none opacity-40" : ""}`} aria-hidden={examLock}>
-            <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={sitePath(slug) || "/"} tabIndex={examLock ? -1 : 0}>
+          {logoBlock}
+          {/* Desktop nav */}
+          <nav className={`hidden items-center gap-1 text-sm md:flex ${examLock ? "pointer-events-none opacity-40" : ""}`} aria-hidden={examLock}>
+            <Link className={navLinkClass} to={sitePath(slug) || "/"} tabIndex={examLock ? -1 : 0}>
               Courses
             </Link>
-            {pages
-              .filter((p) => p.slug !== "home" && p.slug !== "courses" && p.pageType !== "COURSES")
-              .slice(0, 5)
-              .map((p) => (
-                <Link key={p.slug} className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/p/${p.slug}`} tabIndex={examLock ? -1 : 0}>
-                  {p.title}
-                </Link>
-              ))}
+            {cmsLinks.map((p) => (
+              <Link key={p.slug} className={navLinkClass} to={`${sitePath(slug)}/p/${p.slug}`} tabIndex={examLock ? -1 : 0}>
+                {p.title}
+              </Link>
+            ))}
             {site.hasOneToOne && (
-              <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/one-to-one`} tabIndex={examLock ? -1 : 0}>
+              <Link className={navLinkClass} to={`${sitePath(slug)}/one-to-one`} tabIndex={examLock ? -1 : 0}>
                 1:1
               </Link>
             )}
-            <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/app`} tabIndex={examLock ? -1 : 0}>
-                Install site
-              </Link>
+            <Link className={navLinkClass} to={`${sitePath(slug)}/app`} tabIndex={examLock ? -1 : 0}>
+              Install site
+            </Link>
             {student ? (
               <>
-                <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/learn`} tabIndex={examLock ? -1 : 0}>
+                <Link className={navLinkClass} to={`${sitePath(slug)}/learn`} tabIndex={examLock ? -1 : 0}>
                   My learning
                 </Link>
-                <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/fees`} tabIndex={examLock ? -1 : 0}>
+                <Link className={navLinkClass} to={`${sitePath(slug)}/fees`} tabIndex={examLock ? -1 : 0}>
                   Fees
                 </Link>
                 {site.hasJobs && (
-                  <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/jobs`} tabIndex={examLock ? -1 : 0}>
+                  <Link className={navLinkClass} to={`${sitePath(slug)}/jobs`} tabIndex={examLock ? -1 : 0}>
                     Jobs
                   </Link>
                 )}
-                <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/notices`} tabIndex={examLock ? -1 : 0}>
+                <Link className={navLinkClass} to={`${sitePath(slug)}/notices`} tabIndex={examLock ? -1 : 0}>
                   Notices
                 </Link>
-                <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/chats`} tabIndex={examLock ? -1 : 0}>
+                <Link className={navLinkClass} to={`${sitePath(slug)}/chats`} tabIndex={examLock ? -1 : 0}>
                   Chat
                 </Link>
-                <span className={examLock ? "pointer-events-none opacity-40" : ""}>
-                  <UserMenu
-                    signOutTo={sitePath(slug) || "/"}
-                    profileTo={`${sitePath(slug)}/profile`}
-                    showName
-                    extraLinks={[
-                      { label: "Fees", to: `${sitePath(slug)}/fees` },
-                      ...(site.hasJobs ? [{ label: "Jobs", to: `${sitePath(slug)}/jobs` }] : []),
-                      { label: "Notices", to: `${sitePath(slug)}/notices` },
-                      { label: "Chat", to: `${sitePath(slug)}/chats` },
-                      ...(site.hasOneToOne ? [{ label: "1:1 sessions", to: `${sitePath(slug)}/one-to-one` }] : []),
-                    ]}
-                  />
-                </span>
+                <UserMenu
+                  signOutTo={sitePath(slug) || "/"}
+                  profileTo={`${sitePath(slug)}/profile`}
+                  showName
+                  extraLinks={[
+                    { label: "Fees", to: `${sitePath(slug)}/fees` },
+                    ...(site.hasJobs ? [{ label: "Jobs", to: `${sitePath(slug)}/jobs` }] : []),
+                    { label: "Notices", to: `${sitePath(slug)}/notices` },
+                    { label: "Chat", to: `${sitePath(slug)}/chats` },
+                    ...(site.hasOneToOne ? [{ label: "1:1 sessions", to: `${sitePath(slug)}/one-to-one` }] : []),
+                  ]}
+                />
               </>
             ) : (
-              <span className="flex flex-wrap items-center gap-2">
-                <Link className="rounded-full px-3 py-1.5 hover:bg-mist" to={`${sitePath(slug)}/register`}>
+              <>
+                <Link className={navLinkClass} to={`${sitePath(slug)}/register`}>
                   Register
                 </Link>
                 <Link className="rounded-full bg-brand px-3 py-1.5 font-semibold text-white" to={`${sitePath(slug)}/login`}>
                   Login
                 </Link>
-              </span>
+              </>
             )}
           </nav>
+          {/* Mobile: Register + Login visible on screen, plus Menu */}
+          <div className={`flex shrink-0 items-center gap-1.5 md:hidden ${examLock ? "pointer-events-none opacity-40" : ""}`}>
+            {student ? (
+              <UserMenu signOutTo={sitePath(slug) || "/"} profileTo={`${sitePath(slug)}/profile`} />
+            ) : (
+              <>
+                <Link className="rounded-full px-2.5 py-1.5 text-sm font-medium text-navy hover:bg-mist" to={`${sitePath(slug)}/register`}>
+                  Register
+                </Link>
+                <Link className="rounded-full bg-brand px-3 py-1.5 text-sm font-semibold text-white" to={`${sitePath(slug)}/login`}>
+                  Login
+                </Link>
+              </>
+            )}
+            <button
+              type="button"
+              className="rounded-lg border border-line px-2.5 py-1.5 text-sm font-medium text-navy"
+              aria-expanded={menuOpen}
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              {menuOpen ? "Close" : "Menu"}
+            </button>
+          </div>
         </div>
+        {menuOpen && !examLock && (
+          <div className="border-t border-line bg-white md:hidden">
+            <nav className="mx-auto flex max-w-5xl flex-col gap-0.5 px-3 py-3">
+              <Link className={mobileNavLinkClass} to={sitePath(slug) || "/"} onClick={() => setMenuOpen(false)}>
+                Courses
+              </Link>
+              {cmsLinks.map((p) => (
+                <Link key={p.slug} className={mobileNavLinkClass} to={`${sitePath(slug)}/p/${p.slug}`} onClick={() => setMenuOpen(false)}>
+                  {p.title}
+                </Link>
+              ))}
+              {site.hasOneToOne && (
+                <Link className={mobileNavLinkClass} to={`${sitePath(slug)}/one-to-one`} onClick={() => setMenuOpen(false)}>
+                  1:1 sessions
+                </Link>
+              )}
+              <Link className={mobileNavLinkClass} to={`${sitePath(slug)}/app`} onClick={() => setMenuOpen(false)}>
+                Install site
+              </Link>
+              {student ? (
+                <>
+                  <Link className={mobileNavLinkClass} to={`${sitePath(slug)}/learn`} onClick={() => setMenuOpen(false)}>
+                    My learning
+                  </Link>
+                  <Link className={mobileNavLinkClass} to={`${sitePath(slug)}/fees`} onClick={() => setMenuOpen(false)}>
+                    Fees
+                  </Link>
+                  {site.hasJobs && (
+                    <Link className={mobileNavLinkClass} to={`${sitePath(slug)}/jobs`} onClick={() => setMenuOpen(false)}>
+                      Jobs
+                    </Link>
+                  )}
+                  <Link className={mobileNavLinkClass} to={`${sitePath(slug)}/notices`} onClick={() => setMenuOpen(false)}>
+                    Notices
+                  </Link>
+                  <Link className={mobileNavLinkClass} to={`${sitePath(slug)}/chats`} onClick={() => setMenuOpen(false)}>
+                    Chat
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link className={mobileNavLinkClass} to={`${sitePath(slug)}/register`} onClick={() => setMenuOpen(false)}>
+                    Register
+                  </Link>
+                  <Link className={mobileNavLinkClass} to={`${sitePath(slug)}/login`} onClick={() => setMenuOpen(false)}>
+                    Login
+                  </Link>
+                </>
+              )}
+            </nav>
+          </div>
+        )}
       </header>
       {!siteLive && (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-900">
@@ -1232,8 +1310,8 @@ function CoursePage() {
   }
 
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <div className="space-y-5">
+    <div className="space-y-5">
+      <div>
         <p className="text-sm text-slate-500">
           <Link to={`${sitePath(slug)}`} className="text-brand hover:underline">
             Courses
@@ -1241,123 +1319,11 @@ function CoursePage() {
           <span className="px-1">/</span>
           {course.name}
         </p>
-        <h1 className="text-2xl font-bold text-navy">{course.name}</h1>
-        <div className="flex gap-6 border-b border-line text-sm font-semibold">
-          <button type="button" className={`-mb-px border-b-2 pb-2 ${tab === "overview" ? "border-brand text-brand" : "border-transparent text-slate-500"}`} onClick={() => setTab("overview")}>
-            Overview
-          </button>
-          <button type="button" className={`-mb-px border-b-2 pb-2 ${tab === "content" ? "border-brand text-brand" : "border-transparent text-slate-500"}`} onClick={() => setTab("content")}>
-            Content
-          </button>
-        </div>
-
-        {tab === "overview" ? (
-          <div className="space-y-5">
-            <section>
-              <h2 className="font-semibold text-navy">About this course</h2>
-              {course.description ? (
-                <RichHtml html={course.description} className="prose prose-sm mt-2 max-w-none text-slate-600" />
-              ) : (
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">Details will appear here after the institute adds a description.</p>
-              )}
-              {validity && (
-                <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-line bg-white px-3 py-2 text-sm text-navy">
-                  <span className="grid h-8 w-8 place-items-center rounded-full bg-sky-100 text-brand">▶</span>
-                  {validity}
-                </div>
-              )}
-            </section>
-            <section className="rounded-2xl bg-amber-50 px-4 py-4">
-              <h3 className="font-semibold text-navy">What else you will get?</h3>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                {course.allowOffline !== false && (
-                  <p className="text-sm text-slate-700">
-                    <span className="font-medium">Download notes and videos</span>
-                    <span className="block text-slate-500">Save files from My learning after you enroll.</span>
-                  </p>
-                )}
-                {course.allowLive && (
-                  <p className="text-sm text-slate-700">
-                    <span className="font-medium">Live classes</span>
-                    <span className="block text-slate-500">Join scheduled sessions from your learning area.</span>
-                  </p>
-                )}
-                {course.allowTrial && pay === 0 && (
-                  <p className="text-sm text-slate-700">
-                    <span className="font-medium">Free preview</span>
-                    <span className="block text-slate-500">Enrol at no cost to explore the course.</span>
-                  </p>
-                )}
-                <p className="text-sm text-slate-700">
-                  <span className="font-medium">Available on web</span>
-                  <span className="block text-slate-500">Bigger screen, better clarity.</span>
-                </p>
-              </div>
-            </section>
-            {!owned && (
-            <section>
-              <p className="text-sm text-slate-500">You pay</p>
-              <p className="text-2xl font-bold text-navy">{pay === 0 ? "Free" : formatInr(pay)}</p>
-              {couponOk && couponOriginal != null && couponOriginal > pay && (
-                <p className="text-sm text-slate-500">
-                  <span className="line-through">{formatInr(couponOriginal)}</span>
-                  <span className="ml-2 text-emerald-700">after coupon {couponOk}</span>
-                </p>
-              )}
-              <PassThroughPriceLine listPrice={listPay} pay={pay} mode={course.platformFeeMode} />
-              {Number(course.discount || 0) > 0 && course.platformFeeMode !== "PASS_STUDENT" && (
-                <p className="text-xs text-slate-400">List price ₹{course.fees}</p>
-              )}
-            </section>
-            )}
-            {!owned && (
-            <section className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-sky-50 px-4 py-3 text-sm">
-              <span>Have a coupon code</span>
-              <div className="flex gap-2">
-                <input className="w-36 rounded-lg border border-line px-2 py-1.5" placeholder="Code" value={coupon} disabled={!!otpSent} onChange={(e) => { setCoupon(e.target.value); if (otpSent) { setOtpSent(null); setOtp(""); } }} />
-                <button type="button" className="font-semibold text-brand disabled:opacity-50" disabled={busy || !coupon.trim() || !!otpSent} onClick={applyCoupon}>
-                  {busy ? "Applying…" : "Apply"}
-                </button>
-              </div>
-            </section>
-            )}
-            {couponOk && <p className="text-sm text-emerald-700">Coupon {couponOk} applied.</p>}
-            {!owned && <p className="text-xs text-slate-400">By purchasing you agree to the institute terms and refund policy.</p>}
-            <section>
-              <h3 className="font-semibold text-navy">About course creator</h3>
-              <p className="mt-2 text-sm text-slate-600">{course.instituteName || "Institute"}</p>
-            </section>
-          </div>
-        ) : (
-          <div className="divide-y divide-line rounded-2xl border border-line bg-white">
-            {outline.length === 0 && <p className="px-4 py-6 text-sm text-slate-500">Syllabus not published yet.</p>}
-            {folders.map((folder) => (
-              <div key={folder.id} className="px-4 py-3">
-                <p className="font-medium text-navy">{folder.title}</p>
-                <p className="text-xs text-slate-500">
-                  {outline.filter((row) => row.parentFolderId === folder.id).length} item(s)
-                </p>
-                <div className="mt-2 space-y-1">
-                  {outline
-                    .filter((row) => row.parentFolderId === folder.id && row.type !== "FOLDER")
-                    .map((row) => (
-                      <OutlineLessonRow key={row.id} row={row} onPreview={setPreviewItem} />
-                    ))}
-                </div>
-              </div>
-            ))}
-            {outline
-              .filter((row) => !row.parentFolderId && row.type !== "FOLDER")
-              .map((row) => (
-                <OutlineLessonRow key={row.id} row={row} onPreview={setPreviewItem} />
-              ))}
-          </div>
-        )}
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {previewItem && <StorefrontPreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />}
+        <h1 className="mt-1 text-2xl font-bold text-navy">{course.name}</h1>
       </div>
-
-      <aside className="sticky top-4 overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      {/* Purchase first on mobile so buyers see price/CTA without scrolling past overview */}
+      <aside className="order-1 overflow-hidden rounded-2xl border border-line bg-white shadow-sm lg:order-2 lg:sticky lg:top-4">
         <div className="bg-navy p-5 text-white">
           <CourseCover slug={slug!} courseId={course.id} name={course.name} className="mb-3 rounded-xl" />
           <h2 className="text-lg font-bold leading-snug">{course.name}</h2>
@@ -1516,6 +1482,123 @@ function CoursePage() {
           )}
         </div>
       </aside>
+
+      <div className="order-2 space-y-5 lg:order-1">
+        <div className="flex gap-6 border-b border-line text-sm font-semibold">
+          <button type="button" className={`-mb-px border-b-2 pb-2 ${tab === "overview" ? "border-brand text-brand" : "border-transparent text-slate-500"}`} onClick={() => setTab("overview")}>
+            Overview
+          </button>
+          <button type="button" className={`-mb-px border-b-2 pb-2 ${tab === "content" ? "border-brand text-brand" : "border-transparent text-slate-500"}`} onClick={() => setTab("content")}>
+            Content
+          </button>
+        </div>
+
+        {tab === "overview" ? (
+          <div className="space-y-5">
+            <section>
+              <h2 className="font-semibold text-navy">About this course</h2>
+              {course.description ? (
+                <RichHtml html={course.description} className="prose prose-sm mt-2 max-w-none text-slate-600" />
+              ) : (
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">Details will appear here after the institute adds a description.</p>
+              )}
+              {validity && (
+                <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-line bg-white px-3 py-2 text-sm text-navy">
+                  <span className="grid h-8 w-8 place-items-center rounded-full bg-sky-100 text-brand">▶</span>
+                  {validity}
+                </div>
+              )}
+            </section>
+            <section className="rounded-2xl bg-amber-50 px-4 py-4">
+              <h3 className="font-semibold text-navy">What else you will get?</h3>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {course.allowOffline !== false && (
+                  <p className="text-sm text-slate-700">
+                    <span className="font-medium">Download notes and videos</span>
+                    <span className="block text-slate-500">Save files from My learning after you enroll.</span>
+                  </p>
+                )}
+                {course.allowLive && (
+                  <p className="text-sm text-slate-700">
+                    <span className="font-medium">Live classes</span>
+                    <span className="block text-slate-500">Join scheduled sessions from your learning area.</span>
+                  </p>
+                )}
+                {course.allowTrial && pay === 0 && (
+                  <p className="text-sm text-slate-700">
+                    <span className="font-medium">Free preview</span>
+                    <span className="block text-slate-500">Enrol at no cost to explore the course.</span>
+                  </p>
+                )}
+                <p className="text-sm text-slate-700">
+                  <span className="font-medium">Available on web</span>
+                  <span className="block text-slate-500">Bigger screen, better clarity.</span>
+                </p>
+              </div>
+            </section>
+            {!owned && (
+            <section>
+              <p className="text-sm text-slate-500">You pay</p>
+              <p className="text-2xl font-bold text-navy">{pay === 0 ? "Free" : formatInr(pay)}</p>
+              {couponOk && couponOriginal != null && couponOriginal > pay && (
+                <p className="text-sm text-slate-500">
+                  <span className="line-through">{formatInr(couponOriginal)}</span>
+                  <span className="ml-2 text-emerald-700">after coupon {couponOk}</span>
+                </p>
+              )}
+              <PassThroughPriceLine listPrice={listPay} pay={pay} mode={course.platformFeeMode} />
+              {Number(course.discount || 0) > 0 && course.platformFeeMode !== "PASS_STUDENT" && (
+                <p className="text-xs text-slate-400">List price ₹{course.fees}</p>
+              )}
+            </section>
+            )}
+            {!owned && (
+            <section className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-sky-50 px-4 py-3 text-sm">
+              <span>Have a coupon code</span>
+              <div className="flex gap-2">
+                <input className="w-36 rounded-lg border border-line px-2 py-1.5" placeholder="Code" value={coupon} disabled={!!otpSent} onChange={(e) => { setCoupon(e.target.value); if (otpSent) { setOtpSent(null); setOtp(""); } }} />
+                <button type="button" className="font-semibold text-brand disabled:opacity-50" disabled={busy || !coupon.trim() || !!otpSent} onClick={applyCoupon}>
+                  {busy ? "Applying…" : "Apply"}
+                </button>
+              </div>
+            </section>
+            )}
+            {couponOk && <p className="text-sm text-emerald-700">Coupon {couponOk} applied.</p>}
+            {!owned && <p className="text-xs text-slate-400">By purchasing you agree to the institute terms and refund policy.</p>}
+            <section>
+              <h3 className="font-semibold text-navy">About course creator</h3>
+              <p className="mt-2 text-sm text-slate-600">{course.instituteName || "Institute"}</p>
+            </section>
+          </div>
+        ) : (
+          <div className="divide-y divide-line rounded-2xl border border-line bg-white">
+            {outline.length === 0 && <p className="px-4 py-6 text-sm text-slate-500">Syllabus not published yet.</p>}
+            {folders.map((folder) => (
+              <div key={folder.id} className="px-4 py-3">
+                <p className="font-medium text-navy">{folder.title}</p>
+                <p className="text-xs text-slate-500">
+                  {outline.filter((row) => row.parentFolderId === folder.id).length} item(s)
+                </p>
+                <div className="mt-2 space-y-1">
+                  {outline
+                    .filter((row) => row.parentFolderId === folder.id && row.type !== "FOLDER")
+                    .map((row) => (
+                      <OutlineLessonRow key={row.id} row={row} onPreview={setPreviewItem} />
+                    ))}
+                </div>
+              </div>
+            ))}
+            {outline
+              .filter((row) => !row.parentFolderId && row.type !== "FOLDER")
+              .map((row) => (
+                <OutlineLessonRow key={row.id} row={row} onPreview={setPreviewItem} />
+              ))}
+          </div>
+        )}
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        {previewItem && <StorefrontPreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />}
+      </div>
+      </div>
     </div>
   );
 }
