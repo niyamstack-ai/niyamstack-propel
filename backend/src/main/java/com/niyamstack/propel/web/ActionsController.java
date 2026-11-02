@@ -17,6 +17,7 @@ import com.niyamstack.propel.grow.GrowService;
 import com.niyamstack.propel.ess.EssService;
 import com.niyamstack.propel.fees.FeeService;
 import com.niyamstack.propel.sis.SisService;
+import com.niyamstack.propel.sis.WebsiteLeadService;
 import com.niyamstack.propel.integration.IntegrationStatusService;
 import com.niyamstack.propel.integration.ObjectStorage;
 import com.niyamstack.propel.integration.OrgSecrets;
@@ -55,6 +56,7 @@ public class ActionsController {
     private final OutreachService outreach;
     private final EssService ess;
     private final SisService sis;
+    private final WebsiteLeadService websiteLeads;
     private final GrowService grow;
     private final ScaleService scale;
     private final AnalyticsService analytics;
@@ -67,7 +69,8 @@ public class ActionsController {
 
     public ActionsController(Store store, FeeService fees, LmsService lms, PlacementService placement,
                              IntegrationStatusService integrations, StorefrontService storefront, ObjectStorage storage,
-                             OutreachService outreach, EssService ess, SisService sis, GrowService grow, ScaleService scale,
+                             OutreachService outreach, EssService ess, SisService sis, WebsiteLeadService websiteLeads,
+                             GrowService grow, ScaleService scale,
                              AnalyticsService analytics, CompensationService compensation, IntelligenceService intelligence,
                              EnterpriseService enterprise, ComplianceService compliance, DepthService depth) {
         this.store = store;
@@ -80,6 +83,7 @@ public class ActionsController {
         this.outreach = outreach;
         this.ess = ess;
         this.sis = sis;
+        this.websiteLeads = websiteLeads;
         this.grow = grow;
         this.scale = scale;
         this.analytics = analytics;
@@ -802,6 +806,37 @@ public class ActionsController {
     @PostMapping("/ess/offer-letters/{id}/publish")
     public Map<String, Object> publishOfferLetter(@PathVariable UUID id) {
         return ess.publishOfferLetter(id);
+    }
+
+    @GetMapping("/sis/incomplete-students")
+    public List<Map<String, Object>> incompleteStudents() {
+        return websiteLeads.listIncomplete();
+    }
+
+    @PostMapping("/sis/incomplete-students/{id}/verify")
+    public WebsiteLead verifyIncompleteStudent(@PathVariable UUID id) {
+        return websiteLeads.markVerified(id);
+    }
+
+    @PostMapping("/sis/incomplete-students/{id}/allot")
+    public Map<String, Object> allotIncompleteStudent(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> body) {
+        UUID courseId = null;
+        if (body != null && body.get("courseId") != null && !body.get("courseId").isBlank()) {
+            courseId = UUID.fromString(body.get("courseId"));
+        }
+        return websiteLeads.allotCourse(id, courseId);
+    }
+
+    @PostMapping("/sis/incomplete-students/{id}/dismiss")
+    public Map<String, Object> dismissIncompleteStudent(@PathVariable UUID id) {
+        websiteLeads.dismiss(id);
+        return Map.of("ok", true);
+    }
+
+    @DeleteMapping("/sis/incomplete-students/{id}")
+    public Map<String, Object> deleteIncompleteStudent(@PathVariable UUID id) {
+        websiteLeads.delete(id);
+        return Map.of("ok", true);
     }
 
     @PostMapping("/sis/import/students")

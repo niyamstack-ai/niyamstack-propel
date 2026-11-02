@@ -41,6 +41,7 @@ import com.niyamstack.propel.security.PropelUser;
 import com.niyamstack.propel.security.Roles;
 import com.niyamstack.propel.security.SessionService;
 import com.niyamstack.propel.sis.StudentAccountService;
+import com.niyamstack.propel.sis.WebsiteLeadService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -80,13 +81,15 @@ public class StorefrontService {
     private final SettlementService settlements;
     private final MailService mailService;
     private final PendingFlowService pendingFlows;
+    private final WebsiteLeadService websiteLeads;
     private final ObjectMapper json;
     private final IpRateLimiter ipRateLimiter;
 
     public StorefrontService(Store store, PaymentGateway payments, PasswordEncoder encoder, SessionService sessions,
                              EventHook hooks, FeeService fees, OtpService otp, StudentAccountService studentAccounts,
                              LicenseService licenses, GrowService grow, SettlementService settlements, MailService mailService,
-                             PendingFlowService pendingFlows, ObjectMapper json, IpRateLimiter ipRateLimiter) {
+                             PendingFlowService pendingFlows, WebsiteLeadService websiteLeads, ObjectMapper json,
+                             IpRateLimiter ipRateLimiter) {
         this.store = store;
         this.payments = payments;
         this.encoder = encoder;
@@ -100,6 +103,7 @@ public class StorefrontService {
         this.settlements = settlements;
         this.mailService = mailService;
         this.pendingFlows = pendingFlows;
+        this.websiteLeads = websiteLeads;
         this.json = json;
         this.ipRateLimiter = ipRateLimiter;
     }
@@ -253,6 +257,7 @@ public class StorefrontService {
         String phone = ctx.phone();
         // Email matches an account but mobile does not — show masked registered number so they can correct it.
         if (ctx.user() != null && !phoneMatchesAccount(ctx.user(), phone)) {
+            websiteLeads.touch(ctx.org().getId(), ctx.fullName(), mail, phone, courseId, "PURCHASE", "OTP_SENT");
             Map<String, Object> mismatch = new LinkedHashMap<>();
             mismatch.put("status", "phone_mismatch");
             mismatch.put("emailMasked", maskEmail(mail));
@@ -263,6 +268,7 @@ public class StorefrontService {
         }
         // Skip OTP only when this mobile already owns the verified account.
         if (ctx.user() != null && ctx.user().isEmailVerified() && phoneMatchesAccount(ctx.user(), phone)) {
+            websiteLeads.touch(ctx.org().getId(), ctx.fullName(), mail, phone, courseId, "PURCHASE", "OTP_VERIFIED");
             Map<String, Object> skip = new LinkedHashMap<>();
             skip.put("status", "already_verified");
             skip.put("emailMasked", maskEmail(mail));
@@ -299,6 +305,7 @@ public class StorefrontService {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Email delivery is not configured. Configure SMTP or enable OTP reveal for local testing.");
         }
+        websiteLeads.touch(ctx.org().getId(), ctx.fullName(), mail, phone, courseId, "PURCHASE", "OTP_SENT");
         out.put("emailMasked", maskEmail(mail));
         out.put("channel", "email");
         out.put("status", "otp_sent");
@@ -367,6 +374,7 @@ public class StorefrontService {
                     /* fall through — create path handles missing user */
                 }
             }
+            websiteLeads.touch(org.getId(), fullName, mail, phone, courseId, "PURCHASE", "OTP_VERIFIED");
         }
 
         Student student = null;
@@ -486,6 +494,7 @@ public class StorefrontService {
             pending.setReceivedAt(Instant.now());
             pending.setStatus("PENDING");
             store.save(pending);
+            websiteLeads.touch(org.getId(), fullName, mail, phone, course.getId(), "PURCHASE", "PAYMENT_STARTED");
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("checkout", true);
             out.put("keyId", payments.publicKey(org.getId()));
@@ -589,6 +598,14 @@ public class StorefrontService {
     }
 
     private Map<String, Object> purchaseSession(AppUser user, Course course, Invoice invoice, Receipt receipt, boolean already, boolean includeLoginHint) {
+        UUID studentId = null;
+        if (user != null && user.getOrganizationId() != null) {
+            studentId = store.listBy(Student.class, user.getOrganizationId(), "userId", user.getId()).stream()
+                    .map(Student::getId)
+                    .findFirst()
+                    .orElse(null);
+            websiteLeads.markConverted(user.getOrganizationId(), user.getEmail(), user.getPhone(), studentId);
+        }
         Map<String, Object> session = new LinkedHashMap<>(sessions.issue(user));
         session.put("alreadyEnrolled", already);
         session.put("checkout", false);
@@ -1324,6 +1341,7 @@ public class StorefrontService {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Email delivery is not configured. Configure SMTP or enable OTP reveal for local testing.");
         }
+        websiteLeads.touch(org.getId(), fullName.trim(), mail, phone, courseId, "REGISTER", "OTP_SENT");
         out.put("emailMasked", maskEmail(mail));
         out.put("channel", "email");
         return out;
@@ -1396,6 +1414,7 @@ public class StorefrontService {
                 studentAccounts.enrollIfCourse(org.getId(), student, course.getId(), "WEBSITE");
             }
         }
+        websiteLeads.markConverted(org.getId(), email, phone, student.getId());
         hooks.fire(org.getId(), "student.registered", Map.of("studentId", student.getId()));
         return sessions.issue(user);
     }

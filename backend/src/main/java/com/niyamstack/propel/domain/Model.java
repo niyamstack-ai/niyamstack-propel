@@ -919,6 +919,24 @@ public final class Model {
         private Instant expiresAt;
     }
 
+    /** Website checkout/register attempt that did not become a full student yet. */
+    @Entity(name = "WebsiteLead") @Table(name = "website_leads") @Getter @Setter
+    public static class WebsiteLead extends TenantEntity {
+        private String fullName;
+        private String email;
+        private String phone;
+        private UUID courseId;
+        /** PURCHASE or REGISTER */
+        private String source = "PURCHASE";
+        /** OTP_SENT, OTP_VERIFIED, PAYMENT_STARTED, CONVERTED, DISMISSED */
+        private String status = "OTP_SENT";
+        private boolean emailVerified;
+        private UUID studentId;
+        private Instant lastSeenAt;
+        @Column(columnDefinition = "TEXT")
+        private String notes;
+    }
+
     @Entity(name = "PlatformRole") @Table(name = "platform_roles") @Getter @Setter
     public static class PlatformRole extends BaseEntity {
         private String name;

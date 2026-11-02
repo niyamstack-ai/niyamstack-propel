@@ -844,7 +844,27 @@ public class SchemaPatch {
                 "CREATE UNIQUE INDEX IF NOT EXISTS uk_platform_commissions_org_student_course ON platform_commissions (organization_id, student_id, course_id)",
                 "CREATE INDEX IF NOT EXISTS idx_platform_commissions_org_status ON platform_commissions (organization_id, status)",
                 "ALTER TABLE courses ADD COLUMN IF NOT EXISTS trashed_at TIMESTAMP WITH TIME ZONE",
-                "CREATE INDEX IF NOT EXISTS idx_courses_org_trashed ON courses (organization_id, trashed_at)"
+                "CREATE INDEX IF NOT EXISTS idx_courses_org_trashed ON courses (organization_id, trashed_at)",
+                """
+                CREATE TABLE IF NOT EXISTS website_leads (
+                    id UUID PRIMARY KEY,
+                    organization_id UUID NOT NULL,
+                    full_name VARCHAR(200),
+                    email VARCHAR(200),
+                    phone VARCHAR(40),
+                    course_id UUID,
+                    source VARCHAR(40) DEFAULT 'PURCHASE',
+                    status VARCHAR(40) DEFAULT 'OTP_SENT',
+                    email_verified BOOLEAN DEFAULT FALSE,
+                    student_id UUID,
+                    last_seen_at TIMESTAMP WITH TIME ZONE,
+                    notes TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE,
+                    updated_at TIMESTAMP WITH TIME ZONE
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_website_leads_org_status ON website_leads (organization_id, status)",
+                "CREATE INDEX IF NOT EXISTS idx_website_leads_org_email ON website_leads (organization_id, email)"
         );
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
             for (String sql : statements) {

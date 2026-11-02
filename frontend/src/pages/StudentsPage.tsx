@@ -21,6 +21,19 @@ type Student = {
   centerId?: string;
   enrollmentDate?: string;
 };
+type IncompleteLead = {
+  id: string;
+  fullName?: string;
+  email?: string;
+  phone?: string;
+  courseId?: string;
+  courseName?: string;
+  source?: string;
+  status?: string;
+  emailVerified?: boolean;
+  lastSeenAt?: string;
+  createdAt?: string;
+};
 type Named = { id: string; name: string; code?: string; courseId?: string };
 
 export function StudentsPage() {
@@ -265,6 +278,7 @@ export function MyStudentRecord() {
 
 export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: boolean; embedded?: boolean; trashView?: boolean }) {
   const students = useApi<Student[]>(trashView ? "/api/students?view=trash" : "/api/students");
+  const incomplete = useApi<IncompleteLead[]>(canEnroll && !trashView ? "/api/actions/sis/incomplete-students" : "");
   const courses = useApi<Named[]>("/api/courses");
   const batches = useApi<Named[]>("/api/batches");
   const centers = useApi<Named[]>("/api/centers");
@@ -288,6 +302,9 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
   const [busy, setBusy] = useState(false);
   const [showEnroll, setShowEnroll] = useState(false);
   const [search, setSearch] = useState("");
+  const [listTab, setListTab] = useState<"registered" | "incomplete">("registered");
+  const [allotLeadId, setAllotLeadId] = useState("");
+  const [allotCourseId, setAllotCourseId] = useState("");
   const [docStudent, setDocStudent] = useState("");
   const [docType, setDocType] = useState("Aadhaar");
   const [docFile, setDocFile] = useState("");
@@ -459,6 +476,74 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
     }
   }
 
+  async function verifyLead(lead: IncompleteLead) {
+    setError(null);
+    setNotice(null);
+    try {
+      await api(`/api/actions/sis/incomplete-students/${lead.id}/verify`, { method: "POST", body: "{}" });
+      incomplete.reload();
+      setNotice(`${lead.fullName || lead.email || "Lead"} marked as email verified.`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function allotLead(lead: IncompleteLead) {
+    const course = allotLeadId === lead.id ? allotCourseId : lead.courseId || "";
+    if (!course) {
+      setAllotLeadId(lead.id);
+      setAllotCourseId(lead.courseId || "");
+      setError("Choose a course, then click Allot course again.");
+      return;
+    }
+    if (!window.confirm(`Allot course to ${lead.fullName || lead.email}? This creates / updates their student login.`)) return;
+    setError(null);
+    setNotice(null);
+    try {
+      const created = await api<{ fullName?: string; tempPassword?: string; phone?: string; email?: string }>(
+        `/api/actions/sis/incomplete-students/${lead.id}/allot`,
+        { method: "POST", body: JSON.stringify({ courseId: course }) }
+      );
+      incomplete.reload();
+      students.reload();
+      setAllotLeadId("");
+      setListTab("registered");
+      setNotice(
+        created.tempPassword
+          ? `${created.fullName || lead.fullName} enrolled. Login: mobile ${created.phone || lead.phone} or email ${created.email || lead.email} / password ${created.tempPassword}.`
+          : `${created.fullName || lead.fullName || "Student"} enrolled and moved to Registered.`
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function dismissLead(lead: IncompleteLead) {
+    if (!window.confirm(`Dismiss ${lead.fullName || lead.email}? They leave the Incomplete list.`)) return;
+    setError(null);
+    setNotice(null);
+    try {
+      await api(`/api/actions/sis/incomplete-students/${lead.id}/dismiss`, { method: "POST", body: "{}" });
+      incomplete.reload();
+      setNotice("Lead dismissed.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function deleteLead(lead: IncompleteLead) {
+    if (!window.confirm(`Permanently delete ${lead.fullName || lead.email}?`)) return;
+    setError(null);
+    setNotice(null);
+    try {
+      await api(`/api/actions/sis/incomplete-students/${lead.id}`, { method: "DELETE" });
+      incomplete.reload();
+      setNotice("Lead deleted.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (students.data ?? []).filter((s) => {
@@ -467,7 +552,16 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
     });
   }, [students.data, search]);
 
+  const filteredLeads = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (incomplete.data ?? []).filter((l) => {
+      if (!q) return true;
+      return `${l.fullName || ""} ${l.email || ""} ${l.phone || ""} ${l.courseName || ""}`.toLowerCase().includes(q);
+    });
+  }, [incomplete.data, search]);
+
   const openPath = (id: string) => studentOpenPath(id, !!embedded);
+  const incompleteCount = (incomplete.data ?? []).length;
 
   return (
     <div className="space-y-6">
@@ -477,7 +571,7 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
         <p className="text-sm text-slate-500">
           {trashView
             ? "Restore a student if they were moved here by mistake."
-            : "Open a student for the full profile. Enroll with a mobile number to create a website login."}
+            : "Registered students have logins. Incomplete captures website checkout / register attempts that did not finish."}
         </p>
         {canEnroll && (
           <p className="mt-2 text-sm">
@@ -524,8 +618,73 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
       )}
       <ErrorText error={error} />
       {notice && <p className="text-sm text-navy">{notice}</p>}
+      {!trashView && canEnroll && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={`rounded-full px-3 py-1.5 text-sm font-semibold ${listTab === "incomplete" ? "bg-navy text-white" : "border border-line text-navy"}`}
+            onClick={() => setListTab("incomplete")}
+          >
+            Incomplete{incompleteCount ? ` (${incompleteCount})` : ""}
+          </button>
+          <button
+            type="button"
+            className={`rounded-full px-3 py-1.5 text-sm font-semibold ${listTab === "registered" ? "bg-navy text-white" : "border border-line text-navy"}`}
+            onClick={() => setListTab("registered")}
+          >
+            Registered
+          </button>
+        </div>
+      )}
+      {!trashView && canEnroll && listTab === "incomplete" ? (
+        <Card
+          title="Incomplete website sign-ups"
+          action={
+            <input
+              className="rounded-lg border border-line px-3 py-1.5 text-sm"
+              placeholder="Search name, email, phone"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          }
+        >
+          <p className="mb-3 text-xs text-slate-500">
+            People who started checkout or register on your website but did not finish. Verify email, allot a course, or delete junk.
+          </p>
+          <Table
+            empty="No incomplete sign-ups yet. They appear when someone clicks Send email code on your course page."
+            loading={incomplete.loading}
+            columns={["Name", "Mobile", "Email", "Course", "Step", ""]}
+            rows={filteredLeads.map((l) => [
+              l.fullName || "—",
+              l.phone || "—",
+              l.email || "—",
+              allotLeadId === l.id ? (
+                <Select
+                  label=""
+                  value={allotCourseId}
+                  onChange={setAllotCourseId}
+                  options={(courses.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
+                />
+              ) : (
+                l.courseName || "—"
+              ),
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
+                {prettyLabel(l.status || "OTP_SENT")}
+                {l.emailVerified ? " · verified" : ""}
+              </span>,
+              <span className="flex flex-wrap gap-2">
+                {!l.emailVerified && <Linkish onClick={() => void verifyLead(l)}>Verify email</Linkish>}
+                <Linkish onClick={() => void allotLead(l)}>{allotLeadId === l.id ? "Confirm allot" : "Allot course"}</Linkish>
+                <Linkish onClick={() => void dismissLead(l)}>Dismiss</Linkish>
+                <Linkish onClick={() => void deleteLead(l)}>Delete</Linkish>
+              </span>,
+            ])}
+          />
+        </Card>
+      ) : (
       <Card
-        title={trashView ? "Trash" : "Students"}
+        title={trashView ? "Trash" : "Registered students"}
         action={
           <input
             className="rounded-lg border border-line px-3 py-1.5 text-sm"
@@ -563,6 +722,7 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
           ])}
         />
       </Card>
+      )}
       {!trashView && (
       <>
       <Card title="Link guardian / parent">
