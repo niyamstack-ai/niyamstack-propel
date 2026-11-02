@@ -67,6 +67,12 @@ public class PublicController {
         return com.niyamstack.propel.catalog.Packs.catalogMap();
     }
 
+    /** Deploy check — bump marker when purchase OTP skip logic changes. */
+    @GetMapping("/build")
+    public Map<String, String> build() {
+        return Map.of("purchaseFlow", "skip-otp-verified-v3");
+    }
+
     @GetMapping("/v1/students")
     public List<Map<String, Object>> apiStudents(@RequestHeader(value = "Authorization", required = false) String auth) {
         Organization org = requireApiOrg(auth);

@@ -255,19 +255,21 @@ public class StorefrontService {
         PurchaseContext ctx = preparePurchase(slug, fullName, email, phoneRaw, courseId);
         String mail = ctx.email();
         String phone = ctx.phone();
-        // Email matches an account but mobile does not — show masked registered number so they can correct it.
-        if (ctx.user() != null && !phoneMatchesAccount(ctx.user(), phone)) {
-            websiteLeads.touch(ctx.org().getId(), ctx.fullName(), mail, phone, courseId, "PURCHASE", "OTP_SENT");
-            Map<String, Object> mismatch = new LinkedHashMap<>();
-            mismatch.put("status", "phone_mismatch");
-            mismatch.put("emailMasked", maskEmail(mail));
-            mismatch.put("phoneMasked", maskPhone(ctx.user().getPhone()));
-            mismatch.put("channel", "email");
-            mismatch.put("existingAccount", true);
-            return mismatch;
-        }
-        // Skip OTP when this mobile already owns the student account (even if emailVerified was never flagged).
-        if (ctx.user() != null && phoneMatchesAccount(ctx.user(), phone)) {
+        // Existing student login for this email/mobile — never send a fresh OTP.
+        if (ctx.user() != null) {
+            boolean phoneOk = phoneMatchesAccount(ctx.user(), phone);
+            if (!phoneOk && !ctx.user().isEmailVerified()) {
+                // Unverified email + wrong mobile: show the registered number so they can correct it.
+                websiteLeads.touch(ctx.org().getId(), ctx.fullName(), mail, phone, courseId, "PURCHASE", "OTP_SENT");
+                Map<String, Object> mismatch = new LinkedHashMap<>();
+                mismatch.put("status", "phone_mismatch");
+                mismatch.put("emailMasked", maskEmail(mail));
+                mismatch.put("phoneMasked", maskPhone(ctx.user().getPhone()));
+                mismatch.put("channel", "email");
+                mismatch.put("existingAccount", true);
+                return mismatch;
+            }
+            // Phone matches, or email was already verified on this account → continue to pay.
             websiteLeads.touch(ctx.org().getId(), ctx.fullName(), mail, phone, courseId, "PURCHASE", "OTP_VERIFIED");
             Map<String, Object> skip = new LinkedHashMap<>();
             skip.put("status", "already_verified");
@@ -335,9 +337,9 @@ public class StorefrontService {
         AppUser user = ctx.user();
         PropelUser principal = Auth.optional();
         boolean loggedStudentBuyer = principal != null && user != null && principal.userId().equals(user.getId());
-        // New buyer, or existing account with a different mobile, must prove email via OTP.
-        // Matching registered mobile is enough to continue purchase (and we mark email verified below).
-        boolean needsVerify = user == null || !phoneMatchesAccount(user, phone);
+        // New buyers must prove email via OTP. Existing login skips when mobile matches or email was already verified.
+        boolean needsVerify = user == null
+                || (!phoneMatchesAccount(user, phone) && !user.isEmailVerified());
         if (needsVerify) {
             String raw = pendingFlows.getPayload("PURCHASE:" + phone);
             if (raw == null) {
