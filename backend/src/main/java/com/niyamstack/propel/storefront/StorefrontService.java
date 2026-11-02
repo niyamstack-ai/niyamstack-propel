@@ -250,15 +250,25 @@ public class StorefrontService {
     ) {
         PurchaseContext ctx = preparePurchase(slug, fullName, email, phoneRaw, courseId);
         String mail = ctx.email();
-        if (ctx.user() != null && ctx.user().isEmailVerified()) {
-            // Already verified — client should skip OTP and call purchase directly.
+        String phone = ctx.phone();
+        // Email matches an account but mobile does not — show masked registered number so they can correct it.
+        if (ctx.user() != null && !phoneMatchesAccount(ctx.user(), phone)) {
+            Map<String, Object> mismatch = new LinkedHashMap<>();
+            mismatch.put("status", "phone_mismatch");
+            mismatch.put("emailMasked", maskEmail(mail));
+            mismatch.put("phoneMasked", maskPhone(ctx.user().getPhone()));
+            mismatch.put("channel", "email");
+            mismatch.put("existingAccount", true);
+            return mismatch;
+        }
+        // Skip OTP only when this mobile already owns the verified account.
+        if (ctx.user() != null && ctx.user().isEmailVerified() && phoneMatchesAccount(ctx.user(), phone)) {
             Map<String, Object> skip = new LinkedHashMap<>();
             skip.put("status", "already_verified");
             skip.put("emailMasked", maskEmail(mail));
             skip.put("channel", "email");
             return skip;
         }
-        String phone = ctx.phone();
         Map<String, String> payload = new LinkedHashMap<>();
         payload.put("orgId", ctx.org().getId().toString());
         payload.put("fullName", ctx.fullName());
@@ -270,6 +280,9 @@ public class StorefrontService {
         }
         if (validityOption != null) {
             payload.put("validityOption", validityOption);
+        }
+        if (ctx.user() != null) {
+            payload.put("userId", ctx.user().getId().toString());
         }
         try {
             pendingFlows.put("PURCHASE:" + phone, "PURCHASE", json.writeValueAsString(payload), Instant.now().plusSeconds(600));
@@ -289,6 +302,9 @@ public class StorefrontService {
         out.put("emailMasked", maskEmail(mail));
         out.put("channel", "email");
         out.put("status", "otp_sent");
+        if (ctx.user() != null) {
+            out.put("existingAccount", true);
+        }
         return out;
     }
 
@@ -310,8 +326,10 @@ public class StorefrontService {
         String mail = ctx.email();
 
         AppUser user = ctx.user();
-        boolean loggedStudentBuyer = user != null && Roles.STUDENT.equals(user.getRole());
-        boolean needsVerify = user == null || !user.isEmailVerified();
+        PropelUser principal = Auth.optional();
+        boolean loggedStudentBuyer = principal != null && user != null && principal.userId().equals(user.getId());
+        // Email-only match (different mobile) must prove inbox ownership via OTP — never skip.
+        boolean needsVerify = user == null || !user.isEmailVerified() || !phoneMatchesAccount(user, phone);
         if (needsVerify) {
             String raw = pendingFlows.getPayload("PURCHASE:" + phone);
             if (raw == null) {
@@ -335,6 +353,20 @@ public class StorefrontService {
             mail = pending.getOrDefault("email", mail);
             couponCode = pending.get("couponCode");
             validityOption = pending.getOrDefault("validityOption", "a");
+            String pendingUserId = pending.get("userId");
+            if (user == null && pendingUserId != null && !pendingUserId.isBlank()) {
+                try {
+                    AppUser pendingUser = store.get(AppUser.class, UUID.fromString(pendingUserId));
+                    if (pendingUser != null
+                            && org.getId().equals(pendingUser.getOrganizationId())
+                            && Roles.STUDENT.equals(pendingUser.getRole())
+                            && mail.equalsIgnoreCase(pendingUser.getEmail())) {
+                        user = pendingUser;
+                    }
+                } catch (Exception ignored) {
+                    /* fall through — create path handles missing user */
+                }
+            }
         }
 
         Student student = null;
@@ -365,7 +397,7 @@ public class StorefrontService {
                 licenses.requireStudentCapacity(org);
                 AppUser byEmail = store.findUserByEmail(mail);
                 if (byEmail != null) {
-                    throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+                    throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists. Log in to purchase.");
                 }
                 user = new AppUser();
                 user.setOrganizationId(org.getId());
@@ -382,6 +414,14 @@ public class StorefrontService {
                 user.setEmail(mail);
                 user.setFullName(fullName.trim());
                 user.setEmailVerified(true);
+                if (!phoneMatchesAccount(user, phone) && store.findUserByPhone(phone) == null) {
+                    user.setPhone(phone);
+                }
+                user = store.save(user);
+            } else if (!phoneMatchesAccount(user, phone) && store.findUserByPhone(phone) == null) {
+                // Proven via email OTP — allow mobile update when the new number is free.
+                user.setFullName(fullName.trim());
+                user.setPhone(phone);
                 user = store.save(user);
             }
 
@@ -1445,6 +1485,18 @@ public class StorefrontService {
         return visible + "@" + domain;
     }
 
+    /** e.g. 9876543210 → ******3210 ; +91 98765 43210 → ******3210 */
+    private static String maskPhone(String phone) {
+        if (phone == null || phone.isBlank()) {
+            return "";
+        }
+        String digits = phone.replaceAll("\\D", "");
+        if (digits.length() <= 4) {
+            return "****";
+        }
+        return "*".repeat(Math.min(6, digits.length() - 4)) + digits.substring(digits.length() - 4);
+    }
+
     private PurchaseContext preparePurchase(String slug, String fullName, String email, String phoneRaw, UUID courseId) {
         Organization org = liveOrg(slug);
         if (courseId == null) {
@@ -1484,8 +1536,23 @@ public class StorefrontService {
         }
 
         AppUser user = store.findUserByPhone(phone);
-        if (user == null && sessionUser != null && phone.equals(sessionUser.getPhone())) {
+        if (user == null && sessionUser != null && phoneMatchesAccount(sessionUser, phone)) {
             user = sessionUser;
+        }
+        AppUser byEmail = store.findUserByEmail(mail);
+        if (user != null && byEmail != null && !user.getId().equals(byEmail.getId())) {
+            throw new ApiException(HttpStatus.CONFLICT,
+                    "This mobile and email belong to different accounts. Log in, or use matching details.");
+        }
+        if (user == null && byEmail != null) {
+            if (!org.getId().equals(byEmail.getOrganizationId())) {
+                throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists. Log in to purchase.");
+            }
+            if (!Roles.STUDENT.equals(byEmail.getRole())) {
+                throw new ApiException(HttpStatus.CONFLICT, "This email belongs to a staff account. Use a student email.");
+            }
+            // Same institute student — continue as that account; email OTP proves ownership when mobile differs.
+            user = byEmail;
         }
         if (user != null && !org.getId().equals(user.getOrganizationId())) {
             throw new ApiException(HttpStatus.CONFLICT, "This mobile is already used on another institute");
@@ -1493,13 +1560,21 @@ public class StorefrontService {
         if (user != null && !Roles.STUDENT.equals(user.getRole())) {
             throw new ApiException(HttpStatus.CONFLICT, "This mobile belongs to a staff account. Use a student number.");
         }
-        if (user == null) {
-            AppUser byEmail = store.findUserByEmail(mail);
-            if (byEmail != null) {
-                throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
-            }
-        }
         return new PurchaseContext(org, course, name, mail, phone, user);
+    }
+
+    private static boolean phoneMatchesAccount(AppUser user, String phone) {
+        if (user == null || phone == null || phone.isBlank()) {
+            return false;
+        }
+        String account = Phones.normalize(user.getPhone());
+        if (account.isBlank()) {
+            return false;
+        }
+        if (account.equals(phone)) {
+            return true;
+        }
+        return Phones.lookupKeys(account).contains(phone) || Phones.lookupKeys(phone).contains(account);
     }
 
     private record PurchaseContext(

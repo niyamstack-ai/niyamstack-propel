@@ -985,9 +985,11 @@ function CoursePage() {
   const [ownedError, setOwnedError] = useState<string | null>(null);
   const [validityOption, setValidityOption] = useState("a");
   const [otp, setOtp] = useState("");
-  const [otpSent, setOtpSent] = useState<{ emailMasked?: string; devOtp?: string } | null>(null);
+  const [otpSent, setOtpSent] = useState<{ emailMasked?: string; devOtp?: string; existingAccount?: boolean } | null>(null);
   /** Phone/email already verified on an existing student — skip OTP and go to purchase. */
   const [emailAlreadyVerified, setEmailAlreadyVerified] = useState(false);
+  /** Email matches an account but mobile does not — show registered number hint. */
+  const [phoneHint, setPhoneHint] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<OutlineItem | null>(null);
   const needsEmailVerify = !(token && user?.role === "STUDENT" && user?.emailVerified) && !emailAlreadyVerified;
 
@@ -1061,6 +1063,7 @@ function CoursePage() {
     setEmailAlreadyVerified(true);
     setOtpSent(null);
     setOtp("");
+    setPhoneHint(null);
     setError(null);
   }
 
@@ -1069,8 +1072,15 @@ function CoursePage() {
     if (!slug || !course?.id) return;
     setBusy(true);
     setError(null);
+    setPhoneHint(null);
     try {
-      const res = await api<{ status?: string; emailMasked?: string; devOtp?: string }>(`/api/public/sites/${slug}/purchase/otp`, {
+      const res = await api<{
+        status?: string;
+        emailMasked?: string;
+        phoneMasked?: string;
+        devOtp?: string;
+        existingAccount?: boolean;
+      }>(`/api/public/sites/${slug}/purchase/otp`, {
         method: "POST",
         body: JSON.stringify({
           fullName: name,
@@ -1083,6 +1093,13 @@ function CoursePage() {
       });
       if (res.status === "already_verified") {
         markEmailAlreadyVerified();
+        return;
+      }
+      if (res.status === "phone_mismatch") {
+        setEmailAlreadyVerified(false);
+        setOtpSent(null);
+        setPhoneHint(res.phoneMasked || "****");
+        setError(null);
         return;
       }
       setEmailAlreadyVerified(false);
@@ -1440,9 +1457,22 @@ function CoursePage() {
               <PhoneField required value={phone} onChange={setPhone} placeholder="Mobile" />
               <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
               <p className="text-xs text-slate-500">We email a verification code before checkout.</p>
+              {phoneHint && (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  This email already has an account. Registered mobile ends with{" "}
+                  <span className="font-semibold tracking-wide">{phoneHint}</span>. Enter that number above to continue, or{" "}
+                  <Link
+                    className="font-medium text-brand underline"
+                    to={`${sitePath(slug)}/login?next=${encodeURIComponent(`${sitePath(slug)}/courses/${courseId || course.id}`)}`}
+                  >
+                    log in
+                  </Link>
+                  .
+                </p>
+              )}
               {error && <p className="text-sm text-red-600">{error}</p>}
               <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy || sellBlocked}>
-                {busy ? "Sending…" : sellBlocked ? "Enrolment closed" : "Send email code"}
+                {busy ? "Sending…" : sellBlocked ? "Enrolment closed" : phoneHint ? "Retry with this mobile" : "Send email code"}
               </button>
             </form>
           ) : (
