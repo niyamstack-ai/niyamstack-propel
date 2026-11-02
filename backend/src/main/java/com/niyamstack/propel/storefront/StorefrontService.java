@@ -255,21 +255,32 @@ public class StorefrontService {
         PurchaseContext ctx = preparePurchase(slug, fullName, email, phoneRaw, courseId);
         String mail = ctx.email();
         String phone = ctx.phone();
-        // Existing student login for this email/mobile — never send a fresh OTP.
-        if (ctx.user() != null) {
-            boolean phoneOk = phoneMatchesAccount(ctx.user(), phone);
-            if (!phoneOk && !ctx.user().isEmailVerified()) {
+        AppUser buyer = ctx.user() != null ? ctx.user() : resolveExistingStudentUser(ctx.org().getId(), mail, phone);
+        // Existing student (login or SIS email/mobile match) — never send a fresh OTP.
+        if (buyer != null) {
+            boolean phoneOk = phoneMatchesAccount(buyer, phone);
+            if (!phoneOk && !buyer.isEmailVerified()) {
                 // Unverified email + wrong mobile: show the registered number so they can correct it.
                 websiteLeads.touch(ctx.org().getId(), ctx.fullName(), mail, phone, courseId, "PURCHASE", "OTP_SENT");
                 Map<String, Object> mismatch = new LinkedHashMap<>();
                 mismatch.put("status", "phone_mismatch");
                 mismatch.put("emailMasked", maskEmail(mail));
-                mismatch.put("phoneMasked", maskPhone(ctx.user().getPhone()));
+                mismatch.put("phoneMasked", maskPhone(buyer.getPhone()));
                 mismatch.put("channel", "email");
                 mismatch.put("existingAccount", true);
                 return mismatch;
             }
-            // Phone matches, or email was already verified on this account → continue to pay.
+            // Phone matches, email already verified, or SIS row linked this login → continue to pay.
+            websiteLeads.touch(ctx.org().getId(), ctx.fullName(), mail, phone, courseId, "PURCHASE", "OTP_VERIFIED");
+            Map<String, Object> skip = new LinkedHashMap<>();
+            skip.put("status", "already_verified");
+            skip.put("emailMasked", maskEmail(mail));
+            skip.put("channel", "email");
+            return skip;
+        }
+        // Student row exists for this email/mobile but has no login yet — still skip OTP; purchase creates/links login.
+        Student sis = findStudentForBuyer(ctx.org().getId(), null, mail, phone);
+        if (sis != null) {
             websiteLeads.touch(ctx.org().getId(), ctx.fullName(), mail, phone, courseId, "PURCHASE", "OTP_VERIFIED");
             Map<String, Object> skip = new LinkedHashMap<>();
             skip.put("status", "already_verified");
@@ -335,11 +346,15 @@ public class StorefrontService {
         String mail = ctx.email();
 
         AppUser user = ctx.user();
+        if (user == null) {
+            user = resolveExistingStudentUser(org.getId(), mail, phone);
+        }
+        Student knownStudent = findStudentForBuyer(org.getId(), user, mail, phone);
         PropelUser principal = Auth.optional();
         boolean loggedStudentBuyer = principal != null && user != null && principal.userId().equals(user.getId());
-        // New buyers must prove email via OTP. Existing login skips when mobile matches or email was already verified.
-        boolean needsVerify = user == null
-                || (!phoneMatchesAccount(user, phone) && !user.isEmailVerified());
+        // New buyers must prove email via OTP. Known SIS/login skips when mobile matches or email was already verified.
+        boolean needsVerify = (user == null && knownStudent == null)
+                || (user != null && !phoneMatchesAccount(user, phone) && !user.isEmailVerified());
         if (needsVerify) {
             String raw = pendingFlows.getPayload("PURCHASE:" + phone);
             if (raw == null) {
@@ -1617,6 +1632,10 @@ public class StorefrontService {
             }
             // Same institute student — continue as that account; email OTP proves ownership when mobile differs.
             user = byEmail;
+        }
+        // Student.email often differs from users.email (e.g. *@student.local login) — resolve via SIS row.
+        if (user == null) {
+            user = resolveExistingStudentUser(org.getId(), mail, phone);
         }
         if (user != null && !org.getId().equals(user.getOrganizationId())) {
             throw new ApiException(HttpStatus.CONFLICT, "This mobile is already used on another institute");
