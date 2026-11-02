@@ -288,6 +288,19 @@ public class StorefrontService {
             skip.put("channel", "email");
             return skip;
         }
+        // Incomplete tab (website_leads) — not in students yet; still skip when lead already proved email or same mobile retries.
+        var incomplete = websiteLeads.findOpenLead(ctx.org().getId(), mail, phone);
+        if (incomplete != null) {
+            boolean leadPhoneOk = phoneMatchesAccountPhone(incomplete.getPhone(), phone);
+            if (WebsiteLeadService.emailAlreadyProven(incomplete) || leadPhoneOk) {
+                websiteLeads.touch(ctx.org().getId(), ctx.fullName(), mail, phone, courseId, "PURCHASE", "OTP_VERIFIED");
+                Map<String, Object> skip = new LinkedHashMap<>();
+                skip.put("status", "already_verified");
+                skip.put("emailMasked", maskEmail(mail));
+                skip.put("channel", "email");
+                return skip;
+            }
+        }
         Map<String, String> payload = new LinkedHashMap<>();
         payload.put("orgId", ctx.org().getId().toString());
         payload.put("fullName", ctx.fullName());
@@ -350,10 +363,14 @@ public class StorefrontService {
             user = resolveExistingStudentUser(org.getId(), mail, phone);
         }
         Student knownStudent = findStudentForBuyer(org.getId(), user, mail, phone);
+        var incomplete = websiteLeads.findOpenLead(org.getId(), mail, phone);
+        boolean incompleteSkip = incomplete != null
+                && (WebsiteLeadService.emailAlreadyProven(incomplete)
+                || phoneMatchesAccountPhone(incomplete.getPhone(), phone));
         PropelUser principal = Auth.optional();
         boolean loggedStudentBuyer = principal != null && user != null && principal.userId().equals(user.getId());
-        // New buyers must prove email via OTP. Known SIS/login skips when mobile matches or email was already verified.
-        boolean needsVerify = (user == null && knownStudent == null)
+        // New buyers must prove email via OTP. Known SIS/login/incomplete lead skips OTP.
+        boolean needsVerify = (user == null && knownStudent == null && !incompleteSkip)
                 || (user != null && !phoneMatchesAccount(user, phone) && !user.isEmailVerified());
         if (needsVerify) {
             String raw = pendingFlows.getPayload("PURCHASE:" + phone);

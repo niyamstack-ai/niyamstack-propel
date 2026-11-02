@@ -246,23 +246,51 @@ public class WebsiteLeadService {
         return out;
     }
 
+    /** Open incomplete checkout/register lead for this email/mobile (not CONVERTED/DISMISSED). */
+    @Transactional(readOnly = true)
+    public WebsiteLead findOpenLead(UUID orgId, String email, String phone) {
+        String mail = email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
+        String mobile = Phones.normalize(phone);
+        return findOpen(orgId, mail, mobile);
+    }
+
+    /** True when this incomplete lead already proved email (or got past OTP). */
+    public static boolean emailAlreadyProven(WebsiteLead lead) {
+        if (lead == null) {
+            return false;
+        }
+        if (lead.isEmailVerified()) {
+            return true;
+        }
+        String status = nullToEmpty(lead.getStatus()).toUpperCase(Locale.ROOT);
+        return "OTP_VERIFIED".equals(status) || "PAYMENT_STARTED".equals(status);
+    }
+
     private WebsiteLead findOpen(UUID orgId, String mail, String mobile) {
         List<WebsiteLead> rows = store.list(WebsiteLead.class, orgId);
         WebsiteLead byEmail = null;
+        WebsiteLead byPhone = null;
         for (WebsiteLead l : rows) {
             if ("CONVERTED".equalsIgnoreCase(nullToEmpty(l.getStatus())) || "DISMISSED".equalsIgnoreCase(nullToEmpty(l.getStatus()))) {
                 continue;
             }
             boolean emailMatch = mail != null && !mail.isBlank() && mail.equalsIgnoreCase(nullToEmpty(l.getEmail()));
-            boolean phoneMatch = mobile != null && !mobile.isBlank() && mobile.equals(Phones.normalize(l.getPhone()));
+            String leadPhone = Phones.normalize(l.getPhone());
+            boolean phoneMatch = mobile != null && !mobile.isBlank() && !leadPhone.isBlank()
+                    && (mobile.equals(leadPhone)
+                    || Phones.lookupKeys(leadPhone).contains(mobile)
+                    || Phones.lookupKeys(mobile).contains(leadPhone));
             if (emailMatch && phoneMatch) {
                 return l;
             }
             if (emailMatch && byEmail == null) {
                 byEmail = l;
             }
+            if (phoneMatch && byPhone == null) {
+                byPhone = l;
+            }
         }
-        return byEmail;
+        return byEmail != null ? byEmail : byPhone;
     }
 
     private static String nullToEmpty(String s) {
