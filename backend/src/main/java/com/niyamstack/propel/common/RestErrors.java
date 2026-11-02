@@ -40,8 +40,17 @@ public class RestErrors {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, String>> handleConflict(DataIntegrityViolationException ex) {
         log.warn("Data conflict", ex);
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(Map.of("error", "This email, mobile, or institute slug is already in use"));
+        String detail = rootMessage(ex);
+        String lower = detail == null ? "" : detail.toLowerCase();
+        String message = "This email, mobile, or institute slug is already in use";
+        if (lower.contains("ux_users_phone") || lower.contains("users_phone") || (lower.contains("phone") && lower.contains("unique"))) {
+            message = "An account with this mobile already exists. Log in to purchase.";
+        } else if (lower.contains("email") && lower.contains("unique")) {
+            message = "An account with this email already exists. Log in to purchase.";
+        } else if (lower.contains("ux_organizations_slug") || lower.contains("slug")) {
+            message = "That institute web address is already taken.";
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", message));
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

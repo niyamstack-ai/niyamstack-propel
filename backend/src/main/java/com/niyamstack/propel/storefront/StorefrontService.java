@@ -398,6 +398,12 @@ public class StorefrontService {
         }
         OrgAccess.requireCanSell(org);
         BigDecimal price = settlements.checkoutAmount(org, listPrice);
+
+        // Re-resolve after OTP — never insert a duplicate login when email/mobile already belongs to this institute.
+        if (user == null) {
+            user = resolveExistingStudentUser(org.getId(), mail, phone);
+        }
+        // Only defer account creation for brand-new buyers on live paid checkout.
         boolean deferAccount = price.signum() > 0 && payments.live(org.getId()) && user == null;
 
         if (!deferAccount) {
@@ -406,6 +412,10 @@ public class StorefrontService {
                 AppUser byEmail = store.findUserByEmail(mail);
                 if (byEmail != null) {
                     throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists. Log in to purchase.");
+                }
+                AppUser byPhone = store.findUserByPhone(phone);
+                if (byPhone != null) {
+                    throw new ApiException(HttpStatus.CONFLICT, "An account with this mobile already exists. Log in to purchase.");
                 }
                 user = new AppUser();
                 user.setOrganizationId(org.getId());
@@ -419,21 +429,41 @@ public class StorefrontService {
                 user.setEmailVerified(true);
                 user = store.save(user);
             } else if (!user.isEmailVerified()) {
-                user.setEmail(mail);
+                if (!mail.equalsIgnoreCase(nullToEmpty(user.getEmail()))) {
+                    AppUser emailOwner = store.findUserByEmail(mail);
+                    if (emailOwner != null && !emailOwner.getId().equals(user.getId())) {
+                        throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists. Log in to purchase.");
+                    }
+                    user.setEmail(mail);
+                }
                 user.setFullName(fullName.trim());
                 user.setEmailVerified(true);
-                if (!phoneMatchesAccount(user, phone) && store.findUserByPhone(phone) == null) {
-                    user.setPhone(phone);
+                if (!phoneMatchesAccount(user, phone)) {
+                    AppUser phoneOwner = store.findUserByPhone(phone);
+                    if (phoneOwner == null) {
+                        user.setPhone(phone);
+                    } else if (!phoneOwner.getId().equals(user.getId())) {
+                        throw new ApiException(HttpStatus.CONFLICT, "An account with this mobile already exists. Log in to purchase.");
+                    }
                 }
                 user = store.save(user);
-            } else if (!phoneMatchesAccount(user, phone) && store.findUserByPhone(phone) == null) {
-                // Proven via email OTP — allow mobile update when the new number is free.
-                user.setFullName(fullName.trim());
-                user.setPhone(phone);
-                user = store.save(user);
+            } else if (!phoneMatchesAccount(user, phone)) {
+                // Proven via email OTP — allow mobile update only when the new number is free.
+                AppUser phoneOwner = store.findUserByPhone(phone);
+                if (phoneOwner == null) {
+                    user.setFullName(fullName.trim());
+                    user.setPhone(phone);
+                    user = store.save(user);
+                } else if (!phoneOwner.getId().equals(user.getId())) {
+                    throw new ApiException(HttpStatus.CONFLICT, "An account with this mobile already exists. Log in to purchase.");
+                }
             }
 
             if (student == null) {
+                student = store.listBy(Student.class, org.getId(), "userId", user.getId()).stream().findFirst().orElse(null);
+            }
+            if (student == null) {
+                licenses.requireStudentCapacity(org);
                 student = new Student();
                 student.setOrganizationId(org.getId());
                 student.setUserId(user.getId());
@@ -448,9 +478,6 @@ public class StorefrontService {
             }
         } else {
             licenses.requireStudentCapacity(org);
-            if (store.findUserByEmail(mail) != null) {
-                throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
-            }
         }
 
         Invoice invoice = new Invoice();
@@ -1594,6 +1621,22 @@ public class StorefrontService {
             return true;
         }
         return Phones.lookupKeys(account).contains(phone) || Phones.lookupKeys(phone).contains(account);
+    }
+
+    private AppUser resolveExistingStudentUser(UUID orgId, String mail, String phone) {
+        AppUser byPhone = store.findUserByPhone(phone);
+        if (byPhone != null && orgId.equals(byPhone.getOrganizationId()) && Roles.STUDENT.equals(byPhone.getRole())) {
+            return byPhone;
+        }
+        AppUser byEmail = store.findUserByEmail(mail);
+        if (byEmail != null && orgId.equals(byEmail.getOrganizationId()) && Roles.STUDENT.equals(byEmail.getRole())) {
+            return byEmail;
+        }
+        return null;
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private record PurchaseContext(

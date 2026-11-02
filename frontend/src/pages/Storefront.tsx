@@ -1453,7 +1453,19 @@ function CoursePage() {
                 value={otp}
                 onChange={(e) => setOtp(e.target.value)}
               />
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {error && (
+                <div className="space-y-2">
+                  <p className="text-sm text-red-600">{error}</p>
+                  {/already exists|already in use|log in to purchase/i.test(error) && (
+                    <Link
+                      className="block w-full rounded-lg border border-brand py-2.5 text-center text-sm font-semibold text-brand"
+                      to={`${sitePath(slug)}/login?next=${encodeURIComponent(`${sitePath(slug)}/courses/${courseId || course.id}`)}`}
+                    >
+                      Log in to continue purchase
+                    </Link>
+                  )}
+                </div>
+              )}
               <button className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white disabled:opacity-60" disabled={busy || sellBlocked}>
                 {busy ? "Processing…" : pay === 0 ? "Verify & enroll" : "Verify & continue to pay"}
               </button>
