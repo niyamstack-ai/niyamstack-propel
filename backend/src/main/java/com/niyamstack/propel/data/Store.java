@@ -179,8 +179,13 @@ public class Store {
     }
 
     public AppUser findUserByEmail(String email) {
-        List<AppUser> users = em.createQuery("select u from AppUser u where lower(u.email) = lower(:e)", AppUser.class)
-                .setParameter("e", email)
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        String want = email.trim().toLowerCase();
+        List<AppUser> users = em.createQuery(
+                        "select u from AppUser u where lower(trim(u.email)) = :e", AppUser.class)
+                .setParameter("e", want)
                 .setMaxResults(1)
                 .getResultList();
         return users.isEmpty() ? null : users.getFirst();
