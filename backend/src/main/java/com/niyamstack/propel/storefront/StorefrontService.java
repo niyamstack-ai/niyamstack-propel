@@ -375,20 +375,28 @@ public class StorefrontService {
                     /* fall through — create path handles missing user */
                 }
             }
+            // Email OTP proves inbox ownership — always re-attach to that login (never insert a duplicate).
+            AppUser proven = resolveExistingStudentUser(org.getId(), mail, phone);
+            if (proven != null) {
+                user = proven;
+            }
             websiteLeads.touch(org.getId(), fullName, mail, phone, courseId, "PURCHASE", "OTP_VERIFIED");
         }
 
-        Student student = null;
-        if (user != null) {
-            student = store.listBy(Student.class, org.getId(), "userId", user.getId()).stream().findFirst().orElse(null);
-            if (student != null) {
-                CourseEnrollment prior = store.listBy(CourseEnrollment.class, org.getId(), "studentId", student.getId()).stream()
-                        .filter(e -> course.getId().equals(e.getCourseId()) && enrollmentActive(e))
-                        .findFirst()
-                        .orElse(null);
-                if (prior != null) {
-                    return purchaseSession(user, course, null, null, true, false);
-                }
+        // Always re-resolve before any insert (covers phone-match skip path too).
+        AppUser existingLogin = resolveExistingStudentUser(org.getId(), mail, phone);
+        if (existingLogin != null) {
+            user = existingLogin;
+        }
+
+        Student student = findStudentForBuyer(org.getId(), user, mail, phone);
+        if (user != null && student != null) {
+            CourseEnrollment prior = store.listBy(CourseEnrollment.class, org.getId(), "studentId", student.getId()).stream()
+                    .filter(e -> course.getId().equals(e.getCourseId()) && enrollmentActive(e))
+                    .findFirst()
+                    .orElse(null);
+            if (prior != null) {
+                return purchaseSession(user, course, null, null, true, false);
             }
         }
 
@@ -400,10 +408,6 @@ public class StorefrontService {
         OrgAccess.requireCanSell(org);
         BigDecimal price = settlements.checkoutAmount(org, listPrice);
 
-        // Re-resolve after OTP — never insert a duplicate login when email/mobile already belongs to this institute.
-        if (user == null) {
-            user = resolveExistingStudentUser(org.getId(), mail, phone);
-        }
         // Only defer account creation for brand-new buyers on live paid checkout.
         boolean deferAccount = price.signum() > 0 && payments.live(org.getId()) && user == null;
 
@@ -429,39 +433,41 @@ public class StorefrontService {
                 user.setPasswordChangedAt(Instant.now());
                 user.setEmailVerified(true);
                 user = store.save(user);
-            } else if (!user.isEmailVerified()) {
+            } else {
+                boolean dirty = false;
+                if (!user.isEmailVerified()) {
+                    user.setEmailVerified(true);
+                    dirty = true;
+                }
                 if (!mail.equalsIgnoreCase(nullToEmpty(user.getEmail()))) {
                     AppUser emailOwner = store.findUserByEmail(mail);
                     if (emailOwner != null && !emailOwner.getId().equals(user.getId())) {
                         throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists. Log in to purchase.");
                     }
                     user.setEmail(mail);
+                    dirty = true;
                 }
-                user.setFullName(fullName.trim());
-                user.setEmailVerified(true);
+                if (fullName != null && !fullName.isBlank() && !fullName.trim().equals(nullToEmpty(user.getFullName()))) {
+                    user.setFullName(fullName.trim());
+                    dirty = true;
+                }
                 if (!phoneMatchesAccount(user, phone)) {
+                    // Proven via email OTP (or phone-match skip) — update mobile only when free.
                     AppUser phoneOwner = store.findUserByPhone(phone);
                     if (phoneOwner == null) {
                         user.setPhone(phone);
+                        dirty = true;
                     } else if (!phoneOwner.getId().equals(user.getId())) {
-                        throw new ApiException(HttpStatus.CONFLICT, "An account with this mobile already exists. Log in to purchase.");
+                        // Keep existing account phone; checkout continues on the matched login.
                     }
                 }
-                user = store.save(user);
-            } else if (!phoneMatchesAccount(user, phone)) {
-                // Proven via email OTP — allow mobile update only when the new number is free.
-                AppUser phoneOwner = store.findUserByPhone(phone);
-                if (phoneOwner == null) {
-                    user.setFullName(fullName.trim());
-                    user.setPhone(phone);
+                if (dirty) {
                     user = store.save(user);
-                } else if (!phoneOwner.getId().equals(user.getId())) {
-                    throw new ApiException(HttpStatus.CONFLICT, "An account with this mobile already exists. Log in to purchase.");
                 }
             }
 
             if (student == null) {
-                student = store.listBy(Student.class, org.getId(), "userId", user.getId()).stream().findFirst().orElse(null);
+                student = findStudentForBuyer(org.getId(), user, mail, phone);
             }
             if (student == null) {
                 licenses.requireStudentCapacity(org);
@@ -471,10 +477,19 @@ public class StorefrontService {
                 student.setFullName(user.getFullName());
                 student.setEmail(user.getEmail());
                 student.setPhone(phone);
-                student.setStudentCode("STU-" + System.currentTimeMillis() % 100000);
+                student.setStudentCode(newStudentCode());
                 student.setStatus("ENROLLED");
                 student.setEnrollmentDate(LocalDate.now());
                 student.setCourseId(course.getId());
+                student = store.save(student);
+            } else if (student.getUserId() == null || !student.getUserId().equals(user.getId())) {
+                student.setUserId(user.getId());
+                if (student.getEmail() == null || student.getEmail().isBlank()) {
+                    student.setEmail(user.getEmail());
+                }
+                if (student.getPhone() == null || student.getPhone().isBlank()) {
+                    student.setPhone(phone);
+                }
                 student = store.save(student);
             }
         } else {
@@ -1633,7 +1648,61 @@ public class StorefrontService {
         if (byEmail != null && orgId.equals(byEmail.getOrganizationId()) && Roles.STUDENT.equals(byEmail.getRole())) {
             return byEmail;
         }
+        Student linked = findStudentForBuyer(orgId, null, mail, phone);
+        if (linked != null && linked.getUserId() != null) {
+            AppUser viaStudent = store.get(AppUser.class, linked.getUserId());
+            if (viaStudent != null && orgId.equals(viaStudent.getOrganizationId()) && Roles.STUDENT.equals(viaStudent.getRole())) {
+                return viaStudent;
+            }
+        }
         return null;
+    }
+
+    private Student findStudentForBuyer(UUID orgId, AppUser user, String mail, String phone) {
+        if (user != null) {
+            Student byUser = store.listBy(Student.class, orgId, "userId", user.getId()).stream().findFirst().orElse(null);
+            if (byUser != null) {
+                return byUser;
+            }
+        }
+        String wantMail = mail == null ? "" : mail.trim().toLowerCase();
+        List<Student> rows = store.list(Student.class, orgId);
+        for (Student s : rows) {
+            if (s.getTrashedAt() != null) {
+                continue;
+            }
+            if (!wantMail.isBlank() && wantMail.equalsIgnoreCase(nullToEmpty(s.getEmail()))) {
+                return s;
+            }
+        }
+        for (Student s : rows) {
+            if (s.getTrashedAt() != null) {
+                continue;
+            }
+            if (phoneMatchesAccountPhone(s.getPhone(), phone)) {
+                return s;
+            }
+        }
+        return null;
+    }
+
+    private static boolean phoneMatchesAccountPhone(String accountPhone, String phone) {
+        if (accountPhone == null || accountPhone.isBlank() || phone == null || phone.isBlank()) {
+            return false;
+        }
+        String account = Phones.normalize(accountPhone);
+        String want = Phones.normalize(phone);
+        if (account.isBlank() || want.isBlank()) {
+            return false;
+        }
+        if (account.equals(want)) {
+            return true;
+        }
+        return Phones.lookupKeys(account).contains(want) || Phones.lookupKeys(want).contains(account);
+    }
+
+    private static String newStudentCode() {
+        return "STU-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
     }
 
     private static String nullToEmpty(String value) {
@@ -1718,41 +1787,57 @@ public class StorefrontService {
         if (mail.isBlank() || !mail.contains("@") || !Phones.isMobile(phone)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Checkout is missing buyer details");
         }
-        AppUser existing = store.findUserByPhone(phone);
-        if (existing != null && org.getId().equals(existing.getOrganizationId())) {
-            Student linked = store.listBy(Student.class, org.getId(), "userId", existing.getId()).stream().findFirst().orElse(null);
+        AppUser existing = resolveExistingStudentUser(org.getId(), mail, phone);
+        if (existing != null) {
+            Student linked = findStudentForBuyer(org.getId(), existing, mail, phone);
             if (linked != null) {
+                if (linked.getUserId() == null || !linked.getUserId().equals(existing.getId())) {
+                    linked.setUserId(existing.getId());
+                    linked = store.save(linked);
+                }
                 invoice.setStudentId(linked.getId());
                 store.save(invoice);
                 return linked;
             }
         }
         licenses.requireStudentCapacity(org);
-        if (store.findUserByEmail(mail) != null) {
-            throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+        if (existing == null && store.findUserByEmail(mail) != null) {
+            throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists. Log in to purchase.");
         }
-        AppUser user = new AppUser();
-        user.setOrganizationId(org.getId());
-        user.setFullName(fullName.trim());
-        user.setEmail(mail);
-        user.setPhone(phone);
-        user.setPasswordHash(encoder.encode(UUID.randomUUID().toString()));
-        user.setRole(Roles.STUDENT);
-        user.setActive(true);
-        user.setEmailVerified(true);
-        user.setPasswordChangedAt(Instant.now());
-        user = store.save(user);
-        Student student = new Student();
-        student.setOrganizationId(org.getId());
-        student.setUserId(user.getId());
-        student.setFullName(user.getFullName());
-        student.setEmail(user.getEmail());
-        student.setPhone(phone);
-        student.setStudentCode("STU-" + System.currentTimeMillis() % 100000);
-        student.setStatus("ENROLLED");
-        student.setEnrollmentDate(LocalDate.now());
-        student.setCourseId(course.getId());
-        student = store.save(student);
+        if (existing == null && store.findUserByPhone(phone) != null) {
+            throw new ApiException(HttpStatus.CONFLICT, "An account with this mobile already exists. Log in to purchase.");
+        }
+        AppUser user = existing;
+        if (user == null) {
+            user = new AppUser();
+            user.setOrganizationId(org.getId());
+            user.setFullName(fullName.trim());
+            user.setEmail(mail);
+            user.setPhone(phone);
+            user.setPasswordHash(encoder.encode(UUID.randomUUID().toString()));
+            user.setRole(Roles.STUDENT);
+            user.setActive(true);
+            user.setEmailVerified(true);
+            user.setPasswordChangedAt(Instant.now());
+            user = store.save(user);
+        }
+        Student student = findStudentForBuyer(org.getId(), user, mail, phone);
+        if (student == null) {
+            student = new Student();
+            student.setOrganizationId(org.getId());
+            student.setUserId(user.getId());
+            student.setFullName(user.getFullName());
+            student.setEmail(user.getEmail());
+            student.setPhone(phone);
+            student.setStudentCode(newStudentCode());
+            student.setStatus("ENROLLED");
+            student.setEnrollmentDate(LocalDate.now());
+            student.setCourseId(course.getId());
+            student = store.save(student);
+        } else if (student.getUserId() == null || !student.getUserId().equals(user.getId())) {
+            student.setUserId(user.getId());
+            student = store.save(student);
+        }
         invoice.setStudentId(student.getId());
         store.save(invoice);
         return student;
