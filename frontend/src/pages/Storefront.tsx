@@ -1396,7 +1396,7 @@ function CoursePage() {
                   <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" required placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
                   <PhoneField required value={phone} onChange={setPhone} placeholder="Mobile" />
                   <input className="w-full rounded-lg border border-line px-3 py-2 text-sm" type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-                  <p className="text-xs text-emerald-700">Email already verified. You can continue to purchase.</p>
+                  <p className="text-xs text-emerald-700">Account found for this email and mobile. Continue to purchase — you&apos;ll be signed in after checkout.</p>
                 </>
               )}
               {error && <p className="text-sm text-red-600">{error}</p>}

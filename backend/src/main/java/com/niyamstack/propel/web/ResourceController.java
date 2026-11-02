@@ -302,6 +302,7 @@ public class ResourceController {
 
     @PostMapping("/students") public Map<String, Object> createStudent(@RequestBody Student body) { return studentAccounts.enrollFromOwner(body); }
     @PostMapping("/students/{id}/issue-login") public Map<String, Object> issueStudentLogin(@PathVariable UUID id) { return studentAccounts.issueLogin(id); }
+    @PostMapping("/students/{id}/set-password") public Map<String, Object> setStudentPassword(@PathVariable UUID id) { return studentAccounts.setPassword(id); }
     @PostMapping("/students/{id}/trash") public Student trashStudent(@PathVariable UUID id) { return studentAccounts.trash(id); }
     @PostMapping("/students/{id}/restore") public Student restoreStudent(@PathVariable UUID id) { return studentAccounts.restore(id); }
 

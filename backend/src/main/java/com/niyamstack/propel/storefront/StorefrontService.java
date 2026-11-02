@@ -266,8 +266,8 @@ public class StorefrontService {
             mismatch.put("existingAccount", true);
             return mismatch;
         }
-        // Skip OTP only when this mobile already owns the verified account.
-        if (ctx.user() != null && ctx.user().isEmailVerified() && phoneMatchesAccount(ctx.user(), phone)) {
+        // Skip OTP when this mobile already owns the student account (even if emailVerified was never flagged).
+        if (ctx.user() != null && phoneMatchesAccount(ctx.user(), phone)) {
             websiteLeads.touch(ctx.org().getId(), ctx.fullName(), mail, phone, courseId, "PURCHASE", "OTP_VERIFIED");
             Map<String, Object> skip = new LinkedHashMap<>();
             skip.put("status", "already_verified");
@@ -335,8 +335,9 @@ public class StorefrontService {
         AppUser user = ctx.user();
         PropelUser principal = Auth.optional();
         boolean loggedStudentBuyer = principal != null && user != null && principal.userId().equals(user.getId());
-        // Email-only match (different mobile) must prove inbox ownership via OTP — never skip.
-        boolean needsVerify = user == null || !user.isEmailVerified() || !phoneMatchesAccount(user, phone);
+        // New buyer, or existing account with a different mobile, must prove email via OTP.
+        // Matching registered mobile is enough to continue purchase (and we mark email verified below).
+        boolean needsVerify = user == null || !phoneMatchesAccount(user, phone);
         if (needsVerify) {
             String raw = pendingFlows.getPayload("PURCHASE:" + phone);
             if (raw == null) {

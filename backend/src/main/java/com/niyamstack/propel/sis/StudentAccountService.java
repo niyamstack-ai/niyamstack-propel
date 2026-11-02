@@ -117,7 +117,7 @@ public class StudentAccountService {
         if (student.getUserId() != null) {
             AppUser existing = store.get(AppUser.class, student.getUserId());
             if (existing != null && existing.isActive()) {
-                throw new ApiException(HttpStatus.CONFLICT, "This student already has a login. They can use mobile OTP.");
+                throw new ApiException(HttpStatus.CONFLICT, "This student already has a login. Use Set password to create a shareable password.");
             }
         }
         String phone = requireMobile(student.getPhone());
@@ -136,6 +136,7 @@ public class StudentAccountService {
         user.setPhone(phone);
         user.setRole(Roles.STUDENT);
         user.setActive(true);
+        user.setEmailVerified(true);
         user.setPasswordHash(encoder.encode(temp));
         user.setPasswordChangedAt(Instant.now());
         user = store.save(user);
@@ -144,6 +145,38 @@ public class StudentAccountService {
         student.setPhone(phone);
         student = store.save(student);
         return response(student, temp);
+    }
+
+    /** Generate a new temporary password for an existing student login (passwords are hashed — cannot be revealed). */
+    @Transactional
+    public Map<String, Object> setPassword(UUID studentId) {
+        PropelUser actor = Auth.current();
+        Access.requireTenant(actor);
+        Access.requireWrite(actor, "SIS");
+        Student student = store.getOwned(Student.class, studentId, actor.organizationId());
+        if (student.getTrashedAt() != null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Restore this student from Trash first.");
+        }
+        if (student.getUserId() == null) {
+            return issueLogin(studentId);
+        }
+        AppUser user = store.get(AppUser.class, student.getUserId());
+        if (user == null || !user.isActive()) {
+            return issueLogin(studentId);
+        }
+        String temp = PasswordPolicy.temporary();
+        PasswordPolicy.validate(temp);
+        user.setPasswordHash(encoder.encode(temp));
+        user.setPasswordChangedAt(Instant.now());
+        user.setEmailVerified(true);
+        user.setFailedLogins(0);
+        user.setLockedUntil(null);
+        store.save(user);
+        audit.log("STUDENT_SET_PASSWORD", "Student", student.getId(), student.getFullName());
+        Map<String, Object> out = response(student, temp);
+        out.put("loginHint", "Share once: email " + user.getEmail() + " / password " + temp
+                + " — or they can log in with mobile OTP on " + user.getPhone());
+        return out;
     }
 
     public PlatformCommission enrollIfCourse(UUID orgId, Student student, UUID courseId, String source) {
