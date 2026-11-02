@@ -412,6 +412,31 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
     }
   }
 
+  async function setPassword(s: Student) {
+    if (
+      !window.confirm(
+        `Create a new temporary password for ${s.fullName}? The old password (if any) will stop working. You will see the new password once to share.`
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    try {
+      const created = await api<{ tempPassword?: string; phone?: string; email?: string; loginHint?: string }>(
+        `/api/students/${s.id}/set-password`,
+        { method: "POST", body: "{}" }
+      );
+      students.reload();
+      setNotice(
+        created.loginHint ||
+          `${s.fullName} — share once: email ${created.email || s.email} / password ${created.tempPassword}. They can also use mobile OTP on ${created.phone || s.phone}.`
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function addGuardian() {
     setError(null);
     setNotice(null);
@@ -714,6 +739,7 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
               ) : (
                 <>
                   {!s.userId && canEnroll && <Linkish onClick={() => void issueLogin(s)}>Create login</Linkish>}
+                  {s.userId && canEnroll && <Linkish onClick={() => void setPassword(s)}>Set password</Linkish>}
                   <Linkish onClick={() => void printId(s)}>ID card</Linkish>
                   {canEnroll && <Linkish onClick={() => void moveToTrash(s)}>Trash</Linkish>}
                 </>
