@@ -512,7 +512,8 @@ public class StorefrontService {
                 student.setEmail(user.getEmail());
                 student.setPhone(phone);
                 student.setStudentCode(newStudentCode());
-                student.setStatus("ENROLLED");
+                // Not ENROLLED until Razorpay payment is captured — avoids dual Incomplete + Registered.
+                student.setStatus(price.signum() > 0 && payments.live(org.getId()) ? "PAYMENT_PENDING" : "ENROLLED");
                 student.setEnrollmentDate(LocalDate.now());
                 student.setCourseId(course.getId());
                 student = store.save(student);
@@ -627,13 +628,42 @@ public class StorefrontService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Payment signature did not match. The fee was not marked paid.");
         }
         Course course = store.getOwned(Course.class, invoice.getCourseId(), org.getId());
-        // Account only after payment is verified — settlement ledger needs studentId on capture.
-        Student student = ensureStudentForWebPurchase(org, course, invoice);
-        fees.captureVerified(org.getId(), invoice, orderId, paymentId, signature);
-        enroll(org, student, course, invoice, null);
-        redeemCouponFromInvoice(org, invoice);
+        Student student = fulfillPaidCheckout(org, course, invoice, orderId, paymentId);
         AppUser user = store.get(AppUser.class, student.getUserId());
-        hooks.fire(org.getId(), "course.purchased", Map.of("courseId", course.getId(), "amount", invoice.getAmount()));
+        Receipt receipt = latestReceipt(org.getId(), invoice.getId());
+        return purchaseSession(user, course, invoice, receipt, false, false);
+    }
+
+    /**
+     * Server-side recovery when browser confirm fails or webhook is not configured.
+     * Asks Razorpay whether the order was paid, then captures + enrolls + converts the lead.
+     */
+    @Transactional
+    public Map<String, Object> reconcilePurchase(String slug, UUID invoiceId, String orderId) {
+        Organization org = liveOrg(slug);
+        if (invoiceId == null || orderId == null || orderId.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Invoice and order id are required");
+        }
+        Invoice invoice = store.getOwned(Invoice.class, invoiceId, org.getId());
+        if (invoice.getCourseId() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "This invoice is not a course purchase");
+        }
+        if (!"PAID".equals(invoice.getStatus())) {
+            String paymentId = payments.findCapturedPayment(org.getId(), orderId);
+            if (paymentId == null || paymentId.isBlank()) {
+                throw new ApiException(HttpStatus.CONFLICT, "Razorpay has not captured this payment yet. Wait a moment and try again.");
+            }
+            Course course = store.getOwned(Course.class, invoice.getCourseId(), org.getId());
+            Student student = fulfillPaidCheckout(org, course, invoice, orderId, paymentId);
+            AppUser user = store.get(AppUser.class, student.getUserId());
+            Receipt receipt = latestReceipt(org.getId(), invoice.getId());
+            return purchaseSession(user, course, invoice, receipt, false, false);
+        }
+        Course course = store.getOwned(Course.class, invoice.getCourseId(), org.getId());
+        Student student = ensureStudentForWebPurchase(org, course, invoice);
+        enroll(org, student, course, invoice, null);
+        websiteLeads.markConverted(org.getId(), student.getEmail(), student.getPhone(), student.getId());
+        AppUser user = store.get(AppUser.class, student.getUserId());
         Receipt receipt = latestReceipt(org.getId(), invoice.getId());
         return purchaseSession(user, course, invoice, receipt, false, false);
     }
@@ -647,12 +677,76 @@ public class StorefrontService {
         }
         Course course = store.getOwned(Course.class, invoice.getCourseId(), orgId);
         Organization org = store.get(Organization.class, orgId);
-        ensureStudentForWebPurchase(org, course, invoice);
-        fees.captureFromWebhook(orgId, invoiceId, orderId, paymentId);
-        invoice = store.getOwned(Invoice.class, invoiceId, orgId);
-        Student student = store.getOwned(Student.class, invoice.getStudentId(), orgId);
+        fulfillPaidCheckout(org, course, invoice, orderId, paymentId);
+    }
+
+    /**
+     * Resolve a pending web checkout from Razorpay order id when webhook notes are missing.
+     */
+    @Transactional
+    public boolean webhookPaidByOrder(UUID orgId, String orderId, String paymentId) {
+        if (orgId == null || orderId == null || orderId.isBlank()) {
+            return false;
+        }
+        Payment pending = store.listBy(Payment.class, orgId, "gatewayRef", orderId).stream()
+                .filter(p -> "PENDING".equalsIgnoreCase(nullToEmpty(p.getStatus())))
+                .findFirst()
+                .orElse(null);
+        if (pending == null) {
+            return false;
+        }
+        webhookPaid(pending.getOrganizationId(), pending.getInvoiceId(), orderId, paymentId);
+        return true;
+    }
+
+    /**
+     * For Incomplete "Payment started" rows: ask Razorpay if paid and finish allotment.
+     * Returns how many checkouts were fulfilled.
+     */
+    @Transactional
+    public int reconcilePaymentStartedLeads(UUID orgId) {
+        if (orgId == null || !payments.live(orgId)) {
+            return 0;
+        }
+        int fulfilled = 0;
+        List<Payment> pending = store.listBy(Payment.class, orgId, "status", "PENDING");
+        for (Payment payment : pending) {
+            if (payment.getGatewayRef() == null || !payment.getGatewayRef().startsWith("order_")) {
+                continue;
+            }
+            Invoice invoice = store.getOwned(Invoice.class, payment.getInvoiceId(), orgId);
+            if (invoice.getCourseId() == null || "PAID".equals(invoice.getStatus())) {
+                continue;
+            }
+            String paymentId = payments.findCapturedPayment(orgId, payment.getGatewayRef());
+            if (paymentId == null || paymentId.isBlank()) {
+                continue;
+            }
+            try {
+                Course course = store.getOwned(Course.class, invoice.getCourseId(), orgId);
+                Organization org = store.get(Organization.class, orgId);
+                fulfillPaidCheckout(org, course, invoice, payment.getGatewayRef(), paymentId);
+                fulfilled++;
+            } catch (Exception ignored) {
+                /* leave pending for next sync */
+            }
+        }
+        return fulfilled;
+    }
+
+    private Student fulfillPaidCheckout(
+            Organization org, Course course, Invoice invoice, String orderId, String paymentId
+    ) {
+        Student student = ensureStudentForWebPurchase(org, course, invoice);
+        // Signature was already verified by confirmPurchase; webhook/reconcile trust Razorpay server signals.
+        fees.captureFromWebhook(org.getId(), invoice.getId(), orderId, paymentId);
+        invoice = store.getOwned(Invoice.class, invoice.getId(), org.getId());
+        student = store.getOwned(Student.class, invoice.getStudentId() != null ? invoice.getStudentId() : student.getId(), org.getId());
         enroll(org, student, course, invoice, null);
         redeemCouponFromInvoice(org, invoice);
+        websiteLeads.markConverted(org.getId(), student.getEmail(), student.getPhone(), student.getId());
+        hooks.fire(org.getId(), "course.purchased", Map.of("courseId", course.getId(), "amount", invoice.getAmount()));
+        return student;
     }
 
     private void emailPurchaseReceipt(AppUser user, Course course, Invoice invoice, Receipt receipt) {
@@ -740,11 +834,7 @@ public class StorefrontService {
             cancelled.setExpiresAt(expiresAt);
             cancelled.setSource("WEBSITE");
             store.save(cancelled);
-            if (student.getCourseId() == null) {
-                student.setCourseId(course.getId());
-                student.setStatus("ENROLLED");
-                store.save(student);
-            }
+            markStudentEnrolled(student, course.getId());
             return;
         }
         CourseEnrollment existing = store.listBy(CourseEnrollment.class, org.getId(), "studentId", student.getId()).stream()
@@ -753,6 +843,7 @@ public class StorefrontService {
                 .orElse(null);
         if (existing != null) {
             if (enrollmentActive(existing)) {
+                markStudentEnrolled(student, course.getId());
                 return;
             }
             existing.setInvoiceId(invoice.getId());
@@ -761,11 +852,7 @@ public class StorefrontService {
             existing.setStatus("ACTIVE");
             existing.setSource("WEBSITE");
             store.save(existing);
-            if (student.getCourseId() == null) {
-                student.setCourseId(course.getId());
-                student.setStatus("ENROLLED");
-                store.save(student);
-            }
+            markStudentEnrolled(student, course.getId());
             return;
         }
         CourseEnrollment enrollment = new CourseEnrollment();
@@ -778,9 +865,24 @@ public class StorefrontService {
         enrollment.setPurchasedAt(Instant.now());
         enrollment.setExpiresAt(expiresAt);
         store.save(enrollment);
-        if (student.getCourseId() == null) {
-            student.setCourseId(course.getId());
+        markStudentEnrolled(student, course.getId());
+    }
+
+    private void markStudentEnrolled(Student student, UUID courseId) {
+        boolean dirty = false;
+        if (student.getCourseId() == null && courseId != null) {
+            student.setCourseId(courseId);
+            dirty = true;
+        }
+        if (!"ENROLLED".equalsIgnoreCase(nullToEmpty(student.getStatus()))) {
             student.setStatus("ENROLLED");
+            dirty = true;
+        }
+        if (student.getEnrollmentDate() == null) {
+            student.setEnrollmentDate(LocalDate.now());
+            dirty = true;
+        }
+        if (dirty) {
             store.save(student);
         }
     }

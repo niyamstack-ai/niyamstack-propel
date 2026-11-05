@@ -292,11 +292,11 @@ export function PlatformSettingsPage() {
                 placeholder={pay?.razorpay ? "Saved — paste to replace" : "Key secret"}
               />
               <Field
-                label="Webhook secret (optional)"
+                label="Webhook secret (required for auto course allotment)"
                 value={payKeys.razorpayWebhookSecret}
                 onChange={(v) => setPayKeys((p) => ({ ...p, razorpayWebhookSecret: v }))}
                 type="password"
-                placeholder={pay?.webhook ? "Saved — paste to replace" : "From Razorpay dashboard"}
+                placeholder={pay?.webhook ? "Saved — paste to replace" : "Same secret you set in Razorpay → Webhooks"}
               />
               <Field
                 label="RazorpayX account number (for auto payouts)"
@@ -305,8 +305,19 @@ export function PlatformSettingsPage() {
                 placeholder={pay?.razorpayxAccount ? "Saved — paste to replace" : "Current account number from RazorpayX"}
               />
               <p className="text-xs text-slate-500">
-                Webhook URL: {typeof window !== "undefined" ? `${window.location.origin}${pay?.webhookPath || "/api/public/payments/razorpay"}` : pay?.webhookPath || "/api/public/payments/razorpay"}
+                Webhook URL (paste in Razorpay → Account &amp; Settings → Webhooks):{" "}
+                <span className="font-mono text-navy">
+                  {typeof window !== "undefined"
+                    ? `${window.location.origin}${pay?.webhookPath || "/api/public/payments/razorpay"}`
+                    : pay?.webhookPath || "/api/public/payments/razorpay"}
+                </span>
+                . Enable event <span className="font-mono text-navy">payment.captured</span>, then save that secret here.
               </p>
+              {!pay?.webhook && pay?.razorpay && (
+                <p className="text-xs text-amber-700">
+                  Razorpay keys are saved but webhook secret is missing. Without it, paid students may stay Incomplete until you allot manually.
+                </p>
+              )}
               <button className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={busy}>
                 {busy ? "Saving…" : "Save payment keys"}
               </button>

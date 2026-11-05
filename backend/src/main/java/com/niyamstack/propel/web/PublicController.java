@@ -57,6 +57,7 @@ public class PublicController {
 
     public record PurchaseRequest(String fullName, String email, String phone, UUID courseId, String couponCode, String validityOption, String otp) {}
     public record ConfirmRequest(UUID invoiceId, String orderId, String paymentId, String signature) {}
+    public record ReconcileRequest(UUID invoiceId, String orderId) {}
     public record CouponRequest(UUID courseId, String code, String validityOption) {}
     public record RegisterRequest(String fullName, String email, String phone, UUID courseId) {}
     public record RegisterVerifyRequest(String phone, String otp) {}
@@ -220,6 +221,21 @@ public class PublicController {
         return out;
     }
 
+    /** Recovery when browser confirm fails — verifies the order is paid via Razorpay Orders API. */
+    @PostMapping("/sites/{slug}/purchase/reconcile")
+    public Map<String, Object> reconcilePurchase(
+            @PathVariable String slug,
+            @RequestBody ReconcileRequest body,
+            jakarta.servlet.http.HttpServletResponse response
+    ) {
+        if (body.invoiceId() == null || body.orderId() == null || body.orderId().isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Invoice and order id are required");
+        }
+        Map<String, Object> out = storefront.reconcilePurchase(slug, body.invoiceId(), body.orderId());
+        SessionCookies.attachInstitute(response, out);
+        return out;
+    }
+
     @PostMapping("/payments/razorpay")
     public Map<String, Boolean> razorpayWebhook(
             @RequestHeader(value = "X-Razorpay-Signature", required = false) String signature,
@@ -228,25 +244,28 @@ public class PublicController {
         // Notes may be nested under payload.payment.entity.notes — scan the whole JSON.
         String orgRaw = firstNonBlank(extractJson(body, "orgId"), extractNestedNotes(body, "orgId"));
         String invoiceRaw = firstNonBlank(extractJson(body, "invoiceId"), extractNestedNotes(body, "invoiceId"));
-        if (orgRaw.isBlank() || invoiceRaw.isBlank()) {
-            return Map.of("ok", true);
+        String orderId = firstNonBlank(extractJson(body, "order_id"), extractJson(body, "orderId"));
+        String paymentId = firstNonBlank(extractPrefixed(body, "pay_"), extractJson(body, "id"));
+        if (paymentId != null && !paymentId.startsWith("pay_")) {
+            paymentId = extractPrefixed(body, "pay_");
         }
         try {
-            UUID orgId = UUID.fromString(orgRaw);
-            UUID invoiceId = UUID.fromString(invoiceRaw);
-            // Never mark paid via webhook without live keys + valid webhook signature.
-            if (!payments.live(orgId)) {
+            if (!orgRaw.isBlank()) {
+                UUID orgId = UUID.fromString(orgRaw);
+                if (!payments.live(orgId)) {
+                    return Map.of("ok", true);
+                }
+                if (!payments.verifyWebhook(orgId, body, signature)) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid Razorpay webhook signature");
+                }
+                if (!invoiceRaw.isBlank()) {
+                    storefront.webhookPaid(orgId, UUID.fromString(invoiceRaw), orderId, paymentId);
+                } else {
+                    storefront.webhookPaidByOrder(orgId, orderId, paymentId);
+                }
                 return Map.of("ok", true);
             }
-            if (!payments.verifyWebhook(orgId, body, signature)) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid Razorpay webhook signature");
-            }
-            String orderId = firstNonBlank(extractJson(body, "order_id"), extractJson(body, "orderId"));
-            String paymentId = firstNonBlank(extractPrefixed(body, "pay_"), extractJson(body, "id"));
-            if (paymentId != null && !paymentId.startsWith("pay_")) {
-                paymentId = extractPrefixed(body, "pay_");
-            }
-            storefront.webhookPaid(orgId, invoiceId, orderId, paymentId);
+            // No org notes — cannot verify; acknowledge so Razorpay does not retry forever.
         } catch (ApiException e) {
             throw e;
         } catch (Exception ignored) {

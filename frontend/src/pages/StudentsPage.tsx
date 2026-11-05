@@ -543,6 +543,27 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
     }
   }
 
+  async function syncPaidCheckouts() {
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await api<{ fulfilled?: number }>("/api/actions/sis/incomplete-students/sync-payments", {
+        method: "POST",
+        body: "{}",
+      });
+      incomplete.reload();
+      students.reload();
+      const n = res.fulfilled ?? 0;
+      setNotice(
+        n > 0
+          ? `Synced ${n} paid checkout${n === 1 ? "" : "s"} from Razorpay — course allotted.`
+          : "No newly paid Razorpay checkouts found to sync."
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function dismissLead(lead: IncompleteLead) {
     if (!window.confirm(`Dismiss ${lead.fullName || lead.email}? They leave the Incomplete list.`)) return;
     setError(null);
@@ -673,9 +694,12 @@ export function StaffStudents({ canEnroll, embedded, trashView }: { canEnroll: b
             />
           }
         >
-          <p className="mb-3 text-xs text-slate-500">
-            People who started checkout or register on your website but did not finish. Verify email, allot a course, or delete junk.
-          </p>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-slate-500">
+              People who started checkout or register on your website but did not finish. Verify email, allot a course, or delete junk.
+            </p>
+            <Linkish onClick={() => void syncPaidCheckouts()}>Sync paid from Razorpay</Linkish>
+          </div>
           <Table
             empty="No incomplete sign-ups yet. They appear when someone clicks Send email code on your course page."
             loading={incomplete.loading}
