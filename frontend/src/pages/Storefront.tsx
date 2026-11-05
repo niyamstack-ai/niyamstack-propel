@@ -1232,13 +1232,39 @@ function CoursePage() {
       let loginHint = res.loginHint;
       if (res.checkout) {
         const paid = await openRazorpay(res);
-        const done = await api<{ token: string; user: { id: string; name: string; email: string; role: string; organizationId: string; packageTier: string }; receiptNo?: string; receiptId?: string; invoiceNo?: string; loginHint?: string }>(
-          `/api/public/sites/${slug}/purchase/confirm`,
-          {
-            method: "POST",
-            body: JSON.stringify({ invoiceId: res.invoiceId, ...paid }),
+        type PurchaseDone = {
+          token: string;
+          user: { id: string; name: string; email: string; role: string; organizationId: string; packageTier: string };
+          receiptNo?: string;
+          receiptId?: string;
+          invoiceNo?: string;
+          loginHint?: string;
+        };
+        let done: PurchaseDone | null = null;
+        let lastErr: Error | null = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            done = await api<PurchaseDone>(`/api/public/sites/${slug}/purchase/confirm`, {
+              method: "POST",
+              body: JSON.stringify({ invoiceId: res.invoiceId, ...paid }),
+            });
+            break;
+          } catch (err) {
+            lastErr = err as Error;
+            await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
           }
-        );
+        }
+        if (!done) {
+          // Browser confirm failed after Razorpay success — ask server to verify order via Razorpay API.
+          try {
+            done = await api<PurchaseDone>(`/api/public/sites/${slug}/purchase/reconcile`, {
+              method: "POST",
+              body: JSON.stringify({ invoiceId: res.invoiceId, orderId: paid.orderId }),
+            });
+          } catch {
+            throw lastErr || new Error("Payment received but course allotment failed. Contact the institute — do not pay again.");
+          }
+        }
         applySession(done);
         receiptNo = done.receiptNo || receiptNo;
         receiptId = done.receiptId || receiptId;

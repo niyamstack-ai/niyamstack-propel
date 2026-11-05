@@ -285,7 +285,11 @@ public class ResourceController {
     public List<Student> students(@RequestParam(required = false) String view) {
         List<Student> rows = list(Student.class);
         boolean trash = "trash".equalsIgnoreCase(view);
-        return rows.stream().filter(s -> trash == (s.getTrashedAt() != null)).toList();
+        return rows.stream()
+                .filter(s -> trash == (s.getTrashedAt() != null))
+                // Hide unpaid website checkouts from Registered (they stay under Incomplete).
+                .filter(s -> trash || !"PAYMENT_PENDING".equalsIgnoreCase(s.getStatus() == null ? "" : s.getStatus()))
+                .toList();
     }
 
     @GetMapping("/students/{id}")

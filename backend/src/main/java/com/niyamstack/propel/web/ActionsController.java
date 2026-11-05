@@ -810,7 +810,21 @@ public class ActionsController {
 
     @GetMapping("/sis/incomplete-students")
     public List<Map<String, Object>> incompleteStudents() {
+        // Best-effort: if Razorpay already captured but browser/webhook missed, finish allotment.
+        try {
+            storefront.reconcilePaymentStartedLeads(Auth.current().organizationId());
+        } catch (Exception ignored) {
+            /* listing must still work */
+        }
         return websiteLeads.listIncomplete();
+    }
+
+    @PostMapping("/sis/incomplete-students/sync-payments")
+    public Map<String, Object> syncIncompletePayments() {
+        Access.requireTenant(Auth.current());
+        Access.requireWrite(Auth.current(), "SIS");
+        int fulfilled = storefront.reconcilePaymentStartedLeads(Auth.current().organizationId());
+        return Map.of("ok", true, "fulfilled", fulfilled);
     }
 
     @PostMapping("/sis/incomplete-students/{id}/verify")

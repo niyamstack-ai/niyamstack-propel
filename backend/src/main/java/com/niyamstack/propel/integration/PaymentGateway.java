@@ -37,6 +37,14 @@ public interface PaymentGateway {
         return false;
     }
 
+    /**
+     * Look up a captured/authorized payment id for a Razorpay order via the Orders API.
+     * Used when browser confirm failed and webhook is missing/misconfigured.
+     */
+    default String findCapturedPayment(UUID orgId, String orderId) {
+        return "";
+    }
+
     default String refundPayment(UUID orgId, String razorpayPaymentId, BigDecimal amount) {
         return "";
     }

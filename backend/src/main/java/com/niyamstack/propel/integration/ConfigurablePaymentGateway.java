@@ -167,6 +167,30 @@ public class ConfigurablePaymentGateway implements PaymentGateway {
         return hmac(secret, payload).equalsIgnoreCase(signature.trim());
     }
 
+    @Override
+    public String findCapturedPayment(UUID orgId, String orderId) {
+        String[] keys = keys(orgId);
+        if (keys == null || orderId == null || orderId.isBlank() || !orderId.startsWith("order_")) {
+            return "";
+        }
+        try {
+            HttpResponse<String> res = get(keys, "https://api.razorpay.com/v1/orders/" + orderId + "/payments");
+            if (res.statusCode() >= 300) {
+                log.warn("Razorpay order payments lookup failed for {}: HTTP {}", orderId, res.statusCode());
+                return "";
+            }
+            String body = res.body() == null ? "" : res.body();
+            String captured = firstPaymentIdWithStatus(body, "captured");
+            if (!captured.isBlank()) {
+                return captured;
+            }
+            return firstPaymentIdWithStatus(body, "authorized");
+        } catch (Exception e) {
+            log.warn("Razorpay order payments lookup error for {}: {}", orderId, e.getMessage());
+            return "";
+        }
+    }
+
     private HttpResponse<String> post(String[] keys, String url, String body) throws Exception {
         String auth = Base64.getEncoder().encodeToString((keys[0] + ":" + keys[1]).getBytes(StandardCharsets.UTF_8));
         HttpRequest req = HttpRequest.newBuilder(URI.create(url))
@@ -176,6 +200,40 @@ public class ConfigurablePaymentGateway implements PaymentGateway {
                 .timeout(Duration.ofSeconds(20))
                 .build();
         return http.send(req, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> get(String[] keys, String url) throws Exception {
+        String auth = Base64.getEncoder().encodeToString((keys[0] + ":" + keys[1]).getBytes(StandardCharsets.UTF_8));
+        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                .header("Authorization", "Basic " + auth)
+                .GET()
+                .timeout(Duration.ofSeconds(20))
+                .build();
+        return http.send(req, HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** Prefer the first payment matching status in Razorpay collection JSON. */
+    private static String firstPaymentIdWithStatus(String json, String status) {
+        if (json == null || json.isBlank() || status == null) {
+            return "";
+        }
+        String needle = "\"status\":\"" + status + "\"";
+        int statusAt = json.indexOf(needle);
+        while (statusAt >= 0) {
+            // Search backward in this item for "id":"pay_..."
+            int windowStart = Math.max(0, statusAt - 400);
+            String window = json.substring(windowStart, statusAt);
+            int idKey = window.lastIndexOf("\"id\":\"pay_");
+            if (idKey >= 0) {
+                int start = windowStart + idKey + "\"id\":\"".length();
+                int end = json.indexOf('"', start);
+                if (end > start) {
+                    return json.substring(start, end);
+                }
+            }
+            statusAt = json.indexOf(needle, statusAt + needle.length());
+        }
+        return "";
     }
 
     private String[] keys(UUID orgId) {
