@@ -71,7 +71,7 @@ public class PublicController {
     /** Deploy check — bump marker when purchase OTP skip logic changes. */
     @GetMapping("/build")
     public Map<String, String> build() {
-        return Map.of("purchaseFlow", "skip-otp-incomplete-v5");
+        return Map.of("purchaseFlow", "skip-otp-incomplete-v6");
     }
 
     @GetMapping("/v1/students")
