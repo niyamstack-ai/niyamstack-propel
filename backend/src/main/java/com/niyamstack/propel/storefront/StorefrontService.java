@@ -288,18 +288,17 @@ public class StorefrontService {
             skip.put("channel", "email");
             return skip;
         }
-        // Incomplete tab (website_leads) — not in students yet; still skip when lead already proved email or same mobile retries.
+        // Incomplete tab (website_leads): skip OTP only after email was already proved.
+        // OTP_SENT alone must NOT skip — that row is created as soon as we send the code, so a
+        // phone match would otherwise treat a brand-new signup as already verified and break checkout.
         var incomplete = websiteLeads.findOpenLead(ctx.org().getId(), mail, phone);
-        if (incomplete != null) {
-            boolean leadPhoneOk = phoneMatchesAccountPhone(incomplete.getPhone(), phone);
-            if (WebsiteLeadService.emailAlreadyProven(incomplete) || leadPhoneOk) {
-                websiteLeads.touch(ctx.org().getId(), ctx.fullName(), mail, phone, courseId, "PURCHASE", "OTP_VERIFIED");
-                Map<String, Object> skip = new LinkedHashMap<>();
-                skip.put("status", "already_verified");
-                skip.put("emailMasked", maskEmail(mail));
-                skip.put("channel", "email");
-                return skip;
-            }
+        if (incomplete != null && WebsiteLeadService.emailAlreadyProven(incomplete)) {
+            websiteLeads.touch(ctx.org().getId(), ctx.fullName(), mail, phone, courseId, "PURCHASE", "OTP_VERIFIED");
+            Map<String, Object> skip = new LinkedHashMap<>();
+            skip.put("status", "already_verified");
+            skip.put("emailMasked", maskEmail(mail));
+            skip.put("channel", "email");
+            return skip;
         }
         Map<String, String> payload = new LinkedHashMap<>();
         payload.put("orgId", ctx.org().getId().toString());
@@ -364,12 +363,12 @@ public class StorefrontService {
         }
         Student knownStudent = findStudentForBuyer(org.getId(), user, mail, phone);
         var incomplete = websiteLeads.findOpenLead(org.getId(), mail, phone);
-        boolean incompleteSkip = incomplete != null
-                && (WebsiteLeadService.emailAlreadyProven(incomplete)
-                || phoneMatchesAccountPhone(incomplete.getPhone(), phone));
+        // Only skip OTP when Incomplete lead already proved inbox (OTP_VERIFIED / PAYMENT_STARTED).
+        // Matching phone on an OTP_SENT lead is expected right after "Send email code" — still require OTP.
+        boolean incompleteSkip = incomplete != null && WebsiteLeadService.emailAlreadyProven(incomplete);
         PropelUser principal = Auth.optional();
         boolean loggedStudentBuyer = principal != null && user != null && principal.userId().equals(user.getId());
-        // New buyers must prove email via OTP. Known SIS/login/incomplete lead skips OTP.
+        // New buyers must prove email via OTP. Known SIS/login/proven incomplete lead skips OTP.
         boolean needsVerify = (user == null && knownStudent == null && !incompleteSkip)
                 || (user != null && !phoneMatchesAccount(user, phone) && !user.isEmailVerified());
         if (needsVerify) {
@@ -448,26 +447,46 @@ public class StorefrontService {
         if (!deferAccount) {
             if (user == null) {
                 licenses.requireStudentCapacity(org);
+                // Reuse same-org student login when email/mobile already exist (OTP already proved ownership above).
                 AppUser byEmail = store.findUserByEmail(mail);
-                if (byEmail != null) {
-                    throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists. Log in to purchase.");
-                }
                 AppUser byPhone = store.findUserByPhone(phone);
-                if (byPhone != null) {
+                AppUser reuse = null;
+                if (byPhone != null && org.getId().equals(byPhone.getOrganizationId()) && Roles.STUDENT.equals(byPhone.getRole())) {
+                    reuse = byPhone;
+                } else if (byEmail != null && org.getId().equals(byEmail.getOrganizationId()) && Roles.STUDENT.equals(byEmail.getRole())) {
+                    reuse = byEmail;
+                } else if (byEmail != null) {
+                    throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists. Log in to purchase.");
+                } else if (byPhone != null) {
                     throw new ApiException(HttpStatus.CONFLICT, "An account with this mobile already exists. Log in to purchase.");
                 }
-                user = new AppUser();
-                user.setOrganizationId(org.getId());
-                user.setFullName(fullName.trim());
-                user.setEmail(mail);
-                user.setPhone(phone);
-                user.setPasswordHash(encoder.encode(UUID.randomUUID().toString()));
-                user.setRole(Roles.STUDENT);
-                user.setActive(true);
-                user.setPasswordChangedAt(Instant.now());
-                user.setEmailVerified(true);
-                user = store.save(user);
-            } else {
+                if (reuse != null) {
+                    user = reuse;
+                } else {
+                    user = new AppUser();
+                    user.setOrganizationId(org.getId());
+                    user.setFullName(fullName.trim());
+                    user.setEmail(mail);
+                    user.setPhone(phone);
+                    user.setPasswordHash(encoder.encode(UUID.randomUUID().toString()));
+                    user.setRole(Roles.STUDENT);
+                    user.setActive(true);
+                    user.setPasswordChangedAt(Instant.now());
+                    user.setEmailVerified(true);
+                    try {
+                        user = store.save(user);
+                    } catch (org.springframework.dao.DataIntegrityViolationException conflict) {
+                        // Concurrent checkout created the login first — attach instead of failing.
+                        AppUser raced = resolveExistingStudentUser(org.getId(), mail, phone);
+                        if (raced == null) {
+                            throw conflict;
+                        }
+                        user = raced;
+                    }
+                }
+            }
+            // Sync existing / reused login (email verified, optional phone/name).
+            {
                 boolean dirty = false;
                 if (!user.isEmailVerified()) {
                     user.setEmailVerified(true);

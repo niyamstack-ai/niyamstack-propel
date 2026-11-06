@@ -42,14 +42,16 @@ public class RestErrors {
         log.warn("Data conflict", ex);
         String detail = rootMessage(ex);
         String lower = detail == null ? "" : detail.toLowerCase();
-        String message = "An account with this email or mobile already exists. Log in to purchase.";
-        if (lower.contains("ux_users_phone") || lower.contains("users_phone") || (lower.contains("phone") && lower.contains("unique"))) {
+        String message = "Could not complete this request. Try again.";
+        boolean usersTable = lower.contains("users") || lower.contains("ux_users");
+        if (usersTable && (lower.contains("ux_users_phone") || lower.contains("users_phone")
+                || (lower.contains("phone") && lower.contains("unique")))) {
             message = "An account with this mobile already exists. Log in to purchase.";
-        } else if (lower.contains("email") && lower.contains("unique")) {
+        } else if (usersTable && lower.contains("email") && lower.contains("unique")) {
             message = "An account with this email already exists. Log in to purchase.";
-        } else if (lower.contains("student_code") || lower.contains("students")) {
+        } else if (lower.contains("student_code") || (lower.contains("students") && lower.contains("unique"))) {
             message = "Could not create student record. Try again, or log in if you already have an account.";
-        } else if (lower.contains("ux_organizations_slug") || lower.contains("slug")) {
+        } else if (lower.contains("ux_organizations_slug") || (lower.contains("organizations") && lower.contains("slug"))) {
             message = "That institute web address is already taken.";
         }
         return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", message));
