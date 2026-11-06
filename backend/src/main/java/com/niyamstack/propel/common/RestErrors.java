@@ -49,6 +49,8 @@ public class RestErrors {
             message = "An account with this mobile already exists. Log in to purchase.";
         } else if (usersTable && lower.contains("email") && lower.contains("unique")) {
             message = "An account with this email already exists. Log in to purchase.";
+        } else if (lower.contains("student_id") && (lower.contains("not-null") || lower.contains("not null") || lower.contains("null value"))) {
+            message = "Checkout could not start. Refresh the page, request a new email code, and try again.";
         } else if (lower.contains("student_code") || (lower.contains("students") && lower.contains("unique"))) {
             message = "Could not create student record. Try again, or log in if you already have an account.";
         } else if (lower.contains("ux_organizations_slug") || (lower.contains("organizations") && lower.contains("slug"))) {

@@ -473,16 +473,7 @@ public class StorefrontService {
                     user.setActive(true);
                     user.setPasswordChangedAt(Instant.now());
                     user.setEmailVerified(true);
-                    try {
-                        user = store.save(user);
-                    } catch (org.springframework.dao.DataIntegrityViolationException conflict) {
-                        // Concurrent checkout created the login first — attach instead of failing.
-                        AppUser raced = resolveExistingStudentUser(org.getId(), mail, phone);
-                        if (raced == null) {
-                            throw conflict;
-                        }
-                        user = raced;
-                    }
+                    user = store.save(user);
                 }
             }
             // Sync existing / reused login (email verified, optional phone/name).

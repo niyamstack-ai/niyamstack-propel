@@ -178,6 +178,8 @@ public class SchemaPatch {
                 "UPDATE organizations SET modules_csv = 'ESS,STAFF' WHERE product_pack = 'ESS' AND (modules_csv IS NULL OR TRIM(modules_csv) = '' OR (',' || REPLACE(modules_csv, ' ', '') || ',') NOT LIKE '%,ESS,%')",
                 "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminded_at TIMESTAMP WITH TIME ZONE",
                 "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS notes VARCHAR(500)",
+                // Deferred web checkout stores buyer details in notes until payment capture.
+                "ALTER TABLE invoices ALTER COLUMN student_id DROP NOT NULL",
                 "ALTER TABLE assessments ADD COLUMN IF NOT EXISTS scores_published BOOLEAN DEFAULT TRUE",
                 "UPDATE assessments SET scores_published = TRUE WHERE scores_published IS NULL",
                 "ALTER TABLE certificates ADD COLUMN IF NOT EXISTS course_id UUID",
@@ -571,6 +573,28 @@ public class SchemaPatch {
                 "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(120)",
                 "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS published_at TIMESTAMP WITH TIME ZONE",
                 "ALTER TABLE payslips ADD COLUMN IF NOT EXISTS downloaded_at TIMESTAMP WITH TIME ZONE",
+                "ALTER TABLE resignation_requests ADD COLUMN IF NOT EXISTS letter_id UUID",
+                "ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS work_location VARCHAR(40)",
+                "ALTER TABLE biometric_punches ADD COLUMN IF NOT EXISTS work_location VARCHAR(40)",
+                """
+                CREATE TABLE IF NOT EXISTS staff_letters (
+                    id UUID PRIMARY KEY,
+                    organization_id UUID NOT NULL,
+                    employee_id UUID NOT NULL,
+                    kind VARCHAR(40) NOT NULL,
+                    letter_no VARCHAR(80),
+                    letter_body TEXT,
+                    status VARCHAR(40) DEFAULT 'DRAFT',
+                    effective_date DATE,
+                    old_ctc NUMERIC(12,2),
+                    new_ctc NUMERIC(12,2),
+                    last_working_date DATE,
+                    resignation_id UUID,
+                    sent_at TIMESTAMP WITH TIME ZONE,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+                )
+                """,
                 """
                 CREATE TABLE IF NOT EXISTS commission_settings (
                     id UUID PRIMARY KEY,
